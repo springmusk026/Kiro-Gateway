@@ -67,18 +67,23 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 |---|---|
 | Security | Admin password, API key verification for the public endpoints. |
 | Routing & upstream | Preferred endpoint (Kiro IDE / CodeWhisperer / Amazon Q), endpoint fallback, upstream protocol, whether accounts stay in rotation after reaching their quota (overage may be billed). |
-| Models & thinking | When to think (follow the request / always / never), default thinking length, the legacy model suffix, how reasoning is returned to OpenAI and Anthropic clients, and model aliases. |
 | Prompt filter | Removing Claude Code boilerplate, environment noise and custom patterns from system prompts before they are sent. |
 | Network | Outbound HTTP/SOCKS5 proxy (applies immediately). |
 | Logging & storage | Storage backend status, recorder health, body capture size, history retention, the `config.json` migration. |
 | Maintenance | Resetting counters, version information and the server-side configuration view. |
 
-Models can be enabled or disabled on the **Models** page; disabled models disappear from `/v1/models` and
-requests for them are rejected with a clear error.
+The **Models** page holds everything model-related, in three tabs:
+
+- **Catalog** — the live model list from Kiro; enable or disable models (disabled models disappear from
+  `/v1/models` and requests for them are rejected with a clear error), see context window, output limit,
+  credit multiplier, effort levels and prompt-cache support.
+- **Aliases** — client-facing model names (below).
+- **Thinking** — when to think (follow the request / always / never), the default thinking length, the
+  legacy model suffix, and how reasoning is returned to OpenAI and Anthropic clients.
 
 ### Model aliases
 
-Aliases (Settings → Models & thinking) expose client-friendly names that resolve to one upstream model, for
+Aliases (Models → Aliases) expose client-friendly names that resolve to one upstream model, for
 example `kiro-opus` → `claude-opus-4.5`. They apply to all three APIs, appear in `/v1/models`, match
 case-insensitively and cannot chain.
 

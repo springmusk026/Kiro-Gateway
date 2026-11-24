@@ -69,7 +69,7 @@ func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, 
 
 func registerDeviceClient(oidcBase, startUrl string) (clientID, clientSecret string, err error) {
 	payload := map[string]interface{}{
-		"clientName": "Kiro API Proxy",
+		"clientName": "Kiro",
 		"clientType": "public",
 		"scopes":     scopes,
 		"grantTypes": []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"},

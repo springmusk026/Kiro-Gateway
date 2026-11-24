@@ -49,8 +49,11 @@ In `auto` mode Kiro-Go tries the preferred transport for each account and rememb
 back when the upstream rejects the protocol (for example "profileArn is required"). Kiro API key accounts
 use the Kiro CLI runtime directly.
 
-Requests are shaped like the official Kiro CLI's: the same headers (`x-amzn-kiro-*`, SDK user agents, attempt
-counters), conversation ids that stay stable across turns, `agentTaskType: "vibe"`, tool names shortened
+See [kiro-protocol.md](kiro-protocol.md) for the full map of Kiro's APIs and how Kiro-Go compares.
+
+Requests are shaped like the official clients': on `/v1/responses` the exact raw header set (origin, profile, `TokenType`,
+the IDE's own user agent — or the CLI's for API-key accounts — attempt and fallback counters, metadata in
+the official key order), conversation ids that stay stable across turns, `agentTaskType: "vibe"`, tool names shortened
 with a hash when they exceed Kiro's limit (and restored in responses), and no client-side invented ids.
 
 ## Account selection

@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ type responsesRequest struct {
 	Stream       bool                     `json:"stream"`
 	Origin       string                   `json:"origin"`
 	ProfileArn   string                   `json:"profileArn,omitempty"`
-	Metadata     map[string]string        `json:"metadata,omitempty"`
+	Metadata     responsesMetadata        `json:"metadata,omitempty"`
 	Reasoning    map[string]interface{}   `json:"reasoning,omitempty"`
 }
 
@@ -105,12 +106,61 @@ type responsesEvent struct {
 	} `json:"error"`
 }
 
+// responsesMetadata serializes in the official client's insertion order
+// (agent mode first) instead of Go's alphabetical map order.
+type responsesMetadata map[string]string
+
+var responsesMetadataOrder = []string{
+	"kiro:agent_mode", "kiro:mode_identifier", "kiro:agent_task_type",
+	"kiro:conversation_id", "kiro:root_conversation_id", "kiro:agent_continuation_id",
+}
+
+func (m responsesMetadata) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	first := true
+	write := func(k, v string) {
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		kb, _ := json.Marshal(k)
+		vb, _ := json.Marshal(v)
+		b.Write(kb)
+		b.WriteByte(':')
+		b.Write(vb)
+	}
+	seen := make(map[string]bool, len(m))
+	for _, k := range responsesMetadataOrder {
+		if v, ok := m[k]; ok {
+			write(k, v)
+			seen[k] = true
+		}
+	}
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		write(k, m[k])
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
 // useResponsesUpstream reports whether the responses transport should be used
 // for this account. API-key accounts keep the legacy CLI runtime path.
 func useResponsesUpstream(account *config.Account) bool {
 	// "auto" starts on the responses transport (see upstream_protocol.go).
 	return upstreamProtocolMode(account) != responsesProtocolLegacy
 }
+
+// responsesAttemptBudget is the attempt budget the official client advertises
+// in x-amzn-kiro-attempt ("n;max=3" on a fresh turn).
+const responsesAttemptBudget = 3
 
 func responsesOrigin(payload *KiroPayload) string {
 	if payload != nil {
@@ -145,7 +195,7 @@ func buildResponsesRequest(payload *KiroPayload) *responsesRequest {
 	}
 	req.Tools = buildResponsesTools(payload)
 
-	meta := map[string]string{"kiro:agent_mode": "vibe"}
+	meta := responsesMetadata{"kiro:agent_mode": "vibe"}
 	if id := strings.TrimSpace(payload.ConversationState.ConversationID); id != "" {
 		meta["kiro:conversation_id"] = id
 	}
@@ -347,6 +397,9 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 	if body == nil {
 		return fmt.Errorf("failed to build responses request")
 	}
+	if config.IsAPIKeyAccount(account) {
+		body.Origin = "KIRO_CLI" // API keys are a Kiro CLI credential
+	}
 	reqBody, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -357,7 +410,9 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 	if parsed, parseErr := url.Parse(endpoint); parseErr == nil {
 		host = parsed.Host
 	}
-	headerValues := buildRuntimeHeaderValues(account, host)
+	userAgent := responsesUserAgent(account)
+	tokenType := responsesTokenType(account)
+	origin := body.Origin
 	client := GetClientForProxy(ResolveAccountProxyURL(account))
 
 	var lastErr error
@@ -369,14 +424,25 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 		if buildErr != nil {
 			return buildErr
 		}
+		// The exact header set of the official clients' raw request: no Accept,
+		// no x-amz-user-agent, agent mode only in metadata.
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "text/event-stream")
-		applyKiroBaseHeaders(req, account, headerValues)
-		req.Header.Set("x-amzn-kiro-origin", responsesOrigin(payload))
-		req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-		req.Header.Set("x-amzn-kiro-attempt", fmt.Sprintf("%d;max=%d", attempt, maxStreamAttemptsPerEndpoint))
+		if token := accountBearerToken(account); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("x-amzn-kiro-origin", origin)
+		req.Header.Set("x-amzn-codewhisperer-optout", "true")
 		if arn := strings.TrimSpace(payload.ProfileArn); arn != "" {
 			req.Header.Set("x-amzn-kiro-profile", arn)
+		}
+		if tokenType != "" {
+			req.Header.Set("TokenType", tokenType)
+		}
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("x-amzn-kiro-attempt", fmt.Sprintf("%d;max=%d", attempt, responsesAttemptBudget))
+		req.Header.Set("x-amzn-kiro-fallback", "0;max=0")
+		if host != "" {
+			req.Host = host
 		}
 
 		if budgetErr := takeUpstreamAttempt(ctx); budgetErr != nil {
@@ -557,7 +623,19 @@ func parseResponsesSSE(body io.Reader, payload *KiroPayload, callback *KiroStrea
 				flushTool(ev.Item.ID)
 				sawOutput = true
 			}
-		case "response.completed":
+		case "response.refusal.delta":
+			// Official clients show refusals as assistant text.
+			if ev.Delta != "" {
+				sawOutput = true
+				outputRunes += len([]rune(ev.Delta))
+				if callback != nil && callback.OnText != nil {
+					callback.OnText(ev.Delta, false)
+				}
+			}
+		case "response.completed", "response.incomplete":
+			// response.incomplete is terminal too (max_output_tokens,
+			// content_filter, compaction_required_for_model_handoff); the stop
+			// reason comes from incomplete_details.
 			completed = true
 			if ev.Response != nil {
 				if ev.Response.Usage != nil {
@@ -678,6 +756,9 @@ func responsesStopReason(resp *responsesPayload) string {
 			return "MAX_TOKENS"
 		case "content_filter", "refusal":
 			return "REFUSAL"
+		case "compaction_required_for_model_handoff", "model_context_window_exceeded":
+			// The conversation must be compacted before it can continue.
+			return "MAX_TOKENS"
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(resp.Status)) {

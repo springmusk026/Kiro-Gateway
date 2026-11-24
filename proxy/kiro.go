@@ -744,6 +744,21 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 			return emitted, fmt.Errorf("%w: %s", errKiroEventStreamUpstream, detail)
 		}
 
+		// The runtime also delivers failures as ordinary events of these union
+		// members (the official client maps them to exceptions); treat them as
+		// upstream errors instead of silently skipping them.
+		switch et := headers[":event-type"]; et {
+		case "error", "throttlingError", "validationError", "serviceUnavailableError", "internalServerException":
+			detail := firstStringField(event, "message", "Message")
+			if reason := firstStringField(event, "reason"); reason != "" {
+				detail = strings.TrimSpace(reason + " " + detail)
+			}
+			if detail == "" {
+				detail = "upstream reported " + et
+			}
+			return emitted, fmt.Errorf("%w: %s: %s", errKiroEventStreamUpstream, et, detail)
+		}
+
 		inputTokens, outputTokens = updateTokensFromEvent(event, inputTokens, outputTokens)
 
 		switch headers[":event-type"] {

@@ -95,3 +95,44 @@ func accountBearerToken(account *config.Account) string {
 	}
 	return strings.TrimSpace(account.AccessToken)
 }
+
+// Identity of the official clients' raw /v1/responses requests. That path is a
+// plain HTTPS call (no AWS SDK), so it carries only the host application's own
+// user agent: no aws-sdk-js prefix and no x-amz-user-agent.
+const (
+	kiroCLIVersion = "3.5.0"
+	kiroKASVersion = "0.66.119"
+)
+
+// responsesUserAgent is the User-Agent for the raw /v1/responses transport.
+// OAuth accounts present the Kiro IDE (origin AI_EDITOR), whose agent sends its
+// legacy custom UA, KiroIDE-<version>-<machineId>. API-key accounts are a Kiro
+// CLI feature and present the CLI (origin KIRO_CLI).
+func responsesUserAgent(account *config.Account) string {
+	if config.IsAPIKeyAccount(account) {
+		return fmt.Sprintf("KiroCLI/%s KAS/%s os/linux md/appVersion-%s app/AmazonQ-For-CLI", kiroCLIVersion, kiroKASVersion, kiroCLIVersion)
+	}
+	ua := "KiroIDE-" + config.GetKiroClientConfig().KiroVersion
+	if account != nil && account.MachineId != "" {
+		ua += "-" + account.MachineId
+	}
+	return ua
+}
+
+// responsesTokenType is the TokenType header the official raw path sends:
+// IAM Identity Center tokens are SSO_OIDC; social and Builder ID send none.
+func responsesTokenType(account *config.Account) string {
+	if account == nil {
+		return ""
+	}
+	if config.IsAPIKeyAccount(account) {
+		return "API_KEY"
+	}
+	switch strings.ToLower(strings.TrimSpace(account.AuthMethod)) {
+	case "external_idp":
+		return "EXTERNAL_IDP"
+	case "idc":
+		return "SSO_OIDC"
+	}
+	return ""
+}

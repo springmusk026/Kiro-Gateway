@@ -122,4 +122,4 @@ curl http://localhost:8080/v1/chat/completions \
 ## Legacy thinking suffix
 
 Clients that can't send thinking parameters can append the suffix (default `-thinking`) to the model name,
-e.g. `claude-sonnet-4.5-thinking`. The suffix is configurable in Settings → Models & thinking.
+e.g. `claude-sonnet-4.5-thinking`. The suffix is configurable under Models → Thinking.

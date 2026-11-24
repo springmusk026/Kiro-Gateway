@@ -91,7 +91,7 @@ Thinking is decided per request:
 | Responses `reasoning: {effort}` | on, length from effort |
 | model name ending in the suffix (default `-thinking`) | on — the suffix always wins, for older setups |
 
-The **When to think** setting can force thinking on (`always`) or off (`never`) for every request.
+The **When to think** setting (Models → Thinking) can force thinking on (`always`) or off (`never`) for every request.
 
 Effort maps to the thinking length the model is given: `minimal` 2K, `low` 8K, `medium` 24K, `high` 64K,
 `xhigh` 128K, `max` 200K tokens; without an effort or budget the default length applies (200K, configurable).
