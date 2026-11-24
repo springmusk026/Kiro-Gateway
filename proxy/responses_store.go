@@ -57,20 +57,7 @@ func saveResponse(resp *ResponsesObject) error {
 		resp.StoredAt = time.Now().Unix()
 	}
 
-	persisted := storedResponseDoc{
-		ID:                 resp.ID,
-		Object:             resp.Object,
-		CreatedAt:          resp.CreatedAt,
-		Status:             resp.Status,
-		Model:              resp.Model,
-		Output:             resp.Output,
-		Usage:              resp.Usage,
-		PreviousResponseID: resp.PreviousResponseID,
-		Metadata:           resp.Metadata,
-		Instructions:       resp.Instructions,
-		StoredInput:        resp.StoredInput,
-		StoredAt:           resp.StoredAt,
-	}
+	persisted := toStoredDoc(resp)
 
 	path := filepath.Join(dir, sanitizeResponseID(resp.ID)+".json")
 	data, err := json.MarshalIndent(persisted, "", "  ")
@@ -108,20 +95,7 @@ func loadResponse(id string) (*ResponsesObject, error) {
 		_ = os.Remove(path)
 		return nil, fmt.Errorf("stored response expired")
 	}
-	return &ResponsesObject{
-		ID:                 doc.ID,
-		Object:             doc.Object,
-		CreatedAt:          doc.CreatedAt,
-		Status:             doc.Status,
-		Model:              doc.Model,
-		Output:             doc.Output,
-		Usage:              doc.Usage,
-		PreviousResponseID: doc.PreviousResponseID,
-		Metadata:           doc.Metadata,
-		Instructions:       doc.Instructions,
-		StoredInput:        doc.StoredInput,
-		StoredAt:           doc.StoredAt,
-	}, nil
+	return fromStoredDoc(doc), nil
 }
 
 // Bounds for the on-disk Responses store, so stored conversations cannot
@@ -258,6 +232,42 @@ type storedResponseDoc struct {
 	Instructions       string               `json:"instructions,omitempty"`
 	StoredInput        json.RawMessage      `json:"stored_input,omitempty"`
 	StoredAt           int64                `json:"stored_at"`
+
+	IncompleteDetails *ResponsesIncompleteDetails `json:"incomplete_details,omitempty"`
+	Error             *ResponsesError             `json:"error,omitempty"`
+	Tools             json.RawMessage             `json:"tools,omitempty"`
+	ToolChoice        json.RawMessage             `json:"tool_choice,omitempty"`
+	ParallelToolCalls *bool                       `json:"parallel_tool_calls,omitempty"`
+	Temperature       *float64                    `json:"temperature,omitempty"`
+	TopP              *float64                    `json:"top_p,omitempty"`
+	MaxOutputTokens   *int                        `json:"max_output_tokens,omitempty"`
+	Truncation        string                      `json:"truncation,omitempty"`
+}
+
+func fromStoredDoc(doc storedResponseDoc) *ResponsesObject {
+	return &ResponsesObject{
+		ID:                 doc.ID,
+		Object:             doc.Object,
+		CreatedAt:          doc.CreatedAt,
+		Status:             doc.Status,
+		Model:              doc.Model,
+		Output:             doc.Output,
+		Usage:              doc.Usage,
+		PreviousResponseID: doc.PreviousResponseID,
+		Metadata:           doc.Metadata,
+		Instructions:       doc.Instructions,
+		StoredInput:        doc.StoredInput,
+		StoredAt:           doc.StoredAt,
+		IncompleteDetails:  doc.IncompleteDetails,
+		Error:              doc.Error,
+		Tools:              doc.Tools,
+		ToolChoice:         doc.ToolChoice,
+		ParallelToolCalls:  doc.ParallelToolCalls,
+		Temperature:        doc.Temperature,
+		TopP:               doc.TopP,
+		MaxOutputTokens:    doc.MaxOutputTokens,
+		Truncation:         doc.Truncation,
+	}
 }
 
 // responseBackend stores /v1/responses objects in the database when set.
@@ -277,7 +287,46 @@ func toStoredDoc(resp *ResponsesObject) storedResponseDoc {
 		Instructions:       resp.Instructions,
 		StoredInput:        resp.StoredInput,
 		StoredAt:           resp.StoredAt,
+		IncompleteDetails:  resp.IncompleteDetails,
+		Error:              resp.Error,
+		Tools:              resp.Tools,
+		ToolChoice:         resp.ToolChoice,
+		ParallelToolCalls:  resp.ParallelToolCalls,
+		Temperature:        resp.Temperature,
+		TopP:               resp.TopP,
+		MaxOutputTokens:    resp.MaxOutputTokens,
+		Truncation:         resp.Truncation,
 	}
+}
+
+// responseDeleter is implemented by database stores that can delete one
+// stored response.
+type responseDeleter interface {
+	DeleteResponse(ctx context.Context, id string) (bool, error)
+}
+
+// deleteResponse removes a stored response. It reports whether one existed.
+func deleteResponse(id string) (bool, error) {
+	if id == "" {
+		return false, nil
+	}
+	if responseBackend != nil {
+		d, ok := responseBackend.(responseDeleter)
+		if !ok {
+			return false, fmt.Errorf("response store does not support deletion")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return d.DeleteResponse(ctx, id)
+	}
+	path := filepath.Join(responsesDir(), sanitizeResponseID(id)+".json")
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func saveResponseDB(resp *ResponsesObject) error {
@@ -307,18 +356,5 @@ func loadResponseDB(id string) (*ResponsesObject, error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("decode stored response: %w", err)
 	}
-	return &ResponsesObject{
-		ID:                 doc.ID,
-		Object:             doc.Object,
-		CreatedAt:          doc.CreatedAt,
-		Status:             doc.Status,
-		Model:              doc.Model,
-		Output:             doc.Output,
-		Usage:              doc.Usage,
-		PreviousResponseID: doc.PreviousResponseID,
-		Metadata:           doc.Metadata,
-		Instructions:       doc.Instructions,
-		StoredInput:        doc.StoredInput,
-		StoredAt:           doc.StoredAt,
-	}, nil
+	return fromStoredDoc(doc), nil
 }
