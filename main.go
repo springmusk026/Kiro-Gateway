@@ -14,16 +14,21 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"kiro-go/config"
 	"kiro-go/logger"
 	"kiro-go/pool"
 	"kiro-go/proxy"
+	"kiro-go/storage"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,9 +39,20 @@ func main() {
 		configPath = envPath
 	}
 
+	// Subcommands: `kiro-go migrate` / `kiro-go export` (see cli.go).
+	if len(os.Args) > 1 {
+		os.Exit(runCommand(os.Args[1], os.Args[2:], configPath))
+	}
+
 	// 确保数据目录存在
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		log.Fatalf("Failed to create data directory: %v", err)
+	}
+
+	// Storage backend: PostgreSQL when DATABASE_URL is set, else config.json.
+	db := openDatabase(configPath)
+	if db != nil {
+		defer db.Close()
 	}
 
 	// 加载配置
@@ -57,7 +73,7 @@ func main() {
 		logger.Fatalf("Failed to set admin password: %v", err)
 	} else if changed {
 		logger.Warnf("Admin password was unset or the insecure default; generated a new one: %s", generated)
-		logger.Warnf("It is saved in %s. Set ADMIN_PASSWORD or change it in the admin panel.", configPath)
+		logger.Warnf("It is saved in %s. Set ADMIN_PASSWORD or change it in the admin panel.", config.CurrentStore().Name())
 	}
 
 	if !config.IsApiKeyRequired() && !isLoopbackHost(config.GetHost()) {
@@ -69,6 +85,20 @@ func main() {
 
 	// 创建 HTTP 处理器（包含后台刷新任务）
 	handler := proxy.NewHandler()
+	var recorder *storage.Recorder
+	if db != nil {
+		recorder = storage.NewRecorder(db, func() time.Duration {
+			days := config.GetLogRetentionDays()
+			if days <= 0 {
+				days = 30
+			}
+			return time.Duration(days) * 24 * time.Hour
+		})
+		handler.UseTelemetry(recorder, recorder, storage.NewResponseStore(db))
+		logger.Infof("Storage: PostgreSQL (request logging and audit enabled)")
+	} else {
+		logger.Infof("Storage: %s (set DATABASE_URL to use PostgreSQL with request history)", config.CurrentStore().Name())
+	}
 
 	// 启动服务器
 	addr := fmt.Sprintf("%s:%d", config.GetHost(), config.GetPort())
@@ -88,9 +118,28 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil {
+	// Graceful shutdown: finish in-flight requests, then flush pending stats
+	// and queued log records before exiting.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
+		logger.Infof("Shutting down…")
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatalf("Server failed: %v", err)
 	}
+	config.Flush()
+	if recorder != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		recorder.Close(ctx)
+		cancel()
+	}
+	logger.Infof("Stopped")
 }
 
 // isLoopbackHost reports whether the bind address only accepts local clients.

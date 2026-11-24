@@ -127,16 +127,23 @@ func callKiroWithProtocolSelection(ctx context.Context, account *config.Account,
 		}
 		defer release()
 	}
-	switch upstreamProtocolMode(account) {
-	case responsesProtocolLegacy:
-		return callKiroLegacyAPIContext(ctx, account, payload, callback)
-	case responsesProtocolResponses:
+	switch mode := upstreamProtocolMode(account); mode {
+	case responsesProtocolLegacy, responsesProtocolResponses:
+		if tr := traceFrom(ctx); tr != nil {
+			tr.setProtocol(mode)
+		}
+		if mode == responsesProtocolLegacy {
+			return callKiroLegacyAPIContext(ctx, account, payload, callback)
+		}
 		return callKiroResponsesAPIContext(ctx, account, payload, callback)
 	}
 
 	first, second := preferredProtocols(account)
 	tracked, emitted := trackEmission(callback)
 	err := callProtocolFn(first, ctx, account, payload, tracked)
+	if tr := traceFrom(ctx); tr != nil {
+		tr.setProtocol(first)
+	}
 	if err == nil {
 		rememberProtocol(account, first)
 		return nil
@@ -146,6 +153,9 @@ func callKiroWithProtocolSelection(ctx context.Context, account *config.Account,
 	}
 	logger.Infof("[Upstream] %s protocol rejected for %s (%v); trying %s",
 		first, accountEmailForLog(account), err, second)
+	if tr := traceFrom(ctx); tr != nil {
+		tr.setProtocol(second)
+	}
 	if err2 := callProtocolFn(second, ctx, account, payload, tracked); err2 != nil {
 		return err2
 	}

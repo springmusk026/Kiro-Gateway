@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"kiro-go/config"
 	"kiro-go/logger"
+	"kiro-go/telemetry"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,6 +45,9 @@ func generateOutputItemID(prefix string) string {
 func saveResponse(resp *ResponsesObject) error {
 	if resp == nil || resp.ID == "" {
 		return fmt.Errorf("response missing id")
+	}
+	if responseBackend != nil {
+		return saveResponseDB(resp)
 	}
 	dir := responsesDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -86,6 +91,9 @@ func saveResponse(resp *ResponsesObject) error {
 func loadResponse(id string) (*ResponsesObject, error) {
 	if id == "" {
 		return nil, fmt.Errorf("empty response id")
+	}
+	if responseBackend != nil {
+		return loadResponseDB(id)
 	}
 	path := filepath.Join(responsesDir(), sanitizeResponseID(id)+".json")
 	data, err := os.ReadFile(path)
@@ -135,6 +143,17 @@ func storedResponsesLimits() (maxFiles int, maxBytes int64) {
 func purgeExpiredResponses(ttl time.Duration) {
 	if ttl <= 0 {
 		ttl = responsesDefaultTTL
+	}
+	if responseBackend != nil {
+		maxFiles, _ := storedResponsesLimits()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if n, err := responseBackend.PurgeResponses(ctx, time.Now().Add(-ttl), maxFiles); err != nil {
+			logger.Warnf("[Responses] purge failed: %v", err)
+		} else if n > 0 {
+			logger.Infof("[Responses] purged %d stored responses", n)
+		}
+		return
 	}
 	dir := responsesDir()
 	entries, err := os.ReadDir(dir)
@@ -239,4 +258,67 @@ type storedResponseDoc struct {
 	Instructions       string               `json:"instructions,omitempty"`
 	StoredInput        json.RawMessage      `json:"stored_input,omitempty"`
 	StoredAt           int64                `json:"stored_at"`
+}
+
+// responseBackend stores /v1/responses objects in the database when set.
+var responseBackend telemetry.ResponseStore
+
+func toStoredDoc(resp *ResponsesObject) storedResponseDoc {
+	return storedResponseDoc{
+		ID:                 resp.ID,
+		Object:             resp.Object,
+		CreatedAt:          resp.CreatedAt,
+		Status:             resp.Status,
+		Model:              resp.Model,
+		Output:             resp.Output,
+		Usage:              resp.Usage,
+		PreviousResponseID: resp.PreviousResponseID,
+		Metadata:           resp.Metadata,
+		Instructions:       resp.Instructions,
+		StoredInput:        resp.StoredInput,
+		StoredAt:           resp.StoredAt,
+	}
+}
+
+func saveResponseDB(resp *ResponsesObject) error {
+	if resp.StoredAt == 0 {
+		resp.StoredAt = time.Now().Unix()
+	}
+	data, err := json.Marshal(toStoredDoc(resp))
+	if err != nil {
+		return fmt.Errorf("marshal stored response: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return responseBackend.SaveResponse(ctx, resp.ID, data, time.Unix(resp.StoredAt, 0))
+}
+
+func loadResponseDB(id string) (*ResponsesObject, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	data, storedAt, err := responseBackend.LoadResponse(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if time.Since(storedAt) > responsesDefaultTTL {
+		return nil, fmt.Errorf("stored response expired")
+	}
+	var doc storedResponseDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("decode stored response: %w", err)
+	}
+	return &ResponsesObject{
+		ID:                 doc.ID,
+		Object:             doc.Object,
+		CreatedAt:          doc.CreatedAt,
+		Status:             doc.Status,
+		Model:              doc.Model,
+		Output:             doc.Output,
+		Usage:              doc.Usage,
+		PreviousResponseID: doc.PreviousResponseID,
+		Metadata:           doc.Metadata,
+		Instructions:       doc.Instructions,
+		StoredInput:        doc.StoredInput,
+		StoredAt:           doc.StoredAt,
+	}, nil
 }

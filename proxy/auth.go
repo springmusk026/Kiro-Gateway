@@ -98,6 +98,11 @@ func withApiKeyContext(r *http.Request, entry *config.ApiKeyEntry) *http.Request
 	if entry == nil {
 		return r
 	}
+	if tr := traceFrom(r.Context()); tr != nil {
+		tr.mu.Lock()
+		tr.apiKeyID = entry.ID
+		tr.mu.Unlock()
+	}
 	ctx := context.WithValue(r.Context(), apiKeyContextKey{}, entry.ID)
 	return r.WithContext(ctx)
 }

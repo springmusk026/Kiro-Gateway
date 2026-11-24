@@ -249,10 +249,10 @@ func (h *Handler) handleResponsesNonStream(
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.recordSuccessLog("responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
 		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
@@ -274,7 +274,7 @@ func (h *Handler) handleResponsesNonStream(
 		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
 		return
 	}
-	h.recordFailureWithDetails("responses", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
 	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
 }
 
@@ -611,7 +611,7 @@ func (h *Handler) handleResponsesStream(
 					},
 				},
 			})
-			h.recordFailureWithDetails("responses", model, account.ID, err)
+			h.recordFailureWithDetails(ctx, "responses", model, account.ID, err)
 			return
 		}
 
@@ -655,10 +655,10 @@ func (h *Handler) handleResponsesStream(
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoning, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.recordSuccessLog("responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
 		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
@@ -695,7 +695,7 @@ func (h *Handler) handleResponsesStream(
 		})
 		return
 	}
-	h.recordFailureWithDetails("responses", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
 	send("response.failed", map[string]interface{}{
 		"type": "response.failed",
 		"response": map[string]interface{}{

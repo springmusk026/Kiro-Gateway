@@ -14,7 +14,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -209,6 +208,12 @@ type Config struct {
 	// are hidden from /v1/models and requests for them are rejected.
 	DisabledModels []string `json:"disabledModels,omitempty"`
 
+	// Request logging (database backend). LogBodiesKB > 0 records up to that
+	// many KB of each request and response body; LogRetentionDays prunes
+	// request logs older than that (0 = 30 days).
+	LogBodiesKB      int `json:"logBodiesKB,omitempty"`
+	LogRetentionDays int `json:"logRetentionDays,omitempty"`
+
 	// Endpoint configuration: "auto", "kiro", "codewhisperer", or "amazonq"
 	PreferredEndpoint string `json:"preferredEndpoint,omitempty"`
 	// UpstreamProtocol selects the Kiro data-plane protocol: "responses" (default)
@@ -307,9 +312,12 @@ func Load() error {
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
 
-	data, err := os.ReadFile(cfgPath)
+	loaded, err := CurrentStore().Load()
 	if err != nil {
-		if os.IsNotExist(err) {
+		return err
+	}
+	if loaded == nil {
+		{
 			// Create default configuration.
 			// Binds to 0.0.0.0 by default for Docker/container compatibility.
 			cfg = &Config{
@@ -321,13 +329,9 @@ func Load() error {
 			}
 			return saveLocked()
 		}
-		return err
 	}
 
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return err
-	}
+	c := *loaded
 	normalizedMappings, err := normalizeModelMappings(c.ModelMappings)
 	if err != nil {
 		return fmt.Errorf("load modelMappings: %w", err)
@@ -400,11 +404,7 @@ func newUUID() string {
 // here, and a plain truncate+write could interleave into invalid JSON (the next
 // start would then fail to load any accounts/keys).
 func Save() error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(cfgPath, data, 0600)
+	return CurrentStore().Save(cfg)
 }
 
 // writeFileAtomic writes data to a temp file next to path and renames it into
@@ -1037,7 +1037,8 @@ func UpdateStats(totalReq, successReq, failedReq, totalTokens int, totalCredits 
 	cfg.FailedRequests = failedReq
 	cfg.TotalTokens = totalTokens
 	cfg.TotalCredits = totalCredits
-	return Save()
+	scheduleSaveLocked()
+	return nil
 }
 
 func GetStats() (int, int, int, int, float64) {
@@ -1062,7 +1063,8 @@ func UpdateAccountStats(id string, requestCount, errorCount, totalTokens int, to
 			cfg.Accounts[i].TotalTokens = totalTokens
 			cfg.Accounts[i].TotalCredits = totalCredits
 			cfg.Accounts[i].LastUsed = lastUsed
-			return Save()
+			scheduleSaveLocked()
+			return nil
 		}
 	}
 	return nil
@@ -1587,5 +1589,47 @@ func SetModelEnabled(id string, enabled bool) error {
 		kept = append(kept, id)
 	}
 	cfg.DisabledModels = kept
+	return Save()
+}
+
+// GetLogBodiesKB returns how many KB of request/response bodies to record per
+// request (0 = off).
+func GetLogBodiesKB() int {
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	if cfg == nil {
+		return 0
+	}
+	return cfg.LogBodiesKB
+}
+
+// GetLogRetentionDays returns how long request logs are kept (0 = default).
+func GetLogRetentionDays() int {
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	if cfg == nil {
+		return 0
+	}
+	return cfg.LogRetentionDays
+}
+
+// UpdateLoggingSettings changes body capture and retention.
+func UpdateLoggingSettings(bodiesKB, retentionDays int) error {
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	if cfg == nil {
+		return ErrConfigUnavailable
+	}
+	if bodiesKB < 0 {
+		bodiesKB = 0
+	}
+	if bodiesKB > 1024 {
+		bodiesKB = 1024
+	}
+	if retentionDays < 0 {
+		retentionDays = 0
+	}
+	cfg.LogBodiesKB = bodiesKB
+	cfg.LogRetentionDays = retentionDays
 	return Save()
 }

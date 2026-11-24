@@ -114,6 +114,7 @@ func (h *Handler) checkAdminAuth(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if !adminPasswordMatches(r.Header.Get("X-Admin-Password")) {
 		adminAuthLimiter.fail(ip, now)
+		h.audit(r, "login.failed", "", nil)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"Unauthorized"}`))

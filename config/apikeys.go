@@ -178,7 +178,8 @@ func RecordApiKeyUsage(id string, tokens int64, credits float64) error {
 			}
 			cfg.ApiKeys[i].RequestsCount++
 			cfg.ApiKeys[i].LastUsedAt = time.Now().Unix()
-			return saveLocked()
+			scheduleSaveLocked()
+			return nil
 		}
 	}
 	return errors.New("api key not found")

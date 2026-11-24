@@ -10,8 +10,10 @@ import (
 	"kiro-go/config"
 	"kiro-go/logger"
 	"kiro-go/pool"
+	"kiro-go/telemetry"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +94,10 @@ type Handler struct {
 	microsoftFlowMu       sync.Mutex
 	microsoftCanceled     map[string]time.Time
 	microsoftDiscoveries  map[string]*microsoftProfileDiscovery
+	// Telemetry and persistence (database backend); nil when not configured.
+	sink      telemetry.Sink
+	logReader telemetry.Reader
+	respStore telemetry.ResponseStore
 	// sessionAffinity maps apiKeyID → accountID (see pickAccount).
 	sessionAffinity sync.Map
 }
@@ -432,6 +438,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Cap upstream calls per client request (chat endpoints and playground).
 	if !isAdmin || strings.HasPrefix(path, "/admin/api/playground/") {
 		r = r.WithContext(withUpstreamBudget(r.Context(), maxUpstreamAttempts()))
+	}
+
+	// Trace API requests for the request log. The record is produced after
+	// the handler returns and handed to an asynchronous writer.
+	if ep := endpointForPath(path); ep != "" && ep != "models" && r.Method == http.MethodPost {
+		tw, tr, finish := h.beginTrace(w, r, ep)
+		defer finish()
+		w, r = tw, tr
 	}
 
 	// 路由
@@ -985,7 +999,7 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 	// Pure native web_search: relay via Kiro MCP (generateAssistantResponse does not run it).
 	if hasWebSearchTool(&req) {
-		h.handleWebSearchRequest(w, &req, estimatedInputTokens, apiKeyID)
+		h.handleWebSearchRequest(r.Context(), w, &req, estimatedInputTokens, apiKeyID)
 		return
 	}
 
@@ -1427,7 +1441,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			if !messageStarted {
 				continue
 			}
-			h.recordFailureWithDetails("claude", model, account.ID, err)
+			h.recordFailureWithDetails(ctx, "claude", model, account.ID, err)
 			h.sendSSE(w, flusher, "error", map[string]interface{}{
 				"type":  "error",
 				"error": map[string]string{"type": "api_error", "message": err.Error()},
@@ -1456,11 +1470,11 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		}
 		outputTokens = estimateClaudeOutputTokens(outputContent, thinkingOutput, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog("claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		stopReason := mapClaudeStopReason(upstreamStopReason, len(toolUses))
 
@@ -1484,7 +1498,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
-	h.recordFailureWithDetails("claude", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
 	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
 }
 
@@ -1546,8 +1560,11 @@ func (h *Handler) recordSuccess(inputTokens, outputTokens int, credits float64) 
 // recordSuccessForApiKey is recordSuccess + per-API-key usage attribution.
 // When apiKeyID is empty (legacy single-key path or unauthenticated path), only the
 // global counters are updated. Persistence errors are logged but do not propagate.
-func (h *Handler) recordSuccessForApiKey(apiKeyID string, inputTokens, outputTokens int, credits float64) {
+func (h *Handler) recordSuccessForApiKey(ctx context.Context, apiKeyID string, inputTokens, outputTokens int, credits float64) {
 	h.recordSuccess(inputTokens, outputTokens, credits)
+	if tr := traceFrom(ctx); tr != nil {
+		tr.setUsage(inputTokens, outputTokens, credits)
+	}
 	if apiKeyID == "" {
 		return
 	}
@@ -1557,7 +1574,7 @@ func (h *Handler) recordSuccessForApiKey(apiKeyID string, inputTokens, outputTok
 }
 
 // recordFailureWithDetails records a failure and stores it in the request logs.
-func (h *Handler) recordFailureWithDetails(endpoint, model, accountID string, err error) {
+func (h *Handler) recordFailureWithDetails(ctx context.Context, endpoint, model, accountID string, err error) {
 	atomic.AddInt64(&h.totalRequests, 1)
 	atomic.AddInt64(&h.failedRequests, 1)
 
@@ -1567,6 +1584,9 @@ func (h *Handler) recordFailureWithDetails(endpoint, model, accountID string, er
 
 	errMsg := err.Error()
 	errType := classifyError(errMsg)
+	if tr := traceFrom(ctx); tr != nil {
+		tr.setFailure(model, accountID, errMsg, errType)
+	}
 
 	entry := RequestLog{
 		Time:      time.Now().Unix(),
@@ -1582,7 +1602,10 @@ func (h *Handler) recordFailureWithDetails(endpoint, model, accountID string, er
 }
 
 // recordSuccessLog records a successful request in the request logs.
-func (h *Handler) recordSuccessLog(endpoint, model, accountID string, tokens int, credits float64, durationMs int64) {
+func (h *Handler) recordSuccessLog(ctx context.Context, endpoint, model, accountID string, tokens int, credits float64, durationMs int64) {
+	if tr := traceFrom(ctx); tr != nil {
+		tr.setSuccess(model, accountID)
+	}
 	entry := RequestLog{
 		Time:      time.Now().Unix(),
 		Endpoint:  endpoint,
@@ -1743,11 +1766,11 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		}
 		outputTokens = estimateClaudeOutputTokens(finalContent, rawThinkingContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog("claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		responseThinkingContent := rawThinkingContent
 		includeEmptyThinkingBlock := thinking && thinkingOpts.OmitDisplay && rawThinkingContent != ""
@@ -1787,7 +1810,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		return
 	}
 
-	h.recordFailureWithDetails("claude", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
 	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
 }
 
@@ -2221,7 +2244,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			if !responseStarted {
 				continue
 			}
-			h.recordFailureWithDetails("openai", model, account.ID, err)
+			h.recordFailureWithDetails(ctx, "openai", model, account.ID, err)
 			sendStreamError(err)
 			return
 		}
@@ -2250,11 +2273,11 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			outputTokens += estimateApproxTokens(tc.Function.Arguments)
 		}
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog("openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		finishReason := mapOpenAIFinishReason(upstreamStopReason, len(toolCalls))
 
 		chunk := map[string]interface{}{
@@ -2281,7 +2304,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
-	h.recordFailureWithDetails("openai", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
 	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
 }
 
@@ -2379,11 +2402,11 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		}
 		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
 
-		h.recordSuccessForApiKey(apiKeyID, inputTokens, outputTokens, credits)
+		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
 		h.pool.RecordSuccess(account.ID)
 		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
 		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog("openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
+		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		thinkingFormat := config.GetThinkingConfig().OpenAIFormat
 		resp := KiroToOpenAIResponseWithReasoning(finalContent, reasoningContent, toolUses, inputTokens, outputTokens, model, thinkingFormat, upstreamStopReason, cacheUsage, cacheProfile != nil)
@@ -2397,7 +2420,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		return
 	}
 
-	h.recordFailureWithDetails("openai", model, "", lastErr)
+	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
 	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
 }
 
@@ -2530,9 +2553,25 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	if !h.checkAdminAuth(w, r) {
 		return
 	}
+	// Audit every state-changing admin call (method, path and result only:
+	// bodies can contain credentials and are never recorded).
+	if r.Method != http.MethodGet && !strings.HasPrefix(r.URL.Path, "/admin/api/playground/") {
+		sw := &tracingWriter{ResponseWriter: w}
+		w = sw
+		defer func() {
+			status := sw.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			h.audit(r, r.Method+" "+strings.TrimPrefix(r.URL.Path, "/admin/api"), "", map[string]string{"status": strconv.Itoa(status)})
+		}()
+	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/admin/api")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if h.routeTelemetryAdmin(w, r, path) {
+		return
+	}
 
 	switch {
 	case path == "/accounts" && r.Method == "GET":
@@ -4253,6 +4292,13 @@ func (h *Handler) apiClearLogs(w http.ResponseWriter, r *http.Request) {
 	h.requestLogsMu.Lock()
 	h.requestLogs = h.requestLogs[:0]
 	h.requestLogsMu.Unlock()
+	if c, ok := h.logReader.(interface{ ClearRequests(context.Context) error }); ok {
+		if err := c.ClearRequests(r.Context()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
@@ -4992,4 +5038,13 @@ func tokenNeedsRefresh(account *config.Account) bool {
 		return strings.TrimSpace(account.RefreshToken) != ""
 	}
 	return time.Now().Unix() >= account.ExpiresAt-tokenRefreshSkewSeconds
+}
+
+// UseTelemetry connects request logging, log queries and the stored-responses
+// backend (all optional; nil keeps the in-memory/file behaviour).
+func (h *Handler) UseTelemetry(sink telemetry.Sink, reader telemetry.Reader, responses telemetry.ResponseStore) {
+	h.sink = sink
+	h.logReader = reader
+	h.respStore = responses
+	responseBackend = responses
 }

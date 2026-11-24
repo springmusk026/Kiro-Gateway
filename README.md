@@ -130,11 +130,43 @@ For users in restricted network regions, configure an outbound proxy in the admi
 
 The setting takes effect immediately without restarting.
 
+## Storage
+
+Kiro-Go stores its data in one of two backends:
+
+| Backend | When | What is stored |
+|---|---|---|
+| **PostgreSQL** (recommended) | `DATABASE_URL` is set — the default `docker-compose.yml` runs a `postgres:16` service for you | settings, accounts, API keys, stored `/v1/responses` conversations, **full request history** and an **audit log** of admin actions |
+| JSON file | no `DATABASE_URL` | `data/config.json` and `data/responses/*.json`; request logs are kept in memory only |
+
+**Migrating from `config.json`.** Point Kiro-Go at an empty database and start it: the existing
+`data/config.json` and stored responses are imported automatically on the first start (the JSON files are
+left untouched as a backup). You can also migrate by hand, and export back to JSON at any time:
+
+```bash
+kiro-go migrate --from data/config.json --to "postgres://kiro:kiro@localhost:5432/kiro?sslmode=disable"
+kiro-go export --from "$DATABASE_URL" --out config.backup.json
+```
+
+In Docker: `docker compose run --rm kiro-go ./kiro-go export --out /app/data/config.backup.json`.
+
+**Request history without slowing inference.** Each request is summarised (endpoint, model, account, API key,
+client, protocol, tokens, credits, latency, time to first byte, upstream attempts, errors) after the response is
+sent and handed to a background writer that batch-inserts into PostgreSQL. If the database is slow or
+unavailable, records are dropped and counted instead of delaying requests; usage counters are flushed in the
+background at most once per second. Recording request and response **bodies** is off by default (they can
+contain sensitive prompts) — enable it with a size cap under Settings → Logging. Logs are kept for 30 days by
+default (configurable).
+
+Building from source requires Go 1.25+.
+
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CONFIG_PATH` | Config file path | `data/config.json` |
+| `CONFIG_PATH` | Config file path (JSON backend, and the source for the first-start import) | `data/config.json` |
+| `DATABASE_URL` | PostgreSQL connection URL; enables the database backend | – |
+| `KIRO_LOG_BODIES_KB` | Record up to this many KB of each request/response body (overrides the setting) | `0` (off) |
 | `ADMIN_PASSWORD` | Admin panel password (overrides config) | generated on first start |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `KIRO_UPSTREAM_PROTOCOL` | `auto`, `responses` or `legacy` (Settings → Endpoint overrides it) | `auto` |

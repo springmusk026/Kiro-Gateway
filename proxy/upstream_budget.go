@@ -66,3 +66,19 @@ func jitter(d time.Duration) time.Duration {
 	spread := int64(d) * 3 / 10
 	return d - time.Duration(spread) + time.Duration(rand.Int63n(2*spread+1))
 }
+
+// attemptsUsed reports how many upstream attempts a request consumed.
+func attemptsUsed(ctx context.Context) int {
+	b, ok := ctx.Value(upstreamBudgetKey{}).(*upstreamBudget)
+	if !ok {
+		return 0
+	}
+	used := int(maxUpstreamAttempts()) - int(b.remaining.Load())
+	if used < 0 {
+		return 0
+	}
+	if max := int(maxUpstreamAttempts()); used > max {
+		return max
+	}
+	return used
+}
