@@ -1,4 +1,4 @@
-import { Database, Filter, Globe, Route, ShieldCheck, Wrench, type LucideIcon } from 'lucide-react'
+import { Database, Filter, Globe, Route, ShieldCheck, Wallet, Wrench, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '@/components/app/page-header'
 import { useI18n } from '@/lib/i18n'
@@ -6,6 +6,7 @@ import type { MessageKey } from '@/locales/en'
 import { cn } from '@/lib/utils'
 import { LoggingCard, StorageCard } from './logging-section'
 import { AboutCard, ResetStatsCard } from './maintenance-section'
+import { AlertsCard, BudgetsCard, UsageRoutingCard } from './budgets-section'
 import { ProxyCard } from './network-section'
 import { PromptFilterCard } from './prompt-filter-section'
 import { EndpointCard, UsageCard } from './routing-section'
@@ -15,7 +16,8 @@ import { ApiAccessCard, PasswordCard } from './security-section'
 type Section = { id: string; icon: LucideIcon; title: MessageKey; desc: MessageKey; cards: React.FC[] }
 const SECTIONS: Section[] = [
   { id: 'security', icon: ShieldCheck, title: 'settings.secSecurity', desc: 'settings.secSecurityDesc', cards: [ApiAccessCard, PasswordCard] },
-  { id: 'routing', icon: Route, title: 'settings.secRouting', desc: 'settings.secRoutingDesc', cards: [EndpointCard, UsageCard] },
+  { id: 'routing', icon: Route, title: 'settings.secRouting', desc: 'settings.secRoutingDesc', cards: [EndpointCard, UsageCard, UsageRoutingCard] },
+  { id: 'budgets', icon: Wallet, title: 'cost.secBudgets', desc: 'cost.secBudgetsDesc', cards: [BudgetsCard, AlertsCard] },
   { id: 'prompt-filter', icon: Filter, title: 'settings.secFilter', desc: 'settings.secFilterDesc', cards: [PromptFilterCard] },
   { id: 'network', icon: Globe, title: 'settings.secNetwork', desc: 'settings.secNetworkDesc', cards: [ProxyCard] },
   { id: 'logging', icon: Database, title: 'settings.secLogging', desc: 'settings.secLoggingDesc', cards: [StorageCard, LoggingCard] },

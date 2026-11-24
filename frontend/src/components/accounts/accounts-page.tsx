@@ -42,6 +42,7 @@ import { useI18n } from '@/lib/i18n'
 import { accountApi, invalidateAccounts, useAccounts, useRefreshAllModels } from '@/lib/queries.accounts'
 import type { NewAccountRef } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { PoolUsageCard } from './pool-usage'
 import { AccountDetailSheet } from './account-detail'
 import { AccountsCards, AccountsTable } from './accounts-list'
 import { AccountActionsProvider, type DetailTab } from './actions'
@@ -352,6 +353,8 @@ export function AccountsPage() {
               <SummaryChip icon={Ban} tone="danger" label={t('accounts.summary.banned')} value={counts.banned} active={status === 'banned'} onClick={chip('banned')} />
               <SummaryChip icon={AlertTriangle} tone="warning" label={t('accounts.summary.attention')} value={counts.attention} active={status === 'attention'} onClick={chip('attention')} />
             </div>
+
+            <PoolUsageCard />
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative flex-1 sm:max-w-sm">

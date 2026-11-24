@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CostAlertsBanner } from '@/components/app/cost-alerts'
 import { PageHeader } from '@/components/app/page-header'
 import { useI18n } from '@/lib/i18n'
 import { ApiKeysCard } from './api-keys-card'
@@ -12,6 +13,7 @@ export function KeysPage() {
   return (
     <div className="space-y-6">
       <PageHeader title={t('nav.keys')} description={t('page.keys')} />
+      <CostAlertsBanner />
       <div className="stagger space-y-6">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <EndpointsCard />

@@ -231,9 +231,10 @@ export function UsageCell({ account: a }: { account: Account }) {
         <span className={cn('tabular', pct >= 90 ? 'text-destructive' : 'text-muted-foreground')}>{pct.toFixed(1)}%</span>
       </div>
       <UsageBar fraction={a.usagePercent} />
-      {a.nextResetDate && (
-        <p className="text-[11px] text-muted-foreground">{t('accounts.usage.resets', { date: a.nextResetDate })}</p>
-      )}
+      <p className="text-[11px] text-muted-foreground">
+        <span className="tabular">{t('cost.left', { n: Math.max(0, a.usageLimit - a.usageCurrent).toFixed(1) })}</span>
+        {a.nextResetDate && <> · {t('accounts.usage.resets', { date: a.nextResetDate })}</>}
+      </p>
     </div>
   )
 }

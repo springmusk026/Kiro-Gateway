@@ -222,6 +222,9 @@ export interface ApiKeyView {
   lastUsedAt?: number
   tokenLimit?: number
   creditLimit?: number
+  dailyCreditLimit?: number
+  /** Credits used today (budget day, see Settings → Budgets & alerts). */
+  dailyCreditsUsed?: number
   tokensUsed: number
   creditsUsed: number
   requestsCount: number
@@ -294,6 +297,8 @@ export interface RequestRecord {
   attempts: number
   requestBytes: number
   responseBytes: number
+  /** Model the request was retried on after its own was unavailable. */
+  fallbackModel?: string
   requestBody?: string
   responseBody?: string
 }

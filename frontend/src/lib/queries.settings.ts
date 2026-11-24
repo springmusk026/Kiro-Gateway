@@ -102,6 +102,7 @@ export interface ApiKeyInput {
   enabled?: boolean
   tokenLimit?: number
   creditLimit?: number
+  dailyCreditLimit?: number
 }
 
 export function useApiKeys() {

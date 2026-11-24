@@ -121,6 +121,16 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
               t('keys.neverUsed')
             )}
           </p>
+          {!!k.dailyCreditLimit && (
+            <p
+              className={cn(
+                'mt-0.5 text-xs tabular',
+                (k.dailyCreditsUsed ?? 0) >= k.dailyCreditLimit ? 'text-destructive' : 'text-muted-foreground',
+              )}
+            >
+              {t('cost.keyToday', { used: (k.dailyCreditsUsed ?? 0).toFixed(2), limit: k.dailyCreditLimit })}
+            </p>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-4">

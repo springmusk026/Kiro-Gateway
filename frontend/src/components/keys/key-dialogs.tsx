@@ -12,8 +12,8 @@ import { useI18n } from '@/lib/i18n'
 import { useCreateApiKey, useUpdateApiKey, type ApiKeyInput } from '@/lib/queries.settings'
 import type { ApiKeyView } from '@/lib/types'
 
-type Form = { name: string; key: string; enabled: boolean; tokenLimit: string; creditLimit: string }
-const blank: Form = { name: '', key: '', enabled: true, tokenLimit: '', creditLimit: '' }
+type Form = { name: string; key: string; enabled: boolean; tokenLimit: string; creditLimit: string; dailyCreditLimit: string }
+const blank: Form = { name: '', key: '', enabled: true, tokenLimit: '', creditLimit: '', dailyCreditLimit: '' }
 
 /** Create (editing = null) or edit an API key. */
 export function KeyDialog({
@@ -43,6 +43,7 @@ export function KeyDialog({
             enabled: editing.enabled,
             tokenLimit: editing.tokenLimit ? String(editing.tokenLimit) : '',
             creditLimit: editing.creditLimit ? String(editing.creditLimit) : '',
+            dailyCreditLimit: editing.dailyCreditLimit ? String(editing.dailyCreditLimit) : '',
           }
         : blank,
     )
@@ -51,9 +52,13 @@ export function KeyDialog({
   const tokErr = f.tokenLimit !== '' && !/^\d+$/.test(f.tokenLimit.trim()) ? t('keys.limitIntError') : null
   const credErr =
     f.creditLimit !== '' && (!/^\d*\.?\d+$/.test(f.creditLimit.trim()) || Number.isNaN(+f.creditLimit)) ? t('keys.limitNumError') : null
+  const dailyErr =
+    f.dailyCreditLimit !== '' && (!/^\d*\.?\d+$/.test(f.dailyCreditLimit.trim()) || Number.isNaN(+f.dailyCreditLimit))
+      ? t('keys.limitNumError')
+      : null
   const keyErr = f.key !== '' && /\s/.test(f.key) ? t('keys.keyWhitespace') : f.key !== '' && f.key.length < 8 ? t('keys.keyShort') : null
   const pending = create.isPending || update.isPending
-  const invalid = !!(tokErr || credErr || keyErr)
+  const invalid = !!(tokErr || credErr || dailyErr || keyErr)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,6 +69,7 @@ export function KeyDialog({
       enabled: f.enabled,
       tokenLimit: f.tokenLimit ? parseInt(f.tokenLimit, 10) : 0,
       creditLimit: f.creditLimit ? parseFloat(f.creditLimit) : 0,
+      dailyCreditLimit: f.dailyCreditLimit ? parseFloat(f.dailyCreditLimit) : 0,
     }
     try {
       if (editing) {
@@ -149,6 +155,19 @@ export function KeyDialog({
               {credErr && <p className="text-xs text-destructive">{credErr}</p>}
             </div>
             <p className="col-span-2 -mt-1 text-xs text-muted-foreground">{t('keys.limitHint')}</p>
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="k-daily">{t('cost.dailyKeyLimit')}</Label>
+              <Input
+                id="k-daily"
+                inputMode="decimal"
+                className="tabular"
+                placeholder={t('keys.unlimited')}
+                value={f.dailyCreditLimit}
+                aria-invalid={!!dailyErr}
+                onChange={(e) => setF({ ...f, dailyCreditLimit: e.target.value })}
+              />
+              <p className={dailyErr ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>{dailyErr ?? t('cost.dailyKeyHint')}</p>
+            </div>
           </div>
           <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
             <Label htmlFor="k-enabled">{t('common.enabled')}</Label>

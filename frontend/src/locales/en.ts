@@ -6,6 +6,7 @@ import { keysEn } from './en.keys'
 import { logsEn } from './en.logs'
 import { settingsEn } from './en.settings'
 import { analyticsEn } from './en.analytics'
+import { costEn } from './en.cost'
 
 /** English messages: the source of truth for all UI text. */
 export const en = {
@@ -17,6 +18,7 @@ export const en = {
   ...logsEn,
   ...settingsEn,
   ...analyticsEn,
+  ...costEn,
 
   'app.name': 'Kiro-Go',
   'app.tagline': 'API Gateway',
