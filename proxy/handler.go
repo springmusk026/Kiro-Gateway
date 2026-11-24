@@ -4564,6 +4564,10 @@ func (h *Handler) serveAdminPage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) serveStaticFile(w http.ResponseWriter, r *http.Request) {
 	rel := strings.TrimPrefix(r.URL.Path, "/admin/")
 	if webFileExists(rel) {
+		if strings.HasPrefix(rel, "assets/") {
+			// Content-hashed build output: safe to cache forever.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		serveWebFile(w, r, rel)
 		return
 	}
