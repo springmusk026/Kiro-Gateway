@@ -611,5 +611,10 @@
   "playground.total": "总耗时",
   "overview.openTitle": "API 对网络开放",
   "overview.openText": "未开启 API 密钥验证且服务监听在公网地址，任何能访问该端口的人都可以使用你的 Kiro 账号。",
-  "overview.openAction": "立即加固"
+  "overview.openAction": "立即加固",
+  "settings.upstreamProtocol": "上游协议",
+  "settings.protocolAuto": "自动（推荐）",
+  "settings.protocolResponses": "Responses API（runtime /v1/responses）",
+  "settings.protocolLegacy": "旧版（generateAssistantResponse）",
+  "settings.upstreamProtocolHint": "自动模式优先使用 Responses API，当 Kiro 拒绝某协议时按账号切换并记住可用的协议。"
 }

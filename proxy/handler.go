@@ -4628,6 +4628,7 @@ func (h *Handler) apiGetEndpointConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"preferredEndpoint": config.GetPreferredEndpoint(),
 		"endpointFallback":  config.GetEndpointFallback(),
+		"upstreamProtocol":  strings.ToLower(strings.TrimSpace(config.GetUpstreamProtocol())),
 	})
 }
 
@@ -4636,6 +4637,7 @@ func (h *Handler) apiUpdateEndpointConfig(w http.ResponseWriter, r *http.Request
 	var req struct {
 		PreferredEndpoint string `json:"preferredEndpoint"`
 		EndpointFallback  *bool  `json:"endpointFallback"`
+		UpstreamProtocol  string `json:"upstreamProtocol,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -4648,6 +4650,19 @@ func (h *Handler) apiUpdateEndpointConfig(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(400)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid endpoint, must be: auto, kiro, codewhisperer, or amazonq"})
 		return
+	}
+
+	if p := strings.ToLower(strings.TrimSpace(req.UpstreamProtocol)); p != "" {
+		if p != responsesProtocolAuto && p != responsesProtocolResponses && p != responsesProtocolLegacy {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid upstreamProtocol, must be: auto, responses, or legacy"})
+			return
+		}
+		if err := config.UpdateUpstreamProtocol(p); err != nil {
+			w.WriteHeader(500)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	if err := config.UpdatePreferredEndpoint(req.PreferredEndpoint); err != nil {

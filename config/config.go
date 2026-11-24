@@ -1341,7 +1341,9 @@ func GetUpstreamProtocol() string {
 	if env := strings.TrimSpace(os.Getenv("KIRO_UPSTREAM_PROTOCOL")); env != "" {
 		return env
 	}
-	return "responses"
+	// "auto" tries /v1/responses first and falls back to the legacy
+	// operation per account when upstream rejects the protocol.
+	return "auto"
 }
 
 // UpdateUpstreamProtocol persists the upstream protocol choice.

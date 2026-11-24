@@ -367,12 +367,12 @@ func CallKiroAPI(account *config.Account, payload *KiroPayload, callback *KiroSt
 
 // CallKiroAPIContext calls Kiro while respecting cancellation from the client request.
 func CallKiroAPIContext(ctx context.Context, account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
-	// The legacy generateAssistantResponse operation is retired upstream, so
-	// OAuth accounts go straight to the /v1/responses transport.
-	if useResponsesUpstream(account) {
-		return callKiroResponsesAPIContext(ctx, account, payload, callback)
-	}
+	return callKiroWithProtocolSelection(ctx, account, payload, callback)
+}
 
+// callKiroLegacyAPIContext calls the generateAssistantResponse operation
+// (AWS event stream).
+func callKiroLegacyAPIContext(ctx context.Context, account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}

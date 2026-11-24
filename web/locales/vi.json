@@ -611,5 +611,10 @@
   "playground.total": "Tổng",
   "overview.openTitle": "API đang mở ra mạng",
   "overview.openText": "Chưa bật xác thực API key và máy chủ lắng nghe trên địa chỉ công khai, nên bất kỳ ai truy cập được đều có thể dùng tài khoản Kiro của bạn.",
-  "overview.openAction": "Bảo mật ngay"
+  "overview.openAction": "Bảo mật ngay",
+  "settings.upstreamProtocol": "Giao thức upstream",
+  "settings.protocolAuto": "Tự động (khuyến nghị)",
+  "settings.protocolResponses": "Responses API (runtime /v1/responses)",
+  "settings.protocolLegacy": "Cũ (generateAssistantResponse)",
+  "settings.upstreamProtocolHint": "Tự động thử Responses API trước và chuyển theo từng tài khoản khi Kiro từ chối một giao thức, ghi nhớ giao thức hoạt động."
 }

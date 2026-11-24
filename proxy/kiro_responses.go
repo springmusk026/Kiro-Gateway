@@ -107,15 +107,8 @@ type responsesEvent struct {
 // useResponsesUpstream reports whether the responses transport should be used
 // for this account. API-key accounts keep the legacy CLI runtime path.
 func useResponsesUpstream(account *config.Account) bool {
-	if account == nil || config.IsAPIKeyAccount(account) {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(config.GetUpstreamProtocol())) {
-	case responsesProtocolLegacy:
-		return false
-	default:
-		return true
-	}
+	// "auto" starts on the responses transport (see upstream_protocol.go).
+	return upstreamProtocolMode(account) != responsesProtocolLegacy
 }
 
 func responsesOrigin(payload *KiroPayload) string {

@@ -611,5 +611,10 @@
   "playground.total": "Total",
   "overview.openTitle": "Your API is open to the network",
   "overview.openText": "API key verification is off and the server listens on a public address, so anyone who can reach it can use your Kiro accounts.",
-  "overview.openAction": "Secure it"
+  "overview.openAction": "Secure it",
+  "settings.upstreamProtocol": "Upstream protocol",
+  "settings.protocolAuto": "Auto (recommended)",
+  "settings.protocolResponses": "Responses API (runtime /v1/responses)",
+  "settings.protocolLegacy": "Legacy (generateAssistantResponse)",
+  "settings.upstreamProtocolHint": "Auto tries the Responses API first and switches per account when Kiro rejects a protocol, remembering what works."
 }

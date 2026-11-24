@@ -1691,12 +1691,14 @@
     const d = await res.json();
     $('preferredEndpoint').value = d.preferredEndpoint || 'auto';
     $('endpointFallback').checked = d.endpointFallback !== false;
+    if ($('upstreamProtocol')) $('upstreamProtocol').value = d.upstreamProtocol || 'auto';
   }
   async function saveEndpointConfig() {
     const res = await api('/endpoint', {
       method: 'POST', body: JSON.stringify({
         preferredEndpoint: $('preferredEndpoint').value,
-        endpointFallback: $('endpointFallback').checked
+        endpointFallback: $('endpointFallback').checked,
+        upstreamProtocol: $('upstreamProtocol') ? $('upstreamProtocol').value : undefined
       })
     });
     const d = await res.json();
