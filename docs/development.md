@@ -63,6 +63,17 @@ the real `/v1/responses` upstream with an account from that config (uses credits
 - New settings go through `config/` (persisted by whichever store is active) and get an admin API route,
   audited automatically for non-GET calls.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request: `gofmt`, `go vet`, all Go tests (the storage
+tests against a PostgreSQL service container), the race detector on `proxy/`, and the console type check and
+build. Run the same locally before pushing:
+
+```bash
+gofmt -l $(git ls-files '*.go'); go vet ./... && go test ./... && go test -race ./proxy/
+(cd frontend && npx tsc --noEmit && npm run build:only)
+```
+
 ## Releases
 
 Pushing to `main` builds and publishes `ghcr.io/springmusk026/kiro-go:latest` (amd64 + arm64) through
