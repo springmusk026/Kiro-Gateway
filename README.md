@@ -37,8 +37,11 @@ careful upstream behaviour.
   and headers aligned with the official Kiro CLI.
 
 **A console you'd actually use** (`/admin`)
-- Overview with traffic and usage breakdowns, accounts with quota and health, model catalog with
-  enable/disable, playground, API keys with per-key quotas and copy-paste client setup.
+- Overview, and an **Analytics** page: requests, success rate, credits, tokens, cache share, latency and
+  time-to-first-token percentiles with change vs the previous period; trends; breakdowns by model, account,
+  key, client, endpoint, protocol and status; error classes; an activity heatmap; the slowest requests.
+- Accounts with quota and health; Models with the live catalog (enable/disable), aliases and thinking
+  policy; playground; API keys with per-key quotas and copy-paste client setup.
 - Full request history and admin audit log in PostgreSQL, with optional body capture — recorded off the
   request path so it never slows inference.
 - English, 中文, Tiếng Việt; light and dark themes; works on a phone.

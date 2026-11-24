@@ -92,7 +92,7 @@ export const settingsEn = {
   'settings.thinkingBudget': 'Default thinking length',
   'settings.thinkingBudgetHint': 'Tokens, used when a request enables thinking without a budget or effort. Leave empty for 200,000.',
   'settings.thinkingBudgetInvalid': 'Use a value between 1,024 and 200,000.',
-  'settings.effortNote': 'Effort is also sent natively to models that declare effort levels (shown on the Models page).',
+  'settings.effortNote': 'Effort is also sent natively to models that declare effort levels (shown in the Catalog tab).',
   'settings.thinkingSuffix': 'Model suffix (optional)',
   'settings.suffixWhitespace': 'The suffix cannot contain spaces.',
   'settings.openaiFormat': 'OpenAI output format',

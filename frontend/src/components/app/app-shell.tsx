@@ -1,6 +1,7 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   Boxes,
+  ChartColumn,
   FlaskConical,
   Gauge,
   KeyRound,
@@ -53,6 +54,7 @@ const NAV: { section: MessageKey; items: NavItem[] }[] = [
     section: 'nav.workspace',
     items: [
       { to: '/', icon: Gauge, label: 'nav.overview', desc: 'page.overview' },
+      { to: '/analytics', icon: ChartColumn, label: 'nav.analytics', desc: 'page.analytics' },
       { to: '/accounts', icon: Users, label: 'nav.accounts', desc: 'page.accounts' },
       { to: '/models', icon: Boxes, label: 'nav.models', desc: 'page.models' },
       { to: '/playground', icon: FlaskConical, label: 'nav.playground', desc: 'page.playground' },

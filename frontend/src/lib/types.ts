@@ -381,3 +381,125 @@ export interface MigrationResult {
   deleted?: string[]
   status: MigrationStatus
 }
+
+// ---- Analytics (GET /admin/api/analytics) ----
+
+export interface AnalyticsSummary {
+  requests: number
+  errors: number
+  /** HTTP 4xx returned to the client (excluding 429) */
+  clientErrors: number
+  /** HTTP 429/503/529 */
+  throttled: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  credits: number
+  avgLatencyMs: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  p99LatencyMs: number
+  p50TtfbMs: number
+  p95TtfbMs: number
+  avgAttempts: number
+  /** requests that needed more than one upstream attempt */
+  retried: number
+  streamed: number
+  requestBytes: number
+  responseBytes: number
+  accounts: number
+  apiKeys: number
+  models: number
+  /** median output throughput of successful requests */
+  outputTokensPerSec: number
+}
+
+export interface AnalyticsPoint {
+  /** RFC3339, bucket start (epoch-aligned) */
+  time: string
+  requests: number
+  errors: number
+  throttled: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  credits: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  p50TtfbMs: number
+}
+
+export interface AnalyticsGroup {
+  key: string
+  /** account email for the account breakdown */
+  label?: string
+  requests: number
+  errors: number
+  throttled: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  credits: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  p50TtfbMs: number
+  avgAttempts: number
+  /** RFC3339 */
+  lastSeen: string
+}
+
+export type AnalyticsDimension = 'model' | 'account' | 'apiKey' | 'client' | 'endpoint' | 'protocol' | 'status'
+
+export interface AnalyticsError {
+  type: string
+  status: number
+  count: number
+  sample: string
+  /** RFC3339 */
+  lastSeen: string
+}
+
+export interface AnalyticsHeatCell {
+  /** 0 = Sunday */
+  weekday: number
+  hour: number
+  requests: number
+  errors: number
+}
+
+export interface AnalyticsSlow {
+  id: string
+  /** RFC3339 */
+  time: string
+  model: string
+  endpoint: string
+  status: string
+  durationMs: number
+  ttfbMs: number
+  outputTokens: number
+  attempts: number
+}
+
+export interface AnalyticsReport {
+  from: string
+  to: string
+  bucketSec: number
+  summary: AnalyticsSummary
+  /** the preceding window of equal length */
+  previous: AnalyticsSummary
+  series: AnalyticsPoint[] | null
+  breakdowns: Partial<Record<AnalyticsDimension, AnalyticsGroup[] | null>> | null
+  errors: AnalyticsError[] | null
+  heatmap: AnalyticsHeatCell[] | null
+  slowest: AnalyticsSlow[] | null
+}
+
+export interface AnalyticsFilters {
+  model?: string
+  account?: string
+  apiKey?: string
+  endpoint?: string
+}

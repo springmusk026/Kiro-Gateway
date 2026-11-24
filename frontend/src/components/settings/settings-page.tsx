@@ -1,4 +1,4 @@
-import { Database, Filter, Globe, Route, ShieldCheck, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
+import { Database, Filter, Globe, Route, ShieldCheck, Wrench, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '@/components/app/page-header'
 import { useI18n } from '@/lib/i18n'
@@ -6,7 +6,6 @@ import type { MessageKey } from '@/locales/en'
 import { cn } from '@/lib/utils'
 import { LoggingCard, StorageCard } from './logging-section'
 import { AboutCard, ResetStatsCard } from './maintenance-section'
-import { MappingsCard, ThinkingCard } from './models-section'
 import { ProxyCard } from './network-section'
 import { PromptFilterCard } from './prompt-filter-section'
 import { EndpointCard, UsageCard } from './routing-section'
@@ -17,7 +16,6 @@ type Section = { id: string; icon: LucideIcon; title: MessageKey; desc: MessageK
 const SECTIONS: Section[] = [
   { id: 'security', icon: ShieldCheck, title: 'settings.secSecurity', desc: 'settings.secSecurityDesc', cards: [ApiAccessCard, PasswordCard] },
   { id: 'routing', icon: Route, title: 'settings.secRouting', desc: 'settings.secRoutingDesc', cards: [EndpointCard, UsageCard] },
-  { id: 'models', icon: Sparkles, title: 'settings.secModels', desc: 'settings.secModelsDesc', cards: [ThinkingCard, MappingsCard] },
   { id: 'prompt-filter', icon: Filter, title: 'settings.secFilter', desc: 'settings.secFilterDesc', cards: [PromptFilterCard] },
   { id: 'network', icon: Globe, title: 'settings.secNetwork', desc: 'settings.secNetworkDesc', cards: [ProxyCard] },
   { id: 'logging', icon: Database, title: 'settings.secLogging', desc: 'settings.secLoggingDesc', cards: [StorageCard, LoggingCard] },
@@ -56,6 +54,10 @@ export function SettingsPage() {
   // Deep links such as /settings#security.
   useEffect(() => {
     const h = window.location.hash.replace(/^#(sec-)?/, '')
+    if (h === 'models') {
+      window.location.replace(window.location.pathname.replace(/settings\/?$/, 'models') + '?tab=aliases')
+      return
+    }
     if (h && SECTIONS.some((s) => s.id === h)) setTimeout(() => go(h), 50)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

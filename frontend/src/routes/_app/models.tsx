@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowRight, Boxes, Brain, DatabaseZap, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { ArrowRight, Boxes, Brain, Shuffle, DatabaseZap, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/app/copy-button'
@@ -11,6 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { MappingsCard, ThinkingCard } from '@/components/models/model-config'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compact, timeAgo } from '@/lib/format'
@@ -19,14 +21,86 @@ import { useModels, useRefreshModels, useToggleModel } from '@/lib/queries'
 import type { CatalogModel } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-export const Route = createFileRoute('/_app/models')({ component: ModelsPage })
+type ModelsTab = 'catalog' | 'aliases' | 'thinking'
+const TABS: ModelsTab[] = ['catalog', 'aliases', 'thinking']
+
+export const Route = createFileRoute('/_app/models')({
+  validateSearch: (s: Record<string, unknown>): { tab?: ModelsTab } =>
+    typeof s.tab === 'string' && (TABS as string[]).includes(s.tab) && s.tab !== 'catalog' ? { tab: s.tab as ModelsTab } : {},
+  component: ModelsPage,
+})
 
 type Filter = 'all' | 'enabled' | 'disabled'
 
 function ModelsPage() {
+  const { t } = useI18n()
+  const { tab = 'catalog' } = Route.useSearch()
+  const navigate = useNavigate({ from: Route.fullPath })
+  const setTab = (v: string) => navigate({ search: v === 'catalog' ? {} : { tab: v as ModelsTab }, replace: true })
+  const { data } = useModels()
+  const refresh = useRefreshModels()
+  const aliasCount = data?.mappings?.length ?? 0
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('nav.models')}
+        description={t('page.models')}
+        actions={
+          tab === 'catalog' && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                refresh.mutate(undefined, {
+                  onSuccess: () => toast.success(t('models.refreshed')),
+                  onError: (e) => toast.error(e.message),
+                })
+              }
+              disabled={refresh.isPending}
+            >
+              <RefreshCw className={cn('size-4', refresh.isPending && 'animate-spin')} />
+              {t('models.refresh')}
+            </Button>
+          )
+        }
+      />
+      <Tabs value={tab} onValueChange={setTab} className="gap-5">
+        <TabsList>
+          <TabsTrigger value="catalog" className="gap-1.5 px-3">
+            <Boxes className="size-4" />
+            {t('models.tabCatalog')}
+          </TabsTrigger>
+          <TabsTrigger value="aliases" className="gap-1.5 px-3">
+            <Shuffle className="size-4" />
+            {t('models.tabAliases')}
+            {aliasCount > 0 && (
+              <Badge variant="secondary" className="h-5 px-1.5 font-normal tabular">
+                {aliasCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="thinking" className="gap-1.5 px-3">
+            <Brain className="size-4" />
+            {t('models.tabThinking')}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="catalog" className="mt-0">
+          <CatalogTab onAliases={() => setTab('aliases')} />
+        </TabsContent>
+        <TabsContent value="aliases" className="mt-0 max-w-4xl animate-rise">
+          <MappingsCard />
+        </TabsContent>
+        <TabsContent value="thinking" className="mt-0 max-w-4xl animate-rise">
+          <ThinkingCard />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+function CatalogTab({ onAliases }: { onAliases: () => void }) {
   const { t, lang } = useI18n()
   const { data, isLoading, error, refetch } = useModels()
-  const refresh = useRefreshModels()
   const toggle = useToggleModel()
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -68,29 +142,11 @@ function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t('nav.models')}
-        description={t('page.models')}
-        actions={
-          <Button
-            onClick={() =>
-              refresh.mutate(undefined, {
-                onSuccess: () => toast.success(t('models.refreshed')),
-                onError: (e) => toast.error(e.message),
-              })
-            }
-            disabled={refresh.isPending}
-          >
-            <RefreshCw className={cn('size-4', refresh.isPending && 'animate-spin')} />
-            {t('models.refresh')}
-          </Button>
-        }
-      />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <Card className="gap-0 overflow-hidden py-0">
-          <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap items-center gap-3 border-b p-4">
+            <div className="relative min-w-[220px] flex-1 basis-full sm:basis-[260px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('models.search')} className="pl-9" />
             </div>
@@ -172,8 +228,8 @@ function ModelsPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">{t('models.noAliases')}</p>
               )}
-              <Button asChild variant="link" className="h-auto px-0">
-                <Link to="/settings">{t('models.manageAliases')} →</Link>
+              <Button variant="link" className="h-auto px-0" onClick={onAliases}>
+                {t('models.manageAliases')} →
               </Button>
             </CardContent>
           </Card>

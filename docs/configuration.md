@@ -136,6 +136,9 @@ are batch-inserted by a background writer; if the database is slow or down, reco
   Captured bodies are stored separately and deleted with their request.
 - **Retention**: 30 days by default, configurable; old rows are purged in the background.
 - **Audit log**: every admin change (settings, accounts, keys, models, migrations) is recorded with time, client IP and the affected item.
+- The **Analytics** page aggregates the same history (24 h – 90 d, filterable by model, account, API key and
+  endpoint; `GET /admin/api/analytics`). Aggregation runs in PostgreSQL, a few queries at a time, so it never
+  competes with the request recorder.
 - The **Request logs** page filters by status, endpoint, model, account, key and free text, and shows each
   request's timing, routing, usage and bodies. Without a database the page shows the in-memory log.
 
