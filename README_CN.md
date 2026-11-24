@@ -1,150 +1,144 @@
 # Kiro-Go
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker)](docker-compose.yml)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](docs/configuration.md#storage)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-将 Kiro 账号转换为 OpenAI / Anthropic 兼容的 API 服务。
+**自托管网关：把一组 Kiro 账号变成兼容 Anthropic 与 OpenAI 的 API** —— 专为在 Kiro 上运行 Claude Code、Codex、
+IDE 智能体和各类 SDK 而设计，附带管理控制台、请求历史以及对上游的克制访问。
 
-[English](README.md) | 中文 | [Tiếng Việt](README_VI.md)
+[English](README.md) | [中文](README_CN.md) | [Tiếng Việt](README_VI.md)
 
-如果这个项目帮到了你，欢迎点个 Star 支持一下。
+> Kiro-Go 最初基于 [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go)（MIT），现已重写为独立项目：
+> 全新控制台、PostgreSQL 存储、按请求决定的思考模式、API 兼容性改进，以及与官方 Kiro 客户端一致的上游行为。
+> 详见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 功能特性
+## 亮点
 
-- Anthropic `/v1/messages`、OpenAI `/v1/chat/completions` 与 OpenAI `/v1/responses`
-- 多账号池轮询负载均衡
-- 自动 Token 刷新、SSE 流式输出、Web 管理面板
-- 多种认证方式：AWS Builder ID、IAM Identity Center (企业 SSO)、Microsoft 企业 SSO、SSO Token、本地缓存、凭证 JSON、Kiro API Key
-- 用量追踪、账号导入导出、中英越三语
-- 可配置客户端模型映射，并通过 `/v1/models` 对外展示
-- 支持设置出站代理（SOCKS5 / HTTP）
+**你的工具已经会用的 API**
+- Anthropic Messages（`/v1/messages`、`count_tokens`）、OpenAI Chat Completions、OpenAI Responses
+  （`/v1/responses`，支持存储的响应与 `previous_response_id`）以及 `/v1/models`。
+- 官方错误码（Claude Code 遇到 “prompt is too long” 会自动压缩上下文，Codex 收到 `context_length_exceeded`）、
+  SSE 心跳、`tool_choice`、停止序列、请求 ID、浏览器 SDK 所需的 CORS。
+- **思考模式跟随请求** —— Anthropic `thinking` / `output_config.effort`、OpenAI `reasoning_effort`、
+  Responses `reasoning`；对支持的模型原生转发 effort。旧的 `-thinking` 模型后缀仍然可用。
+- 通过 Kiro 的 MCP 端点转发 `web_search` 工具。
+
+**稳健的账号池**
+- 支持 Builder ID、IAM Identity Center / 企业 SSO、Microsoft SSO、SSO Token、凭证 JSON 与 Kiro API Key，自动刷新令牌。
+- 会话亲和：同一会话固定在同一账号，保持 Kiro 的提示缓存命中。
+- 每个请求的上游调用预算、遵循 Kiro 的 `retry-after` 提示、不重放客户端错误、限流或额度耗尽的账号自动冷却、可选的单账号并发上限。
+- 按账号自动选择上游协议（`/v1/responses` 或 `generateAssistantResponse`），请求格式与请求头和官方 Kiro CLI 对齐。
+
+**好用的控制台**（`/admin`）
+- 概览（流量与用量分布）、账号（额度与健康状态）、模型目录（可启用/禁用）、Playground、API Key（按 Key 配额、一键复制客户端配置）。
+- PostgreSQL 中的完整请求历史与管理审计日志，可选记录请求/响应正文 —— 在请求路径之外异步写入，不影响推理速度。
+- English、中文、Tiếng Việt；浅色/深色主题；适配手机。
 
 ## 快速开始
 
 ### Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/Quorinex/Kiro-Go.git
+git clone https://github.com/springmusk026/Kiro-Go.git
 cd Kiro-Go
-mkdir -p data
-docker-compose up -d
+docker compose up -d
+docker compose logs kiro-go | grep -i password   # 首次启动会打印自动生成的管理员密码
 ```
 
-### Docker 运行
+这会在 `8080` 端口启动 Kiro-Go，并附带一个 PostgreSQL 16 容器。打开 `http://localhost:8080/admin` 登录，添加账号并创建
+API Key。可在 `.env` 中设置 `ADMIN_PASSWORD`（以及 `POSTGRES_PASSWORD`）使用自己的密码。
+
+之后更新：
 
 ```bash
-docker run -d \
-  --name kiro-go \
-  -p 8080:8080 \
-  -e ADMIN_PASSWORD=your_secure_password \
-  -v /path/to/data:/app/data \
-  --restart unless-stopped \
-  ghcr.io/quorinex/kiro-go:latest
+git pull && docker compose up -d --build
 ```
 
-### 源码编译
+从 `config.json` 部署迁移过来？首次启动会自动导入，控制台会引导你校验并删除该文件 ——
+见[迁移说明](docs/configuration.md#migrating-from-configjson)。
+
+### Docker 镜像
+
+多架构镜像（amd64、arm64）发布在 `ghcr.io/springmusk026/kiro-go` —— `main` 分支对应 `latest`，另有各版本标签：
 
 ```bash
-git clone https://github.com/Quorinex/Kiro-Go.git
-cd Kiro-Go
+docker run -d --name kiro-go -p 8080:8080 \
+  -e ADMIN_PASSWORD=change-me \
+  -e DATABASE_URL="postgres://kiro:kiro@db-host:5432/kiro?sslmode=disable" \
+  -v "$PWD/data:/app/data" \
+  --restart unless-stopped ghcr.io/springmusk026/kiro-go:latest
+```
+
+不设置 `DATABASE_URL` 时，所有数据保存在 `data/config.json`（没有请求历史）。
+
+### 从源码构建
+
+需要 Go 1.25+ 与 Node 22+（用于控制台）。
+
+```bash
+git clone https://github.com/springmusk026/Kiro-Go.git && cd Kiro-Go
+(cd frontend && npm ci && npm run build)   # 构建控制台到 ./web
 go build -o kiro-go .
 ./kiro-go
 ```
 
-### 部署到 Zeabur
+## 接入客户端
 
-仓库已包含 `Dockerfile`，可直接在 Zeabur 上构建运行。
+**API & Keys** 页面会按你的服务器地址、Key 和模型生成以下配置。
 
-**方式一：面板一键部署**
-
-1. Fork 本仓库到你的 GitHub 账号。
-2. 在 Zeabur 新建服务，选择 **Deploy from GitHub**，绑定刚才 fork 的仓库。
-3. Zeabur 自动识别 `Dockerfile` 并完成构建。
-4. 在 **Networking** 标签暴露端口 `8080` 并绑定域名。
-5. 在 **Variables** 标签至少设置 `ADMIN_PASSWORD`（管理面板密码）。
-6. 如需持久化账号 / 配置，挂载 Volume 到 `/app/data`。
-
-**方式二：CLI 部署**
+**Claude Code**
 
 ```bash
-npm i -g zeabur
-zeabur auth login
-zeabur deploy
+export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_AUTH_TOKEN=<your-api-key>
+export ANTHROPIC_MODEL=claude-sonnet-4.5
+export ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4.5
+claude
 ```
 
-> 命令需在项目根目录执行。CLI 会生成 `.zeabur/context.json` 记录目标 project / service，包含个人 ID，请勿提交。
+**Codex CLI**（`~/.codex/config.toml`）
 
-部署完成后访问 `https://<你的域名>/admin` 登录管理面板。
+```toml
+model = "claude-sonnet-4.5"
+model_provider = "kiro"
+model_reasoning_effort = "medium"
 
-首次运行会在 `data/config.json` 自动生成配置，挂载 `/app/data` 以持久化。首次启动（或密码仍为旧默认值 `changeme`）时会随机生成管理密码，保存到 `data/config.json` 并在日志中打印一次。可通过 `ADMIN_PASSWORD` 环境变量或管理面板设置自己的密码。
-
-## 使用方法
-
-访问 `http://localhost:8080/admin` 登录、添加账号，然后调用 API：
-
-```bash
-# Claude
-curl http://localhost:8080/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "anthropic-version: 2023-06-01" \
-  -d '{"model":"claude-sonnet-4.5","max_tokens":1024,"messages":[{"role":"user","content":"你好！"}]}'
-
-# OpenAI
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer any" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"你好！"}]}'
+[model_providers.kiro]
+name = "Kiro-Go"
+base_url = "http://localhost:8080/v1"
+env_key = "KIRO_API_KEY"
+wire_api = "responses"
 ```
 
-### 添加 Kiro API Key 账号
+**OpenAI / Anthropic SDK** —— 将 `base_url` 指向 `http://localhost:8080/v1`（OpenAI）或 `http://localhost:8080`（Anthropic），
+并使用 Kiro-Go 的 API Key。
 
-管理面板「添加账号」可选择 **API Key**，填写 `ksk_...`（也支持 `ksk_...|region`）。
+更多客户端（Cline、Continue、LiteLLM、cURL）与思考模式选项见 [docs/clients.md](docs/clients.md)。
 
-也可通过凭证导入接口添加：
+## 文档（英文）
 
-```bash
-curl -X POST http://localhost:8080/admin/api/auth/credentials \
-  -H "Content-Type: application/json" \
-  -H "Cookie: <admin-session>" \
-  -d '{"kiroApiKey":"ksk_your_key|us-east-1","authMethod":"api_key","nickname":"cli-key"}'
-```
+| | |
+|---|---|
+| [docs/clients.md](docs/clients.md) | Claude Code、Codex、SDK 及其他工具的接入 |
+| [docs/api.md](docs/api.md) | 接口、兼容性说明、思考模式、模型、错误码 |
+| [docs/configuration.md](docs/configuration.md) | 环境变量、设置项、存储、从 JSON 迁移、日志 |
+| [docs/architecture.md](docs/architecture.md) | 请求流程、上游协议、账号池、缓存与成本 |
+| [docs/development.md](docs/development.md) | 构建、测试、控制台开发、发布 |
+| [CHANGELOG.md](CHANGELOG.md) | 变更记录，包括与原项目的差异 |
 
-API Key 账号会走 Kiro CLI runtime（`https://runtime.{region}.kiro.dev/`），请求头带 `tokentype: API_KEY`，无需 OAuth 刷新，也不使用 `profileArn`。
+## 安全
 
-### 模型映射
-
-可在管理面板「设置 - 模型映射」中配置客户端别名，例如 `kiro-opus-5` → `claude-opus-5`。映射同时作用于 Anthropic、OpenAI Chat Completions 和 OpenAI Responses 接口；每个别名及其配置的 thinking 后缀变体都会出现在 `/v1/models`。客户端模型 ID 匹配不区分大小写，并直接解析到一条上游模型 ID；不允许链式映射。
-
-## 思考模式
-
-在模型名后加后缀（默认 `-thinking`）即可启用，例如 `claude-sonnet-4.5-thinking`。Claude 兼容请求如果带有顶层 `thinking` 配置，例如 `{"type":"enabled","budget_tokens":2048}` 或 `{"type":"adaptive"}`，也会自动启用 thinking 模式。输出格式可在管理面板「设置 - Thinking 模式」中配置。
-
-## 出站代理
-
-可在管理面板「设置 - 出站代理设置」中配置代理。支持 SOCKS5 和 HTTP 代理。
-
-设置保存后即时生效，无需重启服务。
-
-## 环境变量
-
-| 变量 | 说明 | 默认值 |
-|-----|------|-------|
-| `CONFIG_PATH` | 配置文件路径 | `data/config.json` |
-| `ADMIN_PASSWORD` | 管理面板密码（覆盖配置文件） | - |
-
-## 参与贡献
-
-欢迎友好交流。遇到问题时，建议先让 Claude Code、Codex 等工具帮忙排查一下，大部分问题都能自己解决。如果能直接提个 PR 就更好了。
-
-## 友情链接
-
-- [LINUX DO](https://linux.do)
+- 服务默认监听 `0.0.0.0`。对外暴露前请**创建 API Key**（或在设置中开启 API Key 校验），否则任何能访问端口的人都能使用你的账号；未开启时控制台会给出警告。
+- 未设置时首次启动会生成管理员密码；管理登录有频率限制并使用常量时间比较；控制台下发严格的安全响应头。
+- 请求/响应正文记录默认关闭，因为提示词可能包含敏感信息。
+- 对外提供服务时请在前面加 TLS（Caddy、nginx、Cloudflare）。
 
 ## 免责声明
 
-本项目仅供学习和研究目的使用，与 Amazon、AWS 或 Kiro 没有任何关联。用户需自行确保使用行为符合所有适用的服务条款和法律法规，使用风险自负。
+仅供学习与研究使用。与 Amazon、AWS、Kiro 无关。使用者需自行遵守所用账号的服务条款及相关法律。
 
 ## 许可证
 
-[MIT](LICENSE)
+[MIT](LICENSE)。部分代码源自 [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go)（同为 MIT）。

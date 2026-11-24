@@ -613,7 +613,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'keys.snippetThinking': 'Thinking',
   'keys.snippetKeyHint': '粘贴你的一个密钥来填充代码片段。它不会被保存在任何地方。',
   'keys.snippetKeyOpen': '密钥验证已关闭，目前任意值都可用。',
-  'keys.snippetThinkingHint': 'Thinking 会在模型名后添加“{suffix}”。',
+  'keys.snippetThinkingHint': 'Thinking 通过各客户端的原生方式开启（MAX_THINKING_TOKENS、reasoning_effort、thinking），无需模型后缀。',
   'keys.ccShell': 'Shell',
   'keys.ccHint': '在启动 Claude Code 的 Shell 中运行，或将 env 配置块写入 ~/.claude/settings.json。',
   'keys.codexHint': 'Codex 通过 Responses API 与网关通信。',

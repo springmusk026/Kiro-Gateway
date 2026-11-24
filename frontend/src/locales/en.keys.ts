@@ -27,7 +27,7 @@ export const keysEn = {
   'keys.snippetThinking': 'Thinking',
   'keys.snippetKeyHint': 'Paste one of your keys to fill the snippets. It is not saved anywhere.',
   'keys.snippetKeyOpen': 'Key verification is off, so any value works for now.',
-  'keys.snippetThinkingHint': 'Thinking adds “{suffix}” to the model name.',
+  'keys.snippetThinkingHint': 'Thinking is requested the way each client does it natively (MAX_THINKING_TOKENS, reasoning_effort, thinking), no model suffix needed.',
   'keys.ccShell': 'Shell',
   'keys.ccHint': 'Run in the shell you start Claude Code from, or put the env block in ~/.claude/settings.json.',
   'keys.codexHint': 'Codex talks to the gateway through the Responses API.',

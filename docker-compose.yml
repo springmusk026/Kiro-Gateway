@@ -7,6 +7,9 @@ services:
       - ./data:/app/data
     environment:
       - CONFIG_PATH=/app/data/config.json
+      # Admin console password; set it in .env. Left empty, a password is
+      # generated on the first start and printed once in the log.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # PostgreSQL storage: configuration, stored responses, request history and
       # audit log. On the first start an existing data/config.json is imported
       # automatically (the file is kept as a backup). Remove this line to keep

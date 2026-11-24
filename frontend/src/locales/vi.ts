@@ -613,7 +613,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   'keys.snippetThinking': 'Thinking',
   'keys.snippetKeyHint': 'Dán một key của bạn để điền vào các đoạn mã. Key không được lưu ở đâu cả.',
   'keys.snippetKeyOpen': 'Xác minh key đang tắt, nên hiện tại giá trị nào cũng được.',
-  'keys.snippetThinkingHint': 'Thinking thêm “{suffix}” vào tên mô hình.',
+  'keys.snippetThinkingHint': 'Thinking được bật theo cách gốc của từng ứng dụng (MAX_THINKING_TOKENS, reasoning_effort, thinking), không cần hậu tố mô hình.',
   'keys.ccShell': 'Shell',
   'keys.ccHint': 'Chạy trong shell mà bạn khởi động Claude Code, hoặc đặt khối env vào ~/.claude/settings.json.',
   'keys.codexHint': 'Codex giao tiếp với cổng qua Responses API.',

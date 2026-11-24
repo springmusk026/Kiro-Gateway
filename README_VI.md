@@ -1,150 +1,152 @@
 # Kiro-Go
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker)](docker-compose.yml)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](docs/configuration.md#storage)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Chuyển tài khoản Kiro thành dịch vụ API tương thích OpenAI / Anthropic.
+**Gateway tự host biến một nhóm tài khoản Kiro thành API tương thích Anthropic và OpenAI** — dành cho việc chạy
+Claude Code, Codex, các agent trong IDE và SDK trên Kiro, kèm bảng quản trị, lịch sử request và cách gọi upstream
+thận trọng.
 
 [English](README.md) | [中文](README_CN.md) | [Tiếng Việt](README_VI.md)
 
-Nếu dự án này hữu ích với bạn, một Star sẽ rất có ý nghĩa.
+> Kiro-Go khởi đầu từ [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) (MIT) và nay đã được viết lại
+> thành một dự án độc lập: bảng quản trị mới, lưu trữ PostgreSQL, thinking theo từng request, cải thiện tương
+> thích API và hành vi upstream giống client Kiro chính thức. Xem [CHANGELOG.md](CHANGELOG.md).
 
-## Tính năng
+## Điểm nổi bật
 
-- Anthropic `/v1/messages`, OpenAI `/v1/chat/completions` & OpenAI `/v1/responses`
-- Pool nhiều tài khoản với cân bằng tải round-robin
-- Tự làm mới token, SSE streaming, bảng quản trị Web
-- Nhiều cách xác thực: AWS Builder ID, IAM Identity Center (Enterprise SSO), Microsoft Enterprise SSO, SSO Token, cache cục bộ, credentials JSON, Kiro API Key
-- Theo dõi mức dùng, nhập/xuất tài khoản, đa ngôn ngữ (CN / EN / VI)
-- Ánh xạ mô hình phía ứng dụng khách có thể cấu hình và được công khai qua `/v1/models`
-- Hỗ trợ cấu hình proxy ra ngoài (SOCKS5 / HTTP)
+**Các API mà công cụ của bạn đã dùng**
+- Anthropic Messages (`/v1/messages`, `count_tokens`), OpenAI Chat Completions, OpenAI Responses
+  (`/v1/responses`, có lưu response và `previous_response_id`) và `/v1/models`.
+- Mã lỗi chính thức (Claude Code tự nén ngữ cảnh khi gặp "prompt is too long", Codex nhận
+  `context_length_exceeded`), heartbeat SSE, `tool_choice`, stop sequence, request id, CORS cho SDK trên trình duyệt.
+- **Thinking theo request** — Anthropic `thinking` / `output_config.effort`, OpenAI `reasoning_effort`,
+  Responses `reasoning`; mức effort được chuyển nguyên bản tới các mô hình hỗ trợ. Hậu tố `-thinking` cũ vẫn dùng được.
+- Công cụ `web_search` được chuyển qua endpoint MCP của Kiro.
+
+**Nhóm tài khoản ổn định**
+- Builder ID, IAM Identity Center / SSO doanh nghiệp, Microsoft SSO, SSO token, credential JSON và Kiro API key; tự làm mới token.
+- Giữ mỗi cuộc hội thoại trên một tài khoản để cache prompt của Kiro luôn được dùng lại.
+- Giới hạn số lần gọi upstream cho mỗi request, tuân theo `retry-after` của Kiro, không gửi lại lỗi phía client,
+  tạm nghỉ tài khoản bị giới hạn hoặc hết hạn mức, tùy chọn giới hạn đồng thời theo tài khoản.
+- Tự chọn giao thức upstream theo tài khoản (`/v1/responses` hoặc `generateAssistantResponse`), dạng request và
+  header giống Kiro CLI chính thức.
+
+**Bảng quản trị dễ dùng** (`/admin`)
+- Tổng quan lưu lượng và mức dùng, tài khoản (hạn mức, tình trạng), danh mục mô hình (bật/tắt), Playground,
+  API key (hạn mức theo key, đoạn cấu hình client sao chép sẵn).
+- Lịch sử request đầy đủ và nhật ký kiểm tra thao tác quản trị trong PostgreSQL, tùy chọn lưu nội dung request/response —
+  ghi bất đồng bộ nên không làm chậm suy luận.
+- English, 中文, Tiếng Việt; giao diện sáng/tối; dùng tốt trên điện thoại.
 
 ## Bắt đầu nhanh
 
-### Docker Compose (Khuyến nghị)
+### Docker Compose (khuyên dùng)
 
 ```bash
-git clone https://github.com/Quorinex/Kiro-Go.git
+git clone https://github.com/springmusk026/Kiro-Go.git
 cd Kiro-Go
-mkdir -p data
-docker-compose up -d
+docker compose up -d
+docker compose logs kiro-go | grep -i password   # lần chạy đầu in ra mật khẩu quản trị được tạo
 ```
 
-### Docker Run
+Lệnh này chạy Kiro-Go ở cổng `8080` cùng một container PostgreSQL 16. Mở `http://localhost:8080/admin`, đăng
+nhập, thêm tài khoản và tạo API key. Đặt `ADMIN_PASSWORD` (và `POSTGRES_PASSWORD`) trong file `.env` để dùng mật khẩu riêng.
+
+Cập nhật về sau:
 
 ```bash
-docker run -d \
-  --name kiro-go \
-  -p 8080:8080 \
-  -e ADMIN_PASSWORD=your_secure_password \
-  -v /path/to/data:/app/data \
-  --restart unless-stopped \
-  ghcr.io/quorinex/kiro-go:latest
+git pull && docker compose up -d --build
 ```
+
+Đang dùng `config.json`? Dữ liệu được nhập tự động ở lần chạy đầu và bảng quản trị sẽ hướng dẫn kiểm tra rồi xóa
+file — xem [di chuyển dữ liệu](docs/configuration.md#migrating-from-configjson).
+
+### Docker image
+
+Image đa kiến trúc (amd64, arm64) được phát hành tại `ghcr.io/springmusk026/kiro-go` — `latest` từ nhánh `main`, kèm tag theo phiên bản:
+
+```bash
+docker run -d --name kiro-go -p 8080:8080 \
+  -e ADMIN_PASSWORD=change-me \
+  -e DATABASE_URL="postgres://kiro:kiro@db-host:5432/kiro?sslmode=disable" \
+  -v "$PWD/data:/app/data" \
+  --restart unless-stopped ghcr.io/springmusk026/kiro-go:latest
+```
+
+Không có `DATABASE_URL` thì mọi thứ được lưu trong `data/config.json` (không có lịch sử request).
 
 ### Build từ mã nguồn
 
+Cần Go 1.25+ và Node 22+ (cho bảng quản trị).
+
 ```bash
-git clone https://github.com/Quorinex/Kiro-Go.git
-cd Kiro-Go
+git clone https://github.com/springmusk026/Kiro-Go.git && cd Kiro-Go
+(cd frontend && npm ci && npm run build)   # build bảng quản trị vào ./web
 go build -o kiro-go .
 ./kiro-go
 ```
 
-### Triển khai trên Zeabur
+## Kết nối client
 
-Repo đã có `Dockerfile`, nên có thể build và chạy trên Zeabur ngay.
+Trang **API & Keys** tạo sẵn các đoạn cấu hình này theo máy chủ, key và mô hình của bạn.
 
-**Cách 1: Dashboard (một cú nhấp)**
-
-1. Fork repo này về tài khoản GitHub của bạn.
-2. Trên Zeabur, tạo service mới, chọn **Deploy from GitHub**, rồi chọn fork của bạn.
-3. Zeabur tự nhận `Dockerfile` và build image.
-4. Trong tab **Networking**, mở cổng `8080` và gắn domain.
-5. Trong tab **Variables**, đặt ít nhất `ADMIN_PASSWORD` (mật khẩu bảng quản trị).
-6. Mount Volume tại `/app/data` nếu muốn tài khoản / cấu hình tồn tại sau khi redeploy.
-
-**Cách 2: CLI**
+**Claude Code**
 
 ```bash
-npm i -g zeabur
-zeabur auth login
-zeabur deploy
+export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_AUTH_TOKEN=<your-api-key>
+export ANTHROPIC_MODEL=claude-sonnet-4.5
+export ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4.5
+claude
 ```
 
-> Chạy lệnh từ thư mục gốc dự án. CLI sẽ ghi `.zeabur/context.json` để nhớ project / service đích — file này chứa ID cá nhân, đừng commit.
+**Codex CLI** (`~/.codex/config.toml`)
 
-Khi service đã chạy, mở `https://<your-domain>/admin` để đăng nhập.
+```toml
+model = "claude-sonnet-4.5"
+model_provider = "kiro"
+model_reasoning_effort = "medium"
 
-Cấu hình được tạo tự động tại `data/config.json`. Mount `/app/data` để lưu bền. Lần khởi động đầu tiên (hoặc khi mật khẩu vẫn là mặc định cũ `changeme`), một mật khẩu quản trị ngẫu nhiên được tạo, lưu vào `data/config.json` và in ra log một lần. Đặt mật khẩu riêng bằng biến môi trường `ADMIN_PASSWORD` hoặc trong bảng quản trị.
-
-## Cách dùng
-
-Mở `http://localhost:8080/admin`, đăng nhập, thêm tài khoản, rồi gọi API:
-
-```bash
-# Claude
-curl http://localhost:8080/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "anthropic-version: 2023-06-01" \
-  -d '{"model":"claude-sonnet-4.5","max_tokens":1024,"messages":[{"role":"user","content":"Xin chào!"}]}'
-
-# OpenAI
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer any" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Xin chào!"}]}'
+[model_providers.kiro]
+name = "Kiro-Go"
+base_url = "http://localhost:8080/v1"
+env_key = "KIRO_API_KEY"
+wire_api = "responses"
 ```
 
-### Thêm tài khoản Kiro API Key
+**OpenAI / Anthropic SDK** — trỏ `base_url` tới `http://localhost:8080/v1` (OpenAI) hoặc `http://localhost:8080`
+(Anthropic) và dùng API key của Kiro-Go.
 
-Trong bảng quản trị, chọn **API Key** khi thêm tài khoản và dán `ksk_...` (hoặc `ksk_...|region`).
+Thêm client khác (Cline, Continue, LiteLLM, cURL) và tùy chọn thinking: [docs/clients.md](docs/clients.md).
 
-Bạn cũng có thể import qua API credentials:
+## Tài liệu (tiếng Anh)
 
-```bash
-curl -X POST http://localhost:8080/admin/api/auth/credentials \
-  -H "Content-Type: application/json" \
-  -H "Cookie: <admin-session>" \
-  -d '{"kiroApiKey":"ksk_your_key|us-east-1","authMethod":"api_key","nickname":"cli-key"}'
-```
+| | |
+|---|---|
+| [docs/clients.md](docs/clients.md) | Cấu hình Claude Code, Codex, SDK và các công cụ khác |
+| [docs/api.md](docs/api.md) | Endpoint, ghi chú tương thích, thinking, mô hình, mã lỗi |
+| [docs/configuration.md](docs/configuration.md) | Biến môi trường, cài đặt, lưu trữ, di chuyển từ JSON, ghi log |
+| [docs/architecture.md](docs/architecture.md) | Luồng request, giao thức upstream, nhóm tài khoản, cache và chi phí |
+| [docs/development.md](docs/development.md) | Build, kiểm thử, phát triển bảng quản trị, phát hành |
+| [CHANGELOG.md](CHANGELOG.md) | Lịch sử thay đổi, gồm cả khác biệt so với dự án gốc |
 
-Tài khoản API Key gọi Kiro CLI runtime (`https://runtime.{region}.kiro.dev/`) với `tokentype: API_KEY`. Chúng bỏ qua OAuth refresh và không dùng `profileArn`.
+## Bảo mật
 
-### Ánh xạ mô hình
+- Máy chủ lắng nghe trên `0.0.0.0`. Hãy **tạo API key** (hoặc bật xác thực API key trong Cài đặt) trước khi công khai;
+  nếu không, bất kỳ ai truy cập được cổng đều dùng được tài khoản của bạn. Bảng quản trị sẽ cảnh báo khi chưa bật.
+- Mật khẩu quản trị được tạo ở lần chạy đầu nếu chưa đặt; đăng nhập quản trị bị giới hạn tần suất và so sánh thời gian
+  hằng; bảng quản trị gửi các header bảo mật nghiêm ngặt.
+- Mặc định không lưu nội dung request/response vì prompt có thể nhạy cảm.
+- Đặt TLS phía trước (Caddy, nginx, Cloudflare) khi công khai ra ngoài.
 
-Cấu hình bí danh phía ứng dụng khách tại **Cài đặt - Ánh xạ mô hình**, ví dụ `kiro-opus-5` → `claude-opus-5`. Ánh xạ áp dụng cho các API Anthropic, OpenAI Chat Completions và OpenAI Responses; mỗi bí danh và biến thể có hậu tố thinking đã cấu hình đều xuất hiện trong `/v1/models`. ID nguồn được so khớp không phân biệt chữ hoa chữ thường và phân giải trực tiếp đến một ID mô hình upstream; chuỗi ánh xạ không được phép.
+## Miễn trừ trách nhiệm
 
-## Chế độ Thinking
-
-Thêm hậu tố (mặc định `-thinking`) vào tên mô hình, ví dụ `claude-sonnet-4.5-thinking`. Các yêu cầu tương thích Claude có cấu hình `thinking` ở top-level như `{"type":"enabled","budget_tokens":2048}` hoặc `{"type":"adaptive"}` cũng tự bật chế độ thinking. Cấu hình định dạng đầu ra trong bảng quản trị tại Cài đặt - Chế độ Thinking.
-
-## Proxy ra ngoài
-
-Với người dùng ở khu vực mạng bị hạn chế, cấu hình proxy ra ngoài trong bảng quản trị tại **Cài đặt - Cài đặt proxy ra ngoài**. Hỗ trợ SOCKS5 và HTTP.
-
-Cài đặt có hiệu lực ngay, không cần khởi động lại.
-
-## Biến môi trường
-
-| Biến | Mô tả | Mặc định |
-|------|-------|----------|
-| `CONFIG_PATH` | Đường dẫn file cấu hình | `data/config.json` |
-| `ADMIN_PASSWORD` | Mật khẩu bảng quản trị (ghi đè config) | - |
-
-## Đóng góp
-
-Hoan nghênh thảo luận thân thiện. Nếu gặp vấn đề, hãy thử nhờ Claude Code, Codex hoặc công cụ tương tự trước — hầu hết vấn đề có thể tự giải quyết. PR càng tốt.
-
-## Liên kết hữu ích
-
-- [LINUX DO](https://linux.do)
-
-## Tuyên bố miễn trừ
-
-Chỉ dùng cho mục đích học tập và nghiên cứu. Không liên kết với Amazon, AWS hay Kiro. Người dùng tự chịu trách nhiệm tuân thủ điều khoản dịch vụ và luật áp dụng. Sử dụng với rủi ro của riêng bạn.
+Chỉ dành cho mục đích học tập và nghiên cứu. Không liên kết với Amazon, AWS hay Kiro. Người dùng tự chịu trách
+nhiệm tuân thủ điều khoản dịch vụ của tài khoản đang dùng và pháp luật liên quan.
 
 ## Giấy phép
 
-[MIT](LICENSE)
+[MIT](LICENSE). Một phần mã có nguồn gốc từ [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) (cũng theo MIT).

@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useI18n } from '@/lib/i18n'
 import { useModels } from '@/lib/queries'
-import { useSettings, useThinking } from '@/lib/queries.settings'
+import { useSettings } from '@/lib/queries.settings'
 import { origin } from './endpoints-card'
 
 const KEY_PLACEHOLDER = 'sk-your-kiro-go-key'
@@ -45,7 +45,6 @@ function Sub({ value, onChange, options }: { value: string; onChange: (v: string
 export function ConnectCard({ sessionKey }: { sessionKey: string }) {
   const { t } = useI18n()
   const models = useModels()
-  const thinking = useThinking()
   const settings = useSettings()
   const ids = useMemo(() => (models.data?.models ?? []).filter((m) => m.enabled).map((m) => m.id), [models.data])
   const fallbackIds = ids.length ? ids : ['claude-sonnet-4.5', 'claude-haiku-4.5']
@@ -67,15 +66,14 @@ export function ConnectCard({ sessionKey }: { sessionKey: string }) {
   }, [fallbackIds.join('|')])
 
   const base = origin()
-  const suffix = thinking.data?.suffix || '-thinking'
-  const m = model + (think ? suffix : '')
+  const m = model
   const k = key.trim() || KEY_PLACEHOLDER
 
   const snippets = {
     ccShell: `export ANTHROPIC_BASE_URL="${base}"
 export ANTHROPIC_AUTH_TOKEN="${k}"
 export ANTHROPIC_MODEL="${m}"
-export ANTHROPIC_SMALL_FAST_MODEL="${fast}"
+export ANTHROPIC_SMALL_FAST_MODEL="${fast}"${think ? '\nexport MAX_THINKING_TOKENS=16000' : ''}
 claude`,
     ccJson: JSON.stringify(
       {
@@ -84,6 +82,7 @@ claude`,
           ANTHROPIC_AUTH_TOKEN: k,
           ANTHROPIC_MODEL: m,
           ANTHROPIC_SMALL_FAST_MODEL: fast,
+          ...(think ? { MAX_THINKING_TOKENS: '16000' } : {}),
         },
       },
       null,
@@ -91,7 +90,7 @@ claude`,
     ),
     codexToml: `# ~/.codex/config.toml
 model = "${m}"
-model_provider = "kiro"
+model_provider = "kiro"${think ? '\nmodel_reasoning_effort = "medium"' : ''}
 
 [model_providers.kiro]
 name = "Kiro-Go"
@@ -106,7 +105,7 @@ client = OpenAI(base_url="${base}/v1", api_key="${k}")
 
 resp = client.chat.completions.create(
     model="${m}",
-    messages=[{"role": "user", "content": "Hello!"}],
+    messages=[{"role": "user", "content": "Hello!"}],${think ? '\n    reasoning_effort="medium",' : ''}
 )
 print(resp.choices[0].message.content)`,
     ts: `import OpenAI from 'openai'
@@ -115,14 +114,14 @@ const client = new OpenAI({ baseURL: '${base}/v1', apiKey: '${k}' })
 
 const resp = await client.chat.completions.create({
   model: '${m}',
-  messages: [{ role: 'user', content: 'Hello!' }],
+  messages: [{ role: 'user', content: 'Hello!' }],${think ? "\n  reasoning_effort: 'medium'," : ''}
 })
 console.log(resp.choices[0].message.content)`,
     curlOpenai: `curl ${base}/v1/chat/completions \\
   -H "Authorization: Bearer ${k}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "${m}",
+    "model": "${m}",${think ? '\n    "reasoning_effort": "medium",' : ''}
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`,
     curlAnthropic: `curl ${base}/v1/messages \\
@@ -131,14 +130,14 @@ console.log(resp.choices[0].message.content)`,
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${m}",
-    "max_tokens": 1024,
+    "max_tokens": ${think ? '16000' : '1024'},${think ? '\n    "thinking": {"type": "enabled", "budget_tokens": 8000},' : ''}
     "messages": [{"role": "user", "content": "Hello!"}]
   }'`,
     curlResponses: `curl ${base}/v1/responses \\
   -H "Authorization: Bearer ${k}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "${m}",
+    "model": "${m}",${think ? '\n    "reasoning": {"effort": "medium"},' : ''}
     "input": "Hello!"
   }'`,
   }
@@ -214,7 +213,7 @@ console.log(resp.choices[0].message.content)`,
         </div>
         <p className="text-xs text-muted-foreground">
           {settings.data && !settings.data.requireApiKey ? t('keys.snippetKeyOpen') : t('keys.snippetKeyHint')}{' '}
-          {think && t('keys.snippetThinkingHint', { suffix })}
+          {think && t('keys.snippetThinkingHint')}
         </p>
 
         <Tabs defaultValue="claude-code">
