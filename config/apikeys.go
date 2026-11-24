@@ -107,6 +107,7 @@ func UpdateApiKey(id string, patch ApiKeyEntry) error {
 	cfg.ApiKeys[idx].Enabled = patch.Enabled
 	cfg.ApiKeys[idx].TokenLimit = patch.TokenLimit
 	cfg.ApiKeys[idx].CreditLimit = patch.CreditLimit
+	cfg.ApiKeys[idx].DailyCreditLimit = patch.DailyCreditLimit
 	if patch.Migrated {
 		cfg.ApiKeys[idx].Migrated = true
 	}
