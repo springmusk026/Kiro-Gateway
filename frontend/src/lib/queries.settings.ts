@@ -193,7 +193,12 @@ export function useClearLogs() {
     mutationFn: () => del<Ok>('/logs'),
     onSuccess: () => {
       qc.setQueryData<RequestLog[]>(qk.logs, [])
-      return qc.invalidateQueries({ queryKey: qk.logs })
+      // DELETE /logs also clears the database history when PostgreSQL is enabled.
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: qk.logs }),
+        qc.invalidateQueries({ queryKey: ['requests'] }),
+        qc.invalidateQueries({ queryKey: ['usage'] }),
+      ])
     },
   })
 }

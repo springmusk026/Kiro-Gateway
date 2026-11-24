@@ -1,4 +1,5 @@
-import { ChevronRight, Eye, EyeOff, Filter, Loader2, RefreshCw, ScrollText, Search, Trash2, X } from 'lucide-react'
+import { ChevronRight, Database, Eye, EyeOff, Filter, Loader2, RefreshCw, ScrollText, Search, Trash2, X } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/app/confirm'
@@ -69,7 +70,7 @@ function exactTime(unix: number, lang: string) {
   })
 }
 
-export function LogsPage() {
+export function MemoryLogs() {
   const { t, lang } = useI18n()
   const confirm = useConfirm()
   const [live, setLiveState] = useState(() => (typeof window === 'undefined' ? true : readBool(LIVE_KEY, true)))
@@ -234,6 +235,16 @@ export function LogsPage() {
           </>
         }
       />
+
+      <div className="flex items-start gap-3 rounded-xl border border-dashed bg-muted/30 px-4 py-3 text-sm animate-rise">
+        <Database className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <p className="min-w-0 flex-1 text-muted-foreground">
+          <span className="font-medium text-foreground">{t('logs.memBannerTitle')}</span> {t('logs.memBannerBody')}
+        </p>
+        <Link to="/settings" hash="logging" className="shrink-0 text-sm font-medium text-primary hover:underline">
+          {t('logs.memBannerAction')}
+        </Link>
+      </div>
 
       <SummaryStrip logs={filtered} loading={logs.isLoading} filtered={filtersActive} total={rows.length} />
 

@@ -231,3 +231,115 @@ export interface RequestLog {
   credits: number
   duration: number
 }
+
+// ---------- Storage, request history and audit (GET /storage, /requests, /usage/*, /audit) ----------
+
+export interface RecorderStats {
+  queued: number
+  written: number
+  dropped: number
+  failed: number
+}
+
+/** GET /storage */
+export interface StorageInfo {
+  /** "postgres" or "json:<path>" */
+  backend: string
+  database: boolean
+  logBodiesKB: number
+  logRetentionDays: number
+  recorder?: RecorderStats
+}
+
+export interface LoggingSettings {
+  logBodiesKB: number
+  logRetentionDays: number
+}
+
+export type HistoryEndpoint = 'claude' | 'openai' | 'responses' | 'count_tokens' | (string & {})
+
+/** One persisted request (GET /requests, GET /requests/{id}). */
+export interface RequestRecord {
+  id: string
+  /** RFC3339 */
+  time: string
+  method: string
+  path: string
+  endpoint: HistoryEndpoint
+  model?: string
+  accountId?: string
+  accountEmail?: string
+  apiKeyId?: string
+  clientIp?: string
+  userAgent?: string
+  stream: boolean
+  protocol?: 'responses' | 'legacy' | '' | (string & {})
+  status: 'success' | 'error' | (string & {})
+  httpStatus: number
+  error?: string
+  errorType?: RequestLog['errorType']
+  inputTokens: number
+  outputTokens: number
+  credits: number
+  durationMs: number
+  ttfbMs: number
+  attempts: number
+  requestBytes: number
+  responseBytes: number
+  requestBody?: string
+  responseBody?: string
+}
+
+export interface RequestsPage {
+  records: RequestRecord[] | null
+  hasMore: boolean
+}
+
+export interface RequestFilters {
+  status?: string
+  endpoint?: string
+  model?: string
+  account?: string
+  apiKey?: string
+  errorType?: string
+  q?: string
+  /** 0 = all time */
+  hours?: number
+}
+
+export interface UsagePoint {
+  /** RFC3339 bucket start */
+  time: string
+  requests: number
+  errors: number
+  inputTokens: number
+  outputTokens: number
+  credits: number
+  avgLatencyMs: number
+}
+
+export interface UsageSeries {
+  points: UsagePoint[] | null
+  bucketSeconds: number
+}
+
+export type UsageDimension = 'model' | 'account' | 'apiKey' | 'endpoint' | 'client'
+
+export interface UsageGroup {
+  key: string
+  requests: number
+  errors: number
+  inputTokens: number
+  outputTokens: number
+  credits: number
+}
+
+export interface AuditEvent {
+  /** RFC3339 */
+  time: string
+  actor: string
+  ip?: string
+  action: string
+  target?: string
+  detail?: Record<string, string>
+}
