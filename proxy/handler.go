@@ -1921,6 +1921,31 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	thinkingFormat := config.GetThinkingConfig().OpenAIFormat
 
 	chatID := "chatcmpl-" + uuid.New().String()
+	created := time.Now().Unix()
+	roleSent := false
+	// writeChunk emits one chunk. The first chunk of a stream announces the
+	// assistant role, as the official API does.
+	writeChunk := func(chunk map[string]interface{}) {
+		if !roleSent {
+			roleSent = true
+			roleData, _ := json.Marshal(map[string]interface{}{
+				"id":      chatID,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []map[string]interface{}{{
+					"index":         0,
+					"delta":         map[string]interface{}{"role": "assistant", "content": ""},
+					"logprobs":      nil,
+					"finish_reason": nil,
+				}},
+			})
+			fmt.Fprintf(w, "data: %s\n\n", roleData)
+		}
+		data, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
 	excluded := make(map[string]bool)
 	var lastErr error
 	reqStart := time.Now()
@@ -1992,11 +2017,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
@@ -2016,11 +2042,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
@@ -2031,11 +2058,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"reasoning_content": content},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
@@ -2047,18 +2075,17 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				chunk = map[string]interface{}{
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
-					"created": time.Now().Unix(),
+					"created": created,
 					"model":   model,
 					"choices": []map[string]interface{}{{
 						"index":         0,
 						"delta":         map[string]string{"content": content},
+						"logprobs":      nil,
 						"finish_reason": nil,
 					}},
 				}
 			}
-			data, _ := json.Marshal(chunk)
-			fmt.Fprintf(w, "data: %s\n\n", string(data))
-			flusher.Flush()
+			writeChunk(chunk)
 			responseStarted = true
 		}
 
@@ -2194,7 +2221,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				chunk := map[string]interface{}{
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
-					"created": time.Now().Unix(),
+					"created": created,
 					"model":   model,
 					"choices": []map[string]interface{}{{
 						"index": 0,
@@ -2209,13 +2236,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 								},
 							}},
 						},
+						"logprobs":      nil,
 						"finish_reason": nil,
 					}},
 				}
 				toolCallIndex++
-				data, _ := json.Marshal(chunk)
-				fmt.Fprintf(w, "data: %s\n\n", string(data))
-				flusher.Flush()
+				writeChunk(chunk)
 				responseStarted = true
 			},
 			OnStopReason: func(reason string) {
@@ -2317,17 +2343,17 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		chunk := map[string]interface{}{
 			"id":      chatID,
 			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
+			"created": created,
 			"model":   model,
 			"choices": []map[string]interface{}{{
 				"index":         0,
 				"delta":         map[string]interface{}{},
+				"logprobs":      nil,
 				"finish_reason": finishReason,
 			}},
 			"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
 		}
-		data, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\n", string(data))
+		writeChunk(chunk)
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		flusher.Flush()
 		return
