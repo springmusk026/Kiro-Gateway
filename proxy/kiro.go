@@ -517,9 +517,11 @@ endpointLoop:
 				// (short cooldown) or exhausted quota (long cooldown).
 				body429, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 				resp.Body.Close()
-				logger.Warnf("[KiroAPI] Endpoint %s returned 429, trying next...", ep.Name)
-				lastErr = fmt.Errorf("HTTP 429 from %s: %s", ep.Name, strings.TrimSpace(string(body429)))
-				continue endpointLoop
+				// Do not rotate to another endpoint: they share the account's
+				// rate limit, so that only adds calls. Return and let the
+				// account cooldown (and protocol fallback) handle it.
+				logger.Warnf("[KiroAPI] Endpoint %s returned 429 for %s", ep.Name, accountEmailForLog(account))
+				return fmt.Errorf("HTTP 429 from %s%s: %s", ep.Name, retryAfterSuffix(resp.Header.Get("Retry-After")), strings.TrimSpace(string(body429)))
 			}
 
 			if resp.StatusCode != 200 {

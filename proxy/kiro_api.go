@@ -720,11 +720,11 @@ func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 			}
 
 			return nil, fmt.Errorf("Account suspended: %w", err)
-		} else if strings.Contains(errMsg, "403") || strings.Contains(errMsg, "401") ||
-			strings.Contains(errMsg, "invalid") || strings.Contains(errMsg, "expired") {
-			// Token 相关错误，可能需要重新认证
-			logger.Warnf("[RefreshAccountInfo] Authentication error for %s: %v", account.Email, err)
-
+		} else if strings.Contains(strings.ToLower(errMsg), "invalid_grant") {
+			// Only a dead refresh token is definitive. A 401/403 from the usage
+			// endpoint usually means an expired access token, which the chat
+			// path refreshes before deciding anything (handleAuthFailure).
+			logger.Warnf("[RefreshAccountInfo] Refresh token rejected for %s: %v", account.Email, err)
 			if updateErr := config.SetAccountBanStatus(
 				account.ID,
 				"BANNED",
@@ -732,6 +732,8 @@ func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 			); updateErr != nil {
 				logger.Errorf("[RefreshAccountInfo] Failed to update account ban status: %v", updateErr)
 			}
+		} else {
+			logger.Warnf("[RefreshAccountInfo] Usage check failed for %s (not banning): %v", account.Email, err)
 		}
 
 		return nil, fmt.Errorf("GetUsageLimits: %w", err)

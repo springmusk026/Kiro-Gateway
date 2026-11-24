@@ -2,9 +2,11 @@ package proxy
 
 import (
 	"errors"
+	"fmt"
 	"kiro-go/config"
 	"kiro-go/logger"
 	"kiro-go/pool"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -266,12 +268,19 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 	case isOverageErrorMessage(errMsg):
 		h.disableAccountOverage(account)
 		h.pool.RecordError(account.ID, false)
+	case isMonthlyLimitMessage(errMsg):
+		// The monthly allowance does not come back within the hour: stop
+		// sending this account requests that can only fail.
+		until := nextUTCMidnight(time.Now())
+		h.pool.ParkUntil(account.ID, until)
+		logger.Warnf("[AccountFailover] %s reached its usage limit; parked until %s", account.Email, until.Format(time.RFC3339))
 	case isQuotaErrorMessage(errMsg):
 		h.pool.RecordError(account.ID, true)
 	case isRateLimitMessage(errMsg):
-		// Throttling clears in seconds; an hour-long quota cooldown here took
-		// healthy accounts out of rotation.
-		h.pool.Throttle(account.ID, rateLimitCooldown)
+		// Repeated throttling backs off exponentially (30 s → 5 min) and
+		// honours an upstream Retry-After, instead of re-trying every 30 s.
+		d := h.pool.ThrottleBackoff(account.ID, rateLimitCooldown, maxRateLimitCooldown, parseRetryAfterFromMessage(errMsg))
+		logger.Warnf("[AccountFailover] %s rate limited; cooling down for %s", account.Email, d)
 	case isSuspensionErrorMessage(errMsg):
 		h.disableAccount(account, "BANNED", "AWS temporarily suspended - unusual user activity detected")
 	case isProfileUnavailableErrorMessage(errMsg):
@@ -290,8 +299,55 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 	}
 }
 
-// rateLimitCooldown keeps a throttled account out of rotation briefly.
-const rateLimitCooldown = 30 * time.Second
+// rateLimitCooldown is the first cooldown after a rate limit; repeats double
+// it up to maxRateLimitCooldown.
+const (
+	rateLimitCooldown    = 30 * time.Second
+	maxRateLimitCooldown = 5 * time.Minute
+)
+
+// isMonthlyLimitMessage reports an exhausted monthly allowance.
+func isMonthlyLimitMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "monthly_request_count") ||
+		strings.Contains(lower, "monthly limit") ||
+		strings.Contains(lower, "monthly usage limit")
+}
+
+func nextUTCMidnight(now time.Time) time.Time {
+	u := now.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day()+1, 0, 0, 0, 0, time.UTC)
+}
+
+// retryAfterSuffix encodes an upstream Retry-After header (seconds form) into
+// an error message so failover can honour it.
+func retryAfterSuffix(h string) string {
+	h = strings.TrimSpace(h)
+	if n, err := strconv.Atoi(h); err == nil && n > 0 {
+		return fmt.Sprintf(" (retry-after=%d)", n)
+	}
+	return ""
+}
+
+func parseRetryAfterFromMessage(msg string) time.Duration {
+	i := strings.Index(msg, "retry-after=")
+	if i < 0 {
+		return 0
+	}
+	rest := msg[i+len("retry-after="):]
+	j := 0
+	for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
+		j++
+	}
+	n, err := strconv.Atoi(rest[:j])
+	if err != nil || n <= 0 {
+		return 0
+	}
+	if n > 3600 {
+		n = 3600
+	}
+	return time.Duration(n) * time.Second
+}
 
 // handleAuthFailure reacts to a 401/403-style error. An expired or revoked
 // access token is normal (it lives about an hour), so the account is only

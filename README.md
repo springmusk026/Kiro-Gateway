@@ -140,6 +140,7 @@ The setting takes effect immediately without restarting.
 | `KIRO_UPSTREAM_PROTOCOL` | `auto`, `responses` or `legacy` (Settings → Endpoint overrides it) | `auto` |
 | `KIRO_SESSION_AFFINITY` | `1` keeps each API key on the account that last served it (better prompt-cache reuse) | off |
 | `KIRO_MAX_UPSTREAM_ATTEMPTS` | Maximum upstream chat calls per client request, across all retries and account switches | `4` |
+| `KIRO_MAX_CONCURRENT_PER_ACCOUNT` | Queue requests beyond this many in flight per account (`0` = unlimited) | `0` |
 | `KIRO_STREAM_IDLE_TIMEOUT` | Seconds without upstream data before a stream is abandoned | `180` |
 | `KIRO_MAX_BODY_MB` | Maximum client request body size | `64` |
 | `KIRO_MAX_STORED_RESPONSES` / `KIRO_MAX_STORED_RESPONSES_MB` | Limits for stored `/v1/responses` objects | `20000` / `2048` |

@@ -116,6 +116,13 @@ func trackEmission(cb *KiroStreamCallback) (*KiroStreamCallback, *bool) {
 }
 
 func callKiroWithProtocolSelection(ctx context.Context, account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
+	if account != nil {
+		release, err := acquireAccountSlot(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	switch upstreamProtocolMode(account) {
 	case responsesProtocolLegacy:
 		return callKiroLegacyAPIContext(ctx, account, payload, callback)

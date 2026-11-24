@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-const tokenRefreshSkewSeconds int64 = 120
+// Refresh 5 minutes early (peers use 5–10 min) to absorb clock skew and slow IdPs.
+const tokenRefreshSkewSeconds int64 = 300
 
 // AccountPool 账号池
 type AccountPool struct {
@@ -21,6 +22,8 @@ type AccountPool struct {
 	cooldowns     map[string]time.Time       // 账号冷却时间
 	errorCounts   map[string]int             // 连续错误计数
 	modelLists    map[string]map[string]bool // accountID → set of modelIDs (from ListAvailableModels)
+	// throttleStreak counts consecutive rate limits per account (backoff).
+	throttleStreak map[string]int
 }
 
 var (
@@ -302,6 +305,7 @@ func (p *AccountPool) RecordSuccess(id string) {
 	defer p.mu.Unlock()
 	delete(p.cooldowns, id)
 	p.errorCounts[id] = 0
+	delete(p.throttleStreak, id)
 }
 
 // RecordError 记录请求错误，设置冷却
@@ -325,7 +329,42 @@ func (p *AccountPool) RecordError(id string, isQuotaError bool) {
 func (p *AccountPool) Throttle(id string, d time.Duration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	until := time.Now().Add(d)
+	p.throttleUntil(id, time.Now().Add(d))
+}
+
+// ThrottleBackoff applies an exponential cooldown for repeated rate limits:
+// base, 2×base, 4×base … up to max, never shorter than minWait (an upstream
+// Retry-After). The streak resets on the next successful request.
+func (p *AccountPool) ThrottleBackoff(id string, base, max, minWait time.Duration) time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.throttleStreak == nil {
+		p.throttleStreak = map[string]int{}
+	}
+	n := p.throttleStreak[id]
+	p.throttleStreak[id] = n + 1
+	d := base
+	for i := 0; i < n && d < max; i++ {
+		d *= 2
+	}
+	if d > max {
+		d = max
+	}
+	if minWait > d {
+		d = minWait
+	}
+	p.throttleUntil(id, time.Now().Add(d))
+	return d
+}
+
+// ParkUntil keeps an account out of rotation until t (e.g. monthly quota).
+func (p *AccountPool) ParkUntil(id string, t time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.throttleUntil(id, t)
+}
+
+func (p *AccountPool) throttleUntil(id string, until time.Time) {
 	if cur, ok := p.cooldowns[id]; !ok || cur.Before(until) {
 		p.cooldowns[id] = until
 	}

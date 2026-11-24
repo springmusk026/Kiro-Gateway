@@ -386,6 +386,11 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 			lastErr = classifyResponsesHTTPError(resp.StatusCode, errBody)
+			if resp.StatusCode == http.StatusTooManyRequests {
+				if s := retryAfterSuffix(resp.Header.Get("Retry-After")); s != "" {
+					lastErr = fmt.Errorf("%w%s", lastErr, s)
+				}
+			}
 			logger.Warnf("[ResponsesAPI] HTTP %d: %s", resp.StatusCode, lastErr)
 			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 				if attempt < maxStreamAttemptsPerEndpoint {
