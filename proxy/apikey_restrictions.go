@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // Per-API-key restrictions enforced before any upstream call: expiry (in

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // setupMigration writes config.json + two stored responses into a temp data

@@ -16,7 +16,7 @@ export const costEn = {
   'cost.fbTooMany': 'At most 5 fallbacks per model',
   'cost.fbFix': 'Fix the highlighted rows to save',
   'cost.fbHint':
-    'Only the first fallback is tried, once per request, before anything is streamed. The response carries an x-kiro-go-fallback-model header and the request log shows the fallback.',
+    'Only the first fallback is tried, once per request, before anything is streamed. The response carries an x-kiro-gateway-fallback-model header and the request log shows the fallback.',
   'cost.fbUnknown': 'Not in the current catalog',
   'cost.fbLogLabel': 'Fallback model',
 

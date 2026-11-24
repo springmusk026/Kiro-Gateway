@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func TestDisabledModelIsHiddenAndRejected(t *testing.T) {

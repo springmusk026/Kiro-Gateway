@@ -1,5 +1,5 @@
 {
-  "name": "kiro-go-console",
+  "name": "kiro-gateway-console",
   "private": true,
   "type": "module",
   "scripts": {

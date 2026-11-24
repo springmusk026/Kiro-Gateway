@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	"github.com/springmusk026/Kiro-Gateway/auth"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"io"
-	"kiro-go/auth"
-	"kiro-go/config"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"

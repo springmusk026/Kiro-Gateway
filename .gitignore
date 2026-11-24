@@ -1,6 +1,6 @@
 # Build artifacts
-/kiro-go
-/kiro-go.exe
+/kiro-gateway
+/kiro-gateway.exe
 *.exe
 *.test
 *.out

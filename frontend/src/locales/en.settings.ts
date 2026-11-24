@@ -221,7 +221,7 @@ export const settingsEn = {
   'settings.enablePgTitle': 'Enable PostgreSQL for full history',
   'settings.enablePgStep1': 'Set DATABASE_URL to a PostgreSQL connection URL and restart the server.',
   'settings.enablePgStep2': 'With Docker, the default docker-compose.yml already runs a postgres:16 service and sets DATABASE_URL.',
-  'settings.enablePgStep3': 'Existing data/config.json is imported on first start; or migrate by hand with kiro-go migrate.',
+  'settings.enablePgStep3': 'Existing data/config.json is imported on first start; or migrate by hand with kiro-gateway migrate.',
   'settings.enablePgMigrate': 'optional: migrate by hand',
   'settings.logging': 'Request history',
   'settings.loggingDesc': 'What is stored for each request and for how long.',

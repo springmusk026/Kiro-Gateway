@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func TestTokenNeedsRefresh(t *testing.T) {

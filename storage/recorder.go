@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // Recorder persists request records and audit events asynchronously.

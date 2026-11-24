@@ -1,4 +1,4 @@
-// Package logger provides a lightweight leveled logger for Kiro-Go.
+// Package logger provides a lightweight leveled logger for Kiro Gateway.
 //
 // Levels (from most to least verbose):
 //

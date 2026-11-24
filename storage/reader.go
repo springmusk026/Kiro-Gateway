@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 const requestSelect = `SELECT l.id, l.ts, l.method, l.path, l.endpoint, l.model, l.account_id, l.account_email,

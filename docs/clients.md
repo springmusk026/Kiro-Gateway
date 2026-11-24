@@ -16,10 +16,10 @@ claude
 
 Or put the same variables under `"env"` in `~/.claude/settings.json`.
 
-- **Thinking**: Claude Code sends its own `thinking` setting and Kiro-Go follows it. To force a thinking
+- **Thinking**: Claude Code sends its own `thinking` setting and Kiro Gateway follows it. To force a thinking
   length, add `MAX_THINKING_TOKENS=16000`; to think on every request regardless, set *When to think* to
   *Always* in Settings.
-- **Compaction**: when a conversation outgrows the model's window Kiro-Go answers with Anthropic's
+- **Compaction**: when a conversation outgrows the model's window Kiro Gateway answers with Anthropic's
   "prompt is too long" error, which triggers Claude Code's automatic compaction.
 - **Start-up probe**: Claude Code's quota probe is answered locally, so launching it costs no request.
 - Keep **conversation affinity** on (the default) so each session stays on one account and reuses Kiro's
@@ -35,7 +35,7 @@ model_provider = "kiro"
 model_reasoning_effort = "medium"   # optional: low | medium | high
 
 [model_providers.kiro]
-name = "Kiro-Go"
+name = "Kiro Gateway"
 base_url = "http://localhost:8080/v1"
 env_key = "KIRO_API_KEY"
 wire_api = "responses"

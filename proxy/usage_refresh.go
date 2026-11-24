@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/logger"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
 )
 
 // Periodic usage refresh for usage-aware routing.

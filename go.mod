@@ -1,4 +1,4 @@
-module kiro-go
+module github.com/springmusk026/Kiro-Gateway
 
 go 1.25.0
 

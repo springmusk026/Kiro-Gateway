@@ -22,7 +22,7 @@ import (
 // the reasoning text with the gateway's token estimator.
 
 // thinkingSignature is the opaque signature attached to thinking blocks.
-var thinkingSignature = base64.StdEncoding.EncodeToString([]byte("kiro-go:thinking:unverified:v1"))
+var thinkingSignature = base64.StdEncoding.EncodeToString([]byte("kiro-gateway:thinking:unverified:v1"))
 
 // reasoningTokens estimates the tokens spent on reasoning text.
 func reasoningTokens(reasoning string) int {

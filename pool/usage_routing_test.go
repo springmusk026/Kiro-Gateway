@@ -3,7 +3,7 @@ package pool
 import (
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func usageAcc(id string, used, limit float64) config.Account {

@@ -16,7 +16,7 @@ export function CostAlertList({ alerts, className }: { alerts: CostAlert[]; clas
           ) : (
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-label="warning" />
           )}
-          <span className="min-w-0">{a.text.replace(/^Kiro-Go: /, '')}</span>
+          <span className="min-w-0">{a.text.replace(/^Kiro Gateway: /, '')}</span>
         </li>
       ))}
     </ul>

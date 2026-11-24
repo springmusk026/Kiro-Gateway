@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/pool"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/pool"
 )
 
 func TestThrottleBackoffGrowsAndHonoursRetryAfter(t *testing.T) {

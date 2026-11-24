@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func TestResponsesIdentity(t *testing.T) {

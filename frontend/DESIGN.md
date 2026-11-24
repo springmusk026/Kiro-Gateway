@@ -1,4 +1,4 @@
-# Kiro-Go console — UI conventions
+# Kiro Gateway console — UI conventions
 
 Stack: TanStack Start (SPA mode) + TanStack Router (file routes) + TanStack Query,
 shadcn/ui (new-york, Tailwind v4, Radix), lucide icons, sonner toasts.

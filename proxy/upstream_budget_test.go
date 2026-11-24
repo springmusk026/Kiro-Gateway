@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func TestUpstreamBudgetCounts(t *testing.T) {

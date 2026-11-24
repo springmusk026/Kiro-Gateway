@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // modelsCacheTTL is how long the aggregated upstream model list is served

@@ -112,7 +112,7 @@ reports the model as temporarily unavailable or overloaded, when every account i
 503/529-class error, or when the model id is no longer offered. Client errors, authentication, quota and
 rate limits never fall back. Only the first enabled fallback is tried, once per request, before anything was
 streamed to the client and within the request's upstream attempt budget. The response carries
-`x-kiro-go-fallback-model: <model>` (unless a streaming heartbeat already sent the headers) and the request
+`x-kiro-gateway-fallback-model: <model>` (unless a streaming heartbeat already sent the headers) and the request
 log records the fallback model.
 
 ### Usage-aware routing
@@ -163,7 +163,7 @@ totals) are flushed at most once per second, outside the request path.
 
 ## Migrating from config.json
 
-1. Set `DATABASE_URL` (the bundled compose file already does) and start Kiro-Go against an empty database.
+1. Set `DATABASE_URL` (the bundled compose file already does) and start Kiro Gateway against an empty database.
    `config.json` and stored responses are imported automatically (`KIRO_AUTO_IMPORT=false` turns this off).
    The file is left on disk.
 2. Open the console. While a `config.json` is still on disk it shows a **migration prompt** (also under
@@ -182,9 +182,9 @@ totals) are flushed at most once per second, outside the request path.
 By hand, or to go back to JSON:
 
 ```bash
-kiro-go migrate --from data/config.json --to "$DATABASE_URL"          # add --force to replace existing data
-kiro-go export --from "$DATABASE_URL" --out config.backup.json
-docker compose run --rm kiro-go ./kiro-go export --out /app/data/config.backup.json
+kiro-gateway migrate --from data/config.json --to "$DATABASE_URL"          # add --force to replace existing data
+kiro-gateway export --from "$DATABASE_URL" --out config.backup.json
+docker compose run --rm kiro-gateway ./kiro-gateway export --out /app/data/config.backup.json
 ```
 
 ## Request history and logging
@@ -227,7 +227,7 @@ are recorded in the audit log like every admin change.
 Set `KIRO_ENCRYPTION_KEY` to a random 32-byte key, base64 or hex:
 
 ```bash
-echo "KIRO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env   # and pass it to the kiro-go service
+echo "KIRO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env   # and pass it to the kiro-gateway service
 ```
 
 With the key set, account access and refresh tokens, OIDC client secrets, Kiro API keys, per-account and
@@ -237,11 +237,11 @@ AES-256-GCM wherever the configuration is stored — `config.json` or the Postgr
 in-memory copy, so lookups cost nothing extra.
 
 - **Turning it on**: existing plaintext values load normally and are re-written encrypted right after start-up.
-- **Wrong or missing key**: if stored values are encrypted and the key is missing or different, Kiro-Go
+- **Wrong or missing key**: if stored values are encrypted and the key is missing or different, Kiro Gateway
   refuses to start with an error naming the problem — it never drops or overwrites accounts. An invalid key
   format is also a start-up error.
 - **Keep the key**: back it up separately from the data (a database backup is useless without it). There is
-  no key rotation command yet; to change keys, `kiro-go export --decrypt` with the old key, then `kiro-go
+  no key rotation command yet; to change keys, `kiro-gateway export --decrypt` with the old key, then `kiro-gateway
   migrate --force` with the new one.
 - **Turning it off**: export with `--decrypt` and import again without a key.
 - `config.json` is always written with mode `0600` (looser permissions are tightened on load) and a
@@ -278,9 +278,9 @@ client looks local, so set a token there.
 
 ```yaml
 scrape_configs:
-  - job_name: kiro-go
+  - job_name: kiro-gateway
     authorization: { credentials: "<KIRO_METRICS_TOKEN>" }
-    static_configs: [{ targets: ["kiro-go:8080"] }]
+    static_configs: [{ targets: ["kiro-gateway:8080"] }]
 ```
 
 | Metric | Type | Labels |
@@ -317,9 +317,9 @@ To take a dump right away: `docker compose exec postgres pg_dump -U kiro -Fc kir
 Restore (stop the gateway first so nothing writes meanwhile):
 
 ```bash
-docker compose stop kiro-go
+docker compose stop kiro-gateway
 docker compose exec -T postgres pg_restore -U kiro -d kiro --clean --if-exists < data/backups/kiro-20260101T030000Z.dump
-docker compose start kiro-go
+docker compose start kiro-gateway
 ```
 
 Dumps contain whatever is in the database: with `KIRO_ENCRYPTION_KEY` set credentials stay encrypted in the
@@ -328,10 +328,10 @@ dump, so keep the key — the restored gateway needs the same one. Without it, t
 ## Command-line tools
 
 ```text
-kiro-go                 start the server
-kiro-go migrate         import config.json into PostgreSQL   (--from, --to, --force)
-kiro-go export          write the database configuration to a JSON file   (--from, --out, --decrypt)
-kiro-go help
+kiro-gateway                 start the server
+kiro-gateway migrate         import config.json into PostgreSQL   (--from, --to, --force)
+kiro-gateway export          write the database configuration to a JSON file   (--from, --out, --decrypt)
+kiro-gateway help
 ```
 
 `export` copies encrypted credentials as they are (and encrypts any remaining plaintext when

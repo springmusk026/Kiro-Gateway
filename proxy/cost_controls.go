@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/logger"
-	"kiro-go/pool"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/pool"
 )
 
 // costControls holds the runtime state of usage refresh, budgets and alerts.
@@ -168,7 +168,7 @@ func (h *Handler) computeAlerts(now time.Time) []costAlert {
 		}
 		out = append(out, costAlert{
 			Kind: kind, Level: level, Subject: subject, Name: name, Value: value, Limit: limit,
-			Text: fmt.Sprintf("Kiro-Go: %s %s (%s of %s).", what, state, trimNumber(value), trimNumber(limit)),
+			Text: fmt.Sprintf("Kiro Gateway: %s %s (%s of %s).", what, state, trimNumber(value), trimNumber(limit)),
 		})
 	}
 	daily := config.GetDailyUsage(now)
@@ -255,7 +255,7 @@ func postAlertWebhook(url string, a costAlert) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "kiro-go/"+config.Version)
+	req.Header.Set("User-Agent", "github.com/springmusk026/Kiro-Gateway/"+config.Version)
 	resp, err := alertWebhookClient.Do(req)
 	if err != nil {
 		logger.Warnf("[Alerts] webhook delivery failed: %v", err)

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 2.1.0 — Kiro Gateway
+
+The project is now **Kiro Gateway** ([springmusk026/Kiro-Gateway](https://github.com/springmusk026/Kiro-Gateway)).
+Data and settings carry over; see [docs/upgrading.md](docs/upgrading.md) for the renamed image, compose service
+and binary.
+
+### Project
+- Renamed to Kiro Gateway: image `ghcr.io/springmusk026/kiro-gateway`, compose service and binary
+  `kiro-gateway`, Go module `github.com/springmusk026/Kiro-Gateway`, response header
+  `x-kiro-gateway-fallback-model`. Environment variables are unchanged.
+- New README with screenshots, installation, upgrading and troubleshooting guides, contributing guide,
+  security policy, code of conduct and support page; CI runs formatting, vet, tests (with PostgreSQL), race
+  tests and the console build on every push.
+
+### Console
+- Analytics page: KPIs with change vs the previous period, trends, breakdowns by model, account, key, client,
+  endpoint, protocol and status, error classes, activity heatmap and slowest requests.
+- Every table and list is paginated; request logs page through the history on the server with a total count.
+- Models page with Catalog, Aliases (including fallbacks) and Thinking tabs.
+- Migration prompt for moving `config.json` into PostgreSQL.
+
+### Upstream
+- Requests aligned with a wire capture of the official Kiro CLI 3.5.0 (API-key accounts use the runtime
+  service's own operation and headers; `/v1/responses` headers, metadata and conversation ids match).
+- `response.incomplete`, refusals and in-stream error events are handled.
+
 ### APIs
 - Documents: Anthropic `document` blocks (base64, `text`, `content` and `url` sources, also inside
   `tool_result`), OpenAI Chat `file` parts and Responses `input_file` items are forwarded to Kiro as documents
@@ -31,7 +57,7 @@
 - `KIRO_ENCRYPTION_KEY` encrypts account tokens, client secrets, Kiro API keys, proxy URLs, API key values
   and the admin password at rest (AES-256-GCM) in `config.json` and PostgreSQL. Plaintext data is encrypted on
   the first start with a key; a missing or wrong key stops the start-up instead of losing accounts.
-  `kiro-go export` keeps encrypted values unless `--decrypt` is given.
+  `kiro-gateway export` keeps encrypted values unless `--decrypt` is given.
 - `config.json` is always written `0600` and a symlinked config file is refused.
 - The console signs in with HttpOnly, SameSite=Strict session cookies (`/admin/api/session`) instead of
   sending the admin password with every call and keeping it in browser storage. Sessions expire after 12 h
@@ -48,7 +74,7 @@
   and for the pool.
 - **Model fallback**: per-model fallback lists (Models → Aliases). A request whose model is unavailable or
   overloaded is retried once on the first fallback before anything is streamed, within the attempt budget;
-  reported in `x-kiro-go-fallback-model` and the request log (schema migration 3 adds
+  reported in `x-kiro-gateway-fallback-model` and the request log (schema migration 3 adds
   `kiro_request_logs.fallback_model`).
 - **Budgets**: a global and a per-key daily credit cap, reset at midnight in a configurable time zone;
   requests over a cap get `429` (`rate_limit_error` / `insufficient_quota`) without reaching Kiro.
@@ -59,7 +85,7 @@
 
 ## 2.0.0 — independent project
 
-Kiro-Go began as a fork of [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) at version 1.1.5. Since
+Kiro Gateway began as a fork of [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) at version 1.1.5. Since
 then the gateway, its storage and its console have been rebuilt, so it is now maintained as its own project.
 Configuration from the original (`data/config.json`) is still read and can be migrated into PostgreSQL from
 the console.
@@ -99,7 +125,7 @@ the console.
 ### Storage and logging
 - PostgreSQL backend for settings, accounts, keys and stored responses, with automatic schema migrations.
 - Automatic first-start import of `config.json` and a console prompt to verify the transfer and delete the
-  file; `kiro-go migrate` / `kiro-go export` commands.
+  file; `kiro-gateway migrate` / `kiro-gateway export` commands.
 - Full request history (timing, routing, tokens, cache, credits, attempts, optional bodies) and an admin
   audit log, written asynchronously so inference is never slowed down.
 

@@ -98,7 +98,7 @@ export function StorageCard() {
                 <li>{t('settings.enablePgStep3')}</li>
               </ol>
               <CodeBlock
-                code={`DATABASE_URL="postgres://kiro:kiro@localhost:5432/kiro?sslmode=disable"\n\n# ${t('settings.enablePgMigrate')}\nkiro-go migrate --from data/config.json --to "$DATABASE_URL"`}
+                code={`DATABASE_URL="postgres://kiro:kiro@localhost:5432/kiro?sslmode=disable"\n\n# ${t('settings.enablePgMigrate')}\nkiro-gateway migrate --from data/config.json --to "$DATABASE_URL"`}
               />
             </div>
           )}

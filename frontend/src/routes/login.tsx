@@ -64,7 +64,7 @@ function LoginPage() {
         </div>
         <div className="relative flex items-center gap-3">
           <Logo className="size-9" />
-          <span className="text-lg font-semibold tracking-tight">Kiro-Go</span>
+          <span className="text-lg font-semibold tracking-tight">Kiro Gateway</span>
         </div>
         <div className="relative mt-auto max-w-md">
           <h2 className="text-4xl font-semibold leading-tight tracking-tight">{t('login.heroTitle')}</h2>
@@ -89,7 +89,7 @@ function LoginPage() {
         <div className="flex items-center justify-between p-5">
           <div className="flex items-center gap-2 lg:invisible">
             <Logo className="size-7" />
-            <span className="font-semibold">Kiro-Go</span>
+            <span className="font-semibold">Kiro Gateway</span>
           </div>
           <div className="flex items-center gap-1 rounded-lg border bg-card p-0.5 text-xs">
             {LANGS.map((l) => (

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func withFakeProtocols(t *testing.T, fn func(protocol string, cb *KiroStreamCallback) error) *[]string {

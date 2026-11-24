@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"kiro-go/logger"
+	"github.com/springmusk026/Kiro-Gateway/logger"
 )
 
 // ==================== Tool-call XML Leak Fix ====================

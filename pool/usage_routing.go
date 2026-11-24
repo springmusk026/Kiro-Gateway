@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // Usage-aware routing.

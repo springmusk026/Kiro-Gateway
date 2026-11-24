@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // routeCostAdmin serves the cost-control admin API:
@@ -132,7 +132,7 @@ func (h *Handler) apiTestAlertWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	err := postAlertWebhook(url, costAlert{
 		Kind: "test", Level: "warning",
-		Text: "Kiro-Go: test alert. Budget and usage alerts will be posted here.",
+		Text: "Kiro Gateway: test alert. Budget and usage alerts will be posted here.",
 	})
 	if err != nil {
 		writeCostJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

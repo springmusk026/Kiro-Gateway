@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"kiro-go/config"
-	"kiro-go/logger"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
 )
 
 // Model fallback.
@@ -19,10 +19,10 @@ import (
 // model (config modelFallbacks). Client errors, auth, quota and rate limits
 // never fall back. The retry happens only before anything was streamed to
 // the client and only while the request's upstream attempt budget has room.
-// The fallback model is reported in the x-kiro-go-fallback-model header (when
+// The fallback model is reported in the x-kiro-gateway-fallback-model header (when
 // the status line has not been sent yet) and in the request log.
 
-const fallbackModelHeader = "x-kiro-go-fallback-model"
+const fallbackModelHeader = "x-kiro-gateway-fallback-model"
 
 // isModelUnavailableMessage matches errors that name the model (not the
 // account) as unavailable. Every account would fail the same way, so the

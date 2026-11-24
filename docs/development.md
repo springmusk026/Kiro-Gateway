@@ -10,8 +10,8 @@
 
 ```bash
 (cd frontend && npm ci && npm run build)   # type-checks, builds and publishes the console into ./web
-go build -o kiro-go .
-ADMIN_PASSWORD=dev-password ./kiro-go       # serves http://localhost:8080 and /admin
+go build -o kiro-gateway .
+ADMIN_PASSWORD=dev-password ./kiro-gateway       # serves http://localhost:8080 and /admin
 ```
 
 Run the binary from the repository root: the console is served from `./web` relative to the working
@@ -22,7 +22,7 @@ directory.
 ```bash
 cd frontend
 npm run dev          # Vite on http://localhost:5173/admin, proxying /admin/api and /v1 to :8080
-KIRO_GO_URL=http://other-host:8080 npm run dev
+KIRO_GATEWAY_URL=http://other-host:8080 npm run dev
 npm run typecheck
 ```
 
@@ -76,6 +76,6 @@ gofmt -l $(git ls-files '*.go'); go vet ./... && go test ./... && go test -race 
 
 ## Releases
 
-Pushing to `main` builds and publishes `ghcr.io/springmusk026/kiro-go:latest` (amd64 + arm64) through
+Pushing to `main` builds and publishes `ghcr.io/springmusk026/kiro-gateway:latest` (amd64 + arm64) through
 `.github/workflows/docker.yml`. Tag `vX.Y.Z` to publish versioned images; bump `config.Version`,
 `version.json` and `CHANGELOG.md` together.

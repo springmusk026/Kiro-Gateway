@@ -3,7 +3,7 @@ package proxy
 import (
 	"context"
 	"crypto/subtle"
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
 	"strings"
 	"time"

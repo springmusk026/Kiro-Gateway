@@ -2,7 +2,7 @@ package pool
 
 import (
 	"errors"
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"path/filepath"
 	"testing"
 	"time"

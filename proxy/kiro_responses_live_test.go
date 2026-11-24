@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // TestLiveResponsesTransport exercises the real /v1/responses upstream with the
@@ -19,7 +19,7 @@ import (
 //
 //	curl -s -X POST -H "X-Admin-Password: $PW" \
 //	  http://127.0.0.1:8080/admin/api/accounts/$ID/refresh
-//	KIRO_LIVE=1 KIRO_LIVE_CONFIG=/home/vvv/Kiro-Go/data/config.json \
+//	KIRO_LIVE=1 KIRO_LIVE_CONFIG=/home/vvv/Kiro Gateway/data/config.json \
 //	  go test ./proxy -run TestLiveResponsesTransport -v
 func TestLiveResponsesTransport(t *testing.T) {
 	if os.Getenv("KIRO_LIVE") != "1" {
@@ -27,7 +27,7 @@ func TestLiveResponsesTransport(t *testing.T) {
 	}
 	cfgPath := os.Getenv("KIRO_LIVE_CONFIG")
 	if cfgPath == "" {
-		cfgPath = os.ExpandEnv("$HOME/Kiro-Go/data/config.json")
+		cfgPath = os.ExpandEnv("$HOME/Kiro Gateway/data/config.json")
 	}
 	if err := config.Init(cfgPath); err != nil {
 		t.Fatalf("config.Init(%s): %v", cfgPath, err)

@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
 	"time"
 )

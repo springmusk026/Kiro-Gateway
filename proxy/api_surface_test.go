@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
-	accountpool "kiro-go/pool"
+	accountpool "github.com/springmusk026/Kiro-Gateway/pool"
 	"net/http"
 	"net/http/httptest"
 	"strings"

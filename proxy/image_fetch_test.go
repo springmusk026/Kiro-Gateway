@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"

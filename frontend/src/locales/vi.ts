@@ -1,8 +1,8 @@
 import type { MessageKey } from './en'
 export const vi: Partial<Record<MessageKey, string>> = {
-  'app.name': 'Kiro-Go',
-  'app.tagline': 'Cổng API',
-  'app.title': 'Bảng điều khiển Kiro-Go',
+  'app.name': 'Kiro Gateway',
+  'app.tagline': 'Bảng quản trị',
+  'app.title': 'Bảng điều khiển Kiro Gateway',
 
   'nav.workspace': 'Không gian làm việc',
   'nav.developers': 'Nhà phát triển',
@@ -1060,7 +1060,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   'settings.enablePgTitle': 'Bật PostgreSQL để lưu toàn bộ lịch sử',
   'settings.enablePgStep1': 'Đặt DATABASE_URL thành URL kết nối PostgreSQL rồi khởi động lại máy chủ.',
   'settings.enablePgStep2': 'Với Docker, docker-compose.yml mặc định đã chạy dịch vụ postgres:16 và đặt DATABASE_URL.',
-  'settings.enablePgStep3': 'data/config.json hiện có được nhập ở lần khởi động đầu; hoặc di chuyển thủ công bằng kiro-go migrate.',
+  'settings.enablePgStep3': 'data/config.json hiện có được nhập ở lần khởi động đầu; hoặc di chuyển thủ công bằng kiro-gateway migrate.',
   'settings.enablePgMigrate': 'tùy chọn: di chuyển thủ công',
   'settings.logging': 'Lịch sử yêu cầu',
   'settings.loggingDesc': 'Lưu gì cho mỗi yêu cầu và trong bao lâu.',
@@ -1276,7 +1276,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   'cost.fbSelf': 'Mô hình không thể dự phòng cho chính nó',
   'cost.fbTooMany': 'Tối đa 5 dự phòng mỗi mô hình',
   'cost.fbFix': 'Sửa các dòng được đánh dấu để lưu',
-  'cost.fbHint': 'Chỉ thử dự phòng đầu tiên, một lần mỗi yêu cầu, trước khi stream bất cứ gì. Phản hồi có header x-kiro-go-fallback-model và nhật ký yêu cầu hiển thị dự phòng.',
+  'cost.fbHint': 'Chỉ thử dự phòng đầu tiên, một lần mỗi yêu cầu, trước khi stream bất cứ gì. Phản hồi có header x-kiro-gateway-fallback-model và nhật ký yêu cầu hiển thị dự phòng.',
   'cost.fbUnknown': 'Không có trong danh mục hiện tại',
   'cost.fbLogLabel': 'Mô hình dự phòng',
   'cost.routing': 'Định tuyến theo mức dùng',

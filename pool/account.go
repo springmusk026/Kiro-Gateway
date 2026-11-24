@@ -3,7 +3,7 @@
 package pool
 
 import (
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"strings"
 	"sync"
 	"time"

@@ -3,7 +3,7 @@ package proxy
 import (
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func TestResponsesEndpointUsesProfileRegionNotAuthRegion(t *testing.T) {

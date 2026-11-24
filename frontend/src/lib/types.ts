@@ -1,4 +1,4 @@
-/** Wire types for the Kiro-Go admin API (see backend proxy/handler.go). */
+/** Wire types for the Kiro Gateway admin API (see backend proxy/handler.go). */
 
 export type AuthMethod = 'idc' | 'social' | 'external_idp' | 'api_key' | (string & {})
 export type BanStatus = '' | 'ACTIVE' | 'BANNED' | 'DISABLED' | 'SUSPENDED' | (string & {})

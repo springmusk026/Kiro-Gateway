@@ -1,6 +1,6 @@
 # API reference
 
-Kiro-Go exposes the request and response shapes of the official Anthropic and OpenAI APIs. This page lists
+Kiro Gateway exposes the request and response shapes of the official Anthropic and OpenAI APIs. This page lists
 what is supported, where behaviour differs, and how gateway-specific features (thinking, models, errors)
 work.
 
@@ -20,7 +20,7 @@ work.
 
 ### Authentication
 
-Send a Kiro-Go API key as `Authorization: Bearer <key>` or `x-api-key: <key>` (the scheme is
+Send a Kiro Gateway API key as `Authorization: Bearer <key>` or `x-api-key: <key>` (the scheme is
 case-insensitive). Keys are created on the **API & Keys** page and can carry request or token quotas. If no
 keys exist and verification is off, the endpoints are open — the console warns about this.
 
@@ -32,7 +32,7 @@ until an expiry date.
 
 `request-id` and `x-request-id` (same value, also shown in Request logs), `retry-after` on 429/529/503, and
 CORS headers that echo the browser's requested headers (so the Anthropic and OpenAI browser SDKs work).
-A request served by a fallback model also carries `x-kiro-go-fallback-model` (see
+A request served by a fallback model also carries `x-kiro-gateway-fallback-model` (see
 [configuration.md](configuration.md#model-fallbacks)).
 
 ## Anthropic Messages
@@ -151,7 +151,7 @@ Effort maps to the thinking length the model is given: `minimal` 2K, `low` 8K, `
 `xhigh` 128K, `max` 200K tokens; without an effort or budget the default length applies (200K, configurable).
 
 **Native effort.** Kiro's model catalogue declares, per model, which effort levels it accepts (Claude models
-`low`…`max` under `output_config.effort`; GPT models `low`…`high` under `reasoning.effort`). Kiro-Go reads
+`low`…`max` under `output_config.effort`; GPT models `low`…`high` under `reasoning.effort`). Kiro Gateway reads
 that declaration, picks the closest accepted level, and forwards it the same way the official Kiro client
 does — only on the `/v1/responses` upstream transport and only for models that declare it. The Models page
 and `/v1/models` (`supported_reasoning_efforts`) show the levels per model.

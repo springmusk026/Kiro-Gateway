@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/logger"
-	"kiro-go/storage"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/storage"
 )
 
 func databaseURL() string {
@@ -150,10 +150,10 @@ func runCommand(cmd string, args []string, configPath string) int {
 		return 0
 	case "help", "-h", "--help":
 		fmt.Println(`Usage:
-  kiro-go                       start the gateway
-  kiro-go migrate [--from config.json] [--to postgres://…] [--force]
+  kiro-gateway                       start the gateway
+  kiro-gateway migrate [--from config.json] [--to postgres://…] [--force]
                                 copy config.json and stored responses into PostgreSQL
-  kiro-go export  [--from postgres://…] [--out file.json] [--decrypt]
+  kiro-gateway export  [--from postgres://…] [--out file.json] [--decrypt]
                                 write the database configuration back to a JSON file
                                 (encrypted credentials stay encrypted unless --decrypt)
 
@@ -161,6 +161,6 @@ Environment: CONFIG_PATH (default data/config.json), DATABASE_URL (enables Postg
 KIRO_ENCRYPTION_KEY (encrypts credentials at rest).`)
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "unknown command %q (try: kiro-go help)\n", cmd)
+	fmt.Fprintf(os.Stderr, "unknown command %q (try: kiro-gateway help)\n", cmd)
 	return 2
 }

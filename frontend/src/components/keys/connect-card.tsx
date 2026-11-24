@@ -13,7 +13,7 @@ import { useModels } from '@/lib/queries'
 import { useSettings } from '@/lib/queries.settings'
 import { origin } from './endpoints-card'
 
-const KEY_PLACEHOLDER = 'sk-your-kiro-go-key'
+const KEY_PLACEHOLDER = 'sk-your-gateway-key'
 
 function pick(ids: string[], ...prefs: string[]) {
   for (const p of prefs) {
@@ -93,7 +93,7 @@ model = "${m}"
 model_provider = "kiro"${think ? '\nmodel_reasoning_effort = "medium"' : ''}
 
 [model_providers.kiro]
-name = "Kiro-Go"
+name = "Kiro Gateway"
 base_url = "${base}/v1"
 env_key = "KIRO_API_KEY"
 wire_api = "responses"`,

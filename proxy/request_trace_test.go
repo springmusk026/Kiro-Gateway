@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 type memSink struct {
