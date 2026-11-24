@@ -128,14 +128,11 @@ func responsesOrigin(payload *KiroPayload) string {
 }
 
 // responsesEndpointURL is the regional /v1/responses endpoint for an account.
+// The data-plane region comes from the profile ARN: account.Region is the
+// auth/OIDC region for OAuth accounts and can differ from the profile's region
+// (see kiroRegion).
 func responsesEndpointURL(account *config.Account) string {
-	region := "us-east-1"
-	if account != nil {
-		if r := strings.TrimSpace(account.Region); r != "" {
-			region = r
-		}
-	}
-	return fmt.Sprintf("https://runtime.%s.kiro.dev/v1/responses", region)
+	return fmt.Sprintf("https://runtime.%s.kiro.dev/v1/responses", kiroRegion(account))
 }
 
 // buildResponsesRequest projects the internal payload onto the IDE's wire shape.
@@ -613,7 +610,7 @@ func parseResponsesSSE(body io.Reader, payload *KiroPayload, callback *KiroStrea
 		return sawOutput || sawThinking, fmt.Errorf("Kiro responses stream failed: %s", errMsg)
 	}
 	if !completed {
-		return sawOutput || sawThinking, fmt.Errorf("upstream truncated response without stop reason")
+		return sawOutput || sawThinking, errUpstreamTruncatedResponse
 	}
 	if !sawOutput && !sawThinking {
 		return false, errEmptyKiroStream
