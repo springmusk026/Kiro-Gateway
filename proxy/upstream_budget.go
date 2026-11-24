@@ -27,7 +27,12 @@ var errUpstreamBudgetExhausted = errors.New("upstream attempt budget exhausted f
 
 type upstreamBudgetKey struct{}
 
-type upstreamBudget struct{ remaining atomic.Int32 }
+type upstreamBudget struct {
+	remaining atomic.Int32
+	// fallbackUsed marks that the request already switched to a fallback
+	// model (model_fallback.go): one switch per request.
+	fallbackUsed atomic.Bool
+}
 
 // maxUpstreamAttempts is the per-request budget (KIRO_MAX_UPSTREAM_ATTEMPTS).
 func maxUpstreamAttempts() int32 {

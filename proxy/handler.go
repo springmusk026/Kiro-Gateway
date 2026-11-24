@@ -103,6 +103,8 @@ type Handler struct {
 	conversations conversationBindings
 	// sessionAffinity maps apiKeyID → accountID (see pickAccount).
 	sessionAffinity sync.Map
+	// cost holds usage refresh, budget and alert state (cost_controls.go).
+	cost costControls
 }
 
 type microsoftProfileSelection struct {
@@ -318,6 +320,7 @@ func NewHandler() *Handler {
 	go h.backgroundRefresh()
 	// 启动后台统计保存 (每30秒保存一次)
 	go h.backgroundStatsSaver()
+	h.startCostBackground()
 	// 清理过期的 stored responses（>30 天）
 	go responsesStoreJanitor(h.stopRefresh)
 	return h
@@ -401,6 +404,9 @@ func (h *Handler) authenticateForClaude(w http.ResponseWriter, r *http.Request) 
 		h.sendClaudeError(w, ae.status, ae.code, ae.message)
 		return nil
 	}
+	if h.rejectOverBudget(w, r, entry, true) {
+		return nil
+	}
 	return withApiKeyContext(r, entry)
 }
 
@@ -413,6 +419,9 @@ func (h *Handler) authenticateForOpenAI(w http.ResponseWriter, r *http.Request) 
 			ae = newAuthError(http.StatusUnauthorized, "authentication_error", err.Error())
 		}
 		h.sendOpenAIError(w, ae.status, ae.code, ae.message)
+		return nil
+	}
+	if h.rejectOverBudget(w, r, entry, false) {
 		return nil
 	}
 	return withApiKeyContext(r, entry)
@@ -1188,6 +1197,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		messageStarted = true
 	}
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -1596,7 +1606,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !messageStarted {
-				if isTerminalUpstreamError(err) {
+				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 					break
 				}
 				continue
@@ -1657,6 +1667,10 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		if hb.Committed() {
 			h.sendSSE(w, flusher, "error", map[string]interface{}{
@@ -1741,6 +1755,7 @@ func (h *Handler) recordSuccessForApiKey(ctx context.Context, apiKeyID string, i
 	if tr := traceFrom(ctx); tr != nil {
 		tr.setUsage(inputTokens, outputTokens, credits)
 	}
+	config.RecordDailyCredits(apiKeyID, credits, time.Now())
 	if apiKeyID == "" {
 		return
 	}
@@ -1846,6 +1861,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 	var lastErr error
 	reqStart := time.Now()
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -1937,7 +1953,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
-			if isTerminalUpstreamError(err) {
+			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 				break
 			}
 			continue
@@ -2004,6 +2020,10 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		h.sendClaudeNoAccounts(w)
 		return
@@ -2126,6 +2146,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	var lastErr error
 	reqStart := time.Now()
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -2507,7 +2528,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !responseStarted {
-				if isTerminalUpstreamError(err) {
+				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 					break
 				}
 				continue
@@ -2589,6 +2610,10 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		if hb.Committed() {
 			data, _ := json.Marshal(map[string]interface{}{
@@ -2623,6 +2648,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 	var lastErr error
 	reqStart := time.Now()
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -2710,7 +2736,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
-			if isTerminalUpstreamError(err) {
+			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 				break
 			}
 			continue
@@ -2747,6 +2773,10 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		h.sendOpenAINoAccounts(w)
 		return
@@ -2894,7 +2924,7 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 
 	path := strings.TrimPrefix(r.URL.Path, "/admin/api")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	if h.routeTelemetryAdmin(w, r, path) {
+	if h.routeTelemetryAdmin(w, r, path) || h.routeCostAdmin(w, r, path) {
 		return
 	}
 
