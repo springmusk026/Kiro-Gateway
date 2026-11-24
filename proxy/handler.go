@@ -77,6 +77,7 @@ type Handler struct {
 	cachedModels       []ModelInfo
 	modelsCacheMu      sync.RWMutex
 	modelsCacheTime    int64
+	modelsRefreshMu    sync.Mutex // one upstream model refresh at a time
 	promptCache        *promptCacheTracker
 	tokenRefreshMu     sync.Mutex
 	credentialImportMu sync.Mutex
@@ -318,7 +319,9 @@ func (h *Handler) backgroundRefresh() {
 	for {
 		select {
 		case <-ticker.C:
+			h.modelsRefreshMu.Lock()
 			h.refreshModelsCache()
+			h.modelsRefreshMu.Unlock()
 			h.refreshAllAccounts()
 		case <-h.stopRefresh:
 			return
@@ -506,16 +509,8 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 
 // handleModels 模型列表
 func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
-	// 尝试用缓存的真实模型列表
-	h.modelsCacheMu.RLock()
-	cached := h.cachedModels
-	h.modelsCacheMu.RUnlock()
-	if len(cached) == 0 {
-		h.refreshModelsCache()
-		h.modelsCacheMu.RLock()
-		cached = h.cachedModels
-		h.modelsCacheMu.RUnlock()
-	}
+	// Live upstream model list (cached, refreshed in the background once stale).
+	cached := h.ensureModelsFresh()
 
 	thinkingSuffix := config.GetThinkingConfig().Suffix
 
@@ -549,9 +544,9 @@ func buildAnthropicModelsResponse(cached []ModelInfo, thinkingSuffix string) []m
 	if len(cached) > 0 {
 		for _, m := range cached {
 			supportsImage := modelSupportsImage(m.InputTypes)
-			models = append(models, buildModelInfo(m.ModelId, "anthropic", supportsImage))
+			models = append(models, modelMetadata(buildModelInfo(m.ModelId, "anthropic", supportsImage), m))
 			// 自动生成 thinking 变体
-			models = append(models, buildModelInfo(m.ModelId+thinkingSuffix, "anthropic", supportsImage))
+			models = append(models, modelMetadata(buildModelInfo(m.ModelId+thinkingSuffix, "anthropic", supportsImage), m))
 		}
 	}
 	return models
@@ -2513,6 +2508,8 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/accounts" && r.Method == "GET":
 		h.apiGetAccounts(w, r)
+	case path == "/models" && r.Method == "GET":
+		h.apiGetModels(w, r)
 	case path == "/accounts" && r.Method == "POST":
 		h.apiAddAccount(w, r)
 	case path == "/accounts/batch" && r.Method == "POST":
