@@ -164,3 +164,126 @@ type Migrator interface {
 	// With deleteAfter, import/replace also delete after verification.
 	Run(ctx context.Context, action string, deleteAfter bool) (*MigrationResult, error)
 }
+
+// AnalyticsQuery selects the window and optional filters for Analytics.
+type AnalyticsQuery struct {
+	From, To time.Time
+	Bucket   time.Duration
+	Location *time.Location // for the weekday × hour heatmap
+	Model    string
+	Account  string
+	APIKey   string
+	Endpoint string
+}
+
+// AnalyticsSummary aggregates one window.
+type AnalyticsSummary struct {
+	Requests       int64   `json:"requests"`
+	Errors         int64   `json:"errors"`
+	ClientErrors   int64   `json:"clientErrors"` // HTTP 4xx returned to the client
+	Throttled      int64   `json:"throttled"`    // HTTP 429/529/503
+	InputTokens    int64   `json:"inputTokens"`
+	OutputTokens   int64   `json:"outputTokens"`
+	CacheRead      int64   `json:"cacheReadTokens"`
+	CacheWrite     int64   `json:"cacheWriteTokens"`
+	Credits        float64 `json:"credits"`
+	AvgLatencyMs   float64 `json:"avgLatencyMs"`
+	P50LatencyMs   float64 `json:"p50LatencyMs"`
+	P95LatencyMs   float64 `json:"p95LatencyMs"`
+	P99LatencyMs   float64 `json:"p99LatencyMs"`
+	P50TTFBMs      float64 `json:"p50TtfbMs"`
+	P95TTFBMs      float64 `json:"p95TtfbMs"`
+	AvgAttempts    float64 `json:"avgAttempts"`
+	Retried        int64   `json:"retried"` // requests that needed more than one upstream attempt
+	Streamed       int64   `json:"streamed"`
+	RequestBytes   int64   `json:"requestBytes"`
+	ResponseBytes  int64   `json:"responseBytes"`
+	Accounts       int64   `json:"accounts"`
+	APIKeys        int64   `json:"apiKeys"`
+	Models         int64   `json:"models"`
+	OutputTokensPS float64 `json:"outputTokensPerSec"` // median output throughput of successful requests
+}
+
+// AnalyticsPoint is one time bucket.
+type AnalyticsPoint struct {
+	Time         time.Time `json:"time"`
+	Requests     int64     `json:"requests"`
+	Errors       int64     `json:"errors"`
+	Throttled    int64     `json:"throttled"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+	CacheRead    int64     `json:"cacheReadTokens"`
+	CacheWrite   int64     `json:"cacheWriteTokens"`
+	Credits      float64   `json:"credits"`
+	P50LatencyMs float64   `json:"p50LatencyMs"`
+	P95LatencyMs float64   `json:"p95LatencyMs"`
+	P50TTFBMs    float64   `json:"p50TtfbMs"`
+}
+
+// AnalyticsGroup is one row of a breakdown.
+type AnalyticsGroup struct {
+	Key          string    `json:"key"`
+	Label        string    `json:"label,omitempty"`
+	Requests     int64     `json:"requests"`
+	Errors       int64     `json:"errors"`
+	Throttled    int64     `json:"throttled"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+	CacheRead    int64     `json:"cacheReadTokens"`
+	CacheWrite   int64     `json:"cacheWriteTokens"`
+	Credits      float64   `json:"credits"`
+	P50LatencyMs float64   `json:"p50LatencyMs"`
+	P95LatencyMs float64   `json:"p95LatencyMs"`
+	P50TTFBMs    float64   `json:"p50TtfbMs"`
+	AvgAttempts  float64   `json:"avgAttempts"`
+	LastSeen     time.Time `json:"lastSeen"`
+}
+
+// AnalyticsError groups failures by class and HTTP status.
+type AnalyticsError struct {
+	Type     string    `json:"type"`
+	Status   int       `json:"status"`
+	Count    int64     `json:"count"`
+	Sample   string    `json:"sample"`
+	LastSeen time.Time `json:"lastSeen"`
+}
+
+// AnalyticsHeatCell counts requests per local weekday (0 = Sunday) and hour.
+type AnalyticsHeatCell struct {
+	Weekday  int   `json:"weekday"`
+	Hour     int   `json:"hour"`
+	Requests int64 `json:"requests"`
+	Errors   int64 `json:"errors"`
+}
+
+// AnalyticsSlow is one of the slowest requests in the window.
+type AnalyticsSlow struct {
+	ID         string    `json:"id"`
+	Time       time.Time `json:"time"`
+	Model      string    `json:"model"`
+	Endpoint   string    `json:"endpoint"`
+	Status     string    `json:"status"`
+	DurationMs int64     `json:"durationMs"`
+	TTFBMs     int64     `json:"ttfbMs"`
+	Output     int64     `json:"outputTokens"`
+	Attempts   int       `json:"attempts"`
+}
+
+// AnalyticsReport is everything the analytics page shows for one window.
+type AnalyticsReport struct {
+	From       time.Time                   `json:"from"`
+	To         time.Time                   `json:"to"`
+	BucketSec  int64                       `json:"bucketSec"`
+	Summary    AnalyticsSummary            `json:"summary"`
+	Previous   AnalyticsSummary            `json:"previous"` // the preceding window of equal length
+	Series     []AnalyticsPoint            `json:"series"`
+	Breakdowns map[string][]AnalyticsGroup `json:"breakdowns"`
+	Errors     []AnalyticsError            `json:"errors"`
+	Heatmap    []AnalyticsHeatCell         `json:"heatmap"`
+	Slowest    []AnalyticsSlow             `json:"slowest"`
+}
+
+// AnalyticsReader is implemented by backends that can aggregate history.
+type AnalyticsReader interface {
+	Analytics(ctx context.Context, q AnalyticsQuery) (*AnalyticsReport, error)
+}

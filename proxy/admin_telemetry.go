@@ -184,6 +184,8 @@ func (h *Handler) routeTelemetryAdmin(w http.ResponseWriter, r *http.Request, pa
 		h.apiQueryAudit(w, r)
 	case path == "/storage" && r.Method == http.MethodGet:
 		h.apiStorageInfo(w, r)
+	case path == "/analytics" && r.Method == http.MethodGet:
+		h.apiAnalytics(w, r)
 	case path == "/storage/migration" && r.Method == http.MethodGet:
 		h.apiMigrationStatus(w, r)
 	case path == "/storage/migration" && r.Method == http.MethodPost:
@@ -242,4 +244,61 @@ func (h *Handler) apiMigrationRun(w http.ResponseWriter, r *http.Request) {
 	logger.Infof("[Migration] %s: +%d accounts, +%d API keys, +%d responses, verified=%v, deleted %d file(s)",
 		req.Action, res.ImportedAccounts, res.ImportedKeys, res.ImportedResponses, res.Verified, len(res.Deleted))
 	writeJSON(w, res)
+}
+
+// apiAnalytics: GET /admin/api/analytics?hours=&bucket=&tz=&model=&account=&apiKey=&endpoint=
+func (h *Handler) apiAnalytics(w http.ResponseWriter, r *http.Request) {
+	ar, ok := h.logReader.(telemetry.AnalyticsReader)
+	if !ok || h.logReader == nil {
+		w.WriteHeader(http.StatusConflict)
+		writeJSON(w, map[string]string{"error": "analytics needs the PostgreSQL backend (set DATABASE_URL)"})
+		return
+	}
+	hours := queryInt(r, "hours", 24)
+	if hours < 1 {
+		hours = 1
+	}
+	if hours > 24*366 {
+		hours = 24 * 366
+	}
+	bucket := time.Duration(queryInt(r, "bucket", 0)) * time.Second
+	if bucket <= 0 {
+		bucket = analyticsBucket(time.Duration(hours) * time.Hour)
+	}
+	// Keep the series to at most ~400 points.
+	if min := time.Duration(hours) * time.Hour / 400; bucket < min {
+		bucket = min.Round(time.Minute)
+	}
+	loc := time.UTC
+	if tz := r.URL.Query().Get("tz"); tz != "" {
+		if l, err := time.LoadLocation(tz); err == nil {
+			loc = l
+		}
+	}
+	to := time.Now().Truncate(time.Minute).Add(time.Minute)
+	q := r.URL.Query()
+	rep, err := ar.Analytics(r.Context(), telemetry.AnalyticsQuery{
+		From: to.Add(-time.Duration(hours) * time.Hour), To: to, Bucket: bucket, Location: loc,
+		Model: q.Get("model"), Account: q.Get("account"), APIKey: q.Get("apiKey"), Endpoint: q.Get("endpoint"),
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, rep)
+}
+
+// analyticsBucket picks a readable bucket size for a window.
+func analyticsBucket(span time.Duration) time.Duration {
+	switch {
+	case span <= 6*time.Hour:
+		return 10 * time.Minute
+	case span <= 48*time.Hour:
+		return time.Hour
+	case span <= 8*24*time.Hour:
+		return 6 * time.Hour
+	default:
+		return 24 * time.Hour
+	}
 }
