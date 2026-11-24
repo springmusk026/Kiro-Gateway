@@ -145,3 +145,46 @@ func Flush() {
 		flushPending()
 	}
 }
+
+// MergeMissing adds the accounts and API keys from src that the current
+// configuration does not have (matched by ID; API keys also by key value) and
+// persists the result. Existing entries are never modified.
+func MergeMissing(src *Config) (accounts, keys int, err error) {
+	if src == nil {
+		return 0, 0, nil
+	}
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	if cfg == nil {
+		return 0, 0, ErrConfigUnavailable
+	}
+	haveAcc := make(map[string]bool, len(cfg.Accounts))
+	for _, a := range cfg.Accounts {
+		haveAcc[a.ID] = true
+	}
+	for _, a := range src.Accounts {
+		if a.ID == "" || haveAcc[a.ID] {
+			continue
+		}
+		cfg.Accounts = append(cfg.Accounts, a)
+		haveAcc[a.ID] = true
+		accounts++
+	}
+	haveKey := make(map[string]bool, 2*len(cfg.ApiKeys))
+	for _, k := range cfg.ApiKeys {
+		haveKey["id:"+k.ID] = true
+		haveKey["key:"+k.Key] = true
+	}
+	for _, k := range src.ApiKeys {
+		if k.Key == "" || haveKey["id:"+k.ID] || haveKey["key:"+k.Key] {
+			continue
+		}
+		cfg.ApiKeys = append(cfg.ApiKeys, k)
+		haveKey["id:"+k.ID], haveKey["key:"+k.Key] = true, true
+		keys++
+	}
+	if accounts == 0 && keys == 0 {
+		return 0, 0, nil
+	}
+	return accounts, keys, Save()
+}

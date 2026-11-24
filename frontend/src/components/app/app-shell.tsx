@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { MigrationPrompt } from '@/components/app/migration'
 import { Button } from '@/components/ui/button'
 import {
   CommandDialog,
@@ -341,6 +342,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       <CommandMenu open={cmdOpen} setOpen={setCmdOpen} />
+      <MigrationPrompt />
     </div>
   )
 }

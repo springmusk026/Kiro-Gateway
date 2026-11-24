@@ -166,8 +166,13 @@ Kiro-Go stores its data in one of two backends:
 | JSON file | no `DATABASE_URL` | `data/config.json` and `data/responses/*.json`; request logs are kept in memory only |
 
 **Migrating from `config.json`.** Point Kiro-Go at an empty database and start it: the existing
-`data/config.json` and stored responses are imported automatically on the first start (the JSON files are
-left untouched as a backup). You can also migrate by hand, and export back to JSON at any time:
+`data/config.json` and stored responses are imported automatically on the first start
+(`KIRO_AUTO_IMPORT=false` turns that off). While a `config.json` is still on disk, the admin console shows a
+migration prompt (also under **Settings → Logging & storage**) that compares the file with the database,
+imports anything missing (merging accounts and API keys without overwriting the database, or replacing it
+wholesale if you choose), verifies every account, key and stored response, and then deletes the JSON files.
+Nothing else in the data folder, such as the PostgreSQL volume, is touched. You can also migrate by hand,
+and export back to JSON at any time:
 
 ```bash
 kiro-go migrate --from data/config.json --to "postgres://kiro:kiro@localhost:5432/kiro?sslmode=disable"

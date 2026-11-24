@@ -1,5 +1,6 @@
 import { AlertTriangle, Database, FileJson, HardDrive, ScrollText, ShieldAlert } from 'lucide-react'
 import { CodeBlock } from '@/components/app/code-block'
+import { MigrationSettingsBlock } from '@/components/app/migration'
 import { parseBackend } from '@/components/logs/history-bits'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +66,8 @@ export function StorageCard() {
               )}
             </div>
           </div>
+
+          {s.database && <MigrationSettingsBlock />}
 
           {s.database && rec && (
             <div className="space-y-2">

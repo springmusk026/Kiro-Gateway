@@ -98,6 +98,7 @@ type Handler struct {
 	sink      telemetry.Sink
 	logReader telemetry.Reader
 	respStore telemetry.ResponseStore
+	migrator  telemetry.Migrator
 	// conversations maps conversationID → accountID (see pickAccount).
 	conversations conversationBindings
 	// sessionAffinity maps apiKeyID → accountID (see pickAccount).
@@ -5095,6 +5096,9 @@ func tokenNeedsRefresh(account *config.Account) bool {
 
 // UseTelemetry connects request logging, log queries and the stored-responses
 // backend (all optional; nil keeps the in-memory/file behaviour).
+// UseMigrator enables the console's config.json → database migration.
+func (h *Handler) UseMigrator(m telemetry.Migrator) { h.migrator = m }
+
 func (h *Handler) UseTelemetry(sink telemetry.Sink, reader telemetry.Reader, responses telemetry.ResponseStore) {
 	h.sink = sink
 	h.logReader = reader

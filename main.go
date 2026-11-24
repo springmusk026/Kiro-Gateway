@@ -95,6 +95,13 @@ func main() {
 			return time.Duration(days) * 24 * time.Hour
 		})
 		handler.UseTelemetry(recorder, recorder, storage.NewResponseStore(db))
+		handler.UseMigrator(&storage.JSONMigrator{
+			DB:          db,
+			ConfigPath:  configPath,
+			AutoImport:  autoImportEnabled(),
+			ResponseTTL: proxy.StoredResponseTTL(),
+			Reload:      reloadConfig,
+		})
 		logger.Infof("Storage: PostgreSQL (request logging and audit enabled)")
 	} else {
 		logger.Infof("Storage: %s (set DATABASE_URL to use PostgreSQL with request history)", config.CurrentStore().Name())
@@ -149,4 +156,20 @@ func isLoopbackHost(host string) bool {
 		return true
 	}
 	return false
+}
+
+// reloadConfig re-reads the configuration from the active store after it was
+// replaced wholesale (console migration), re-applying environment overrides.
+func reloadConfig() error {
+	if err := config.Load(); err != nil {
+		return err
+	}
+	if envPassword := os.Getenv("ADMIN_PASSWORD"); envPassword != "" {
+		config.SetPassword(envPassword)
+	}
+	if _, _, err := config.EnsureAdminPassword(); err != nil {
+		return err
+	}
+	pool.GetPool().Reload()
+	return nil
 }

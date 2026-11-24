@@ -351,3 +351,33 @@ export interface AuditEvent {
   target?: string
   detail?: Record<string, string>
 }
+
+export type MigrationState = 'none' | 'pending' | 'migrated' | 'diverged'
+export interface MigrationStatus {
+  database: boolean
+  state: MigrationState
+  jsonPath: string
+  jsonExists: boolean
+  jsonSize: number
+  jsonModified?: string
+  autoImport: boolean
+  jsonAccounts: number
+  jsonKeys: number
+  jsonResponses: number
+  dbAccounts: number
+  dbKeys: number
+  missingAccounts: number
+  missingKeys: number
+  missingResponses: number
+}
+export type MigrationAction = 'import' | 'replace' | 'delete'
+export interface MigrationResult {
+  action: MigrationAction
+  importedAccounts: number
+  importedKeys: number
+  importedResponses: number
+  skipped: number
+  verified: boolean
+  deleted?: string[]
+  status: MigrationStatus
+}

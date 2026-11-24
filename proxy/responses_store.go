@@ -138,6 +138,10 @@ func storedResponsesLimits() (maxFiles int, maxBytes int64) {
 	return
 }
 
+// StoredResponseTTL is how long stored Responses objects are kept before the
+// periodic purge removes them.
+func StoredResponseTTL() time.Duration { return responsesDefaultTTL }
+
 // purgeExpiredResponses removes stored responses older than ttl, then evicts
 // the oldest ones until the store is within the count and size limits.
 func purgeExpiredResponses(ttl time.Duration) {

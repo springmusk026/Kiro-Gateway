@@ -25,8 +25,9 @@ func databaseURL() string {
 
 // openDatabase connects to PostgreSQL when DATABASE_URL is set and installs it
 // as the config backend. On the first start against an empty database it
-// imports the existing config.json (and stored responses) automatically,
-// leaving the JSON files in place as a backup.
+// imports the existing config.json (and stored responses) automatically
+// unless KIRO_AUTO_IMPORT=false, leaving the JSON files in place: the admin
+// console then offers to verify the transfer and delete them.
 func openDatabase(configPath string) *storage.DB {
 	url := databaseURL()
 	if url == "" {
@@ -43,18 +44,28 @@ func openDatabase(configPath string) *storage.DB {
 	if err != nil {
 		logger.Fatalf("Database: %v", err)
 	}
-	if empty {
+	if empty && autoImportEnabled() {
 		if _, statErr := os.Stat(configPath); statErr == nil {
 			res, err := storage.ImportJSON(ctx, db, configPath, false)
 			if err != nil {
 				logger.Fatalf("Database: importing %s failed: %v", configPath, err)
 			}
-			logger.Infof("Database: imported %s (%d accounts, %d API keys, %d stored responses; %d skipped). The JSON file is kept as a backup.",
+			logger.Infof("Database: imported %s (%d accounts, %d API keys, %d stored responses; %d skipped). The JSON file is kept until you confirm the migration in the admin console.",
 				configPath, res.Accounts, res.APIKeys, res.Responses, res.Skipped)
 		}
 	}
 	config.UseStore(cs)
 	return db
+}
+
+// autoImportEnabled reports whether config.json is imported automatically
+// into an empty database at startup (KIRO_AUTO_IMPORT, default on).
+func autoImportEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KIRO_AUTO_IMPORT"))) {
+	case "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // connectWithRetry tolerates a database that is still starting (docker compose).

@@ -4,6 +4,9 @@ import { get, post } from './api'
 import type {
   AuditEvent,
   LoggingSettings,
+  MigrationAction,
+  MigrationResult,
+  MigrationStatus,
   RequestFilters,
   RequestRecord,
   RequestsPage,
@@ -132,3 +135,21 @@ export function useUpdateLogging() {
 
 
 
+
+/** Leftover config.json compared with the database. */
+export function useMigrationStatus(enabled = true) {
+  return useQuery({
+    queryKey: [...hk.storage, 'migration'],
+    queryFn: () => get<MigrationStatus>('/storage/migration'),
+    enabled,
+    staleTime: 30_000,
+  })
+}
+
+export function useRunMigration() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (v: { action: MigrationAction; deleteAfter: boolean }) => post<MigrationResult>('/storage/migration', v),
+    onSettled: () => qc.invalidateQueries(),
+  })
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"kiro-go/config"
+	"kiro-go/logger"
 	"kiro-go/telemetry"
 )
 
@@ -183,10 +184,62 @@ func (h *Handler) routeTelemetryAdmin(w http.ResponseWriter, r *http.Request, pa
 		h.apiQueryAudit(w, r)
 	case path == "/storage" && r.Method == http.MethodGet:
 		h.apiStorageInfo(w, r)
+	case path == "/storage/migration" && r.Method == http.MethodGet:
+		h.apiMigrationStatus(w, r)
+	case path == "/storage/migration" && r.Method == http.MethodPost:
+		h.apiMigrationRun(w, r)
 	case path == "/logging" && r.Method == http.MethodPost:
 		h.apiUpdateLogging(w, r)
 	default:
 		return false
 	}
 	return true
+}
+
+// apiMigrationStatus: GET /admin/api/storage/migration — leftover config.json
+// compared with the database.
+func (h *Handler) apiMigrationStatus(w http.ResponseWriter, r *http.Request) {
+	if h.migrator == nil {
+		writeJSON(w, telemetry.MigrationStatus{State: "none"})
+		return
+	}
+	st, err := h.migrator.Status(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, st)
+}
+
+// apiMigrationRun: POST /admin/api/storage/migration
+// {action: import|replace|delete, deleteAfter: bool}
+func (h *Handler) apiMigrationRun(w http.ResponseWriter, r *http.Request) {
+	if h.migrator == nil {
+		w.WriteHeader(http.StatusConflict)
+		writeJSON(w, map[string]string{"error": "PostgreSQL is not configured (set DATABASE_URL)"})
+		return
+	}
+	var req struct {
+		Action      string `json:"action"`
+		DeleteAfter bool   `json:"deleteAfter"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]string{"error": "Invalid JSON"})
+		return
+	}
+	res, err := h.migrator.Run(r.Context(), req.Action, req.DeleteAfter)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if res != nil {
+			status = http.StatusConflict // nothing deleted: verification failed
+		}
+		w.WriteHeader(status)
+		writeJSON(w, map[string]interface{}{"error": err.Error(), "result": res})
+		return
+	}
+	logger.Infof("[Migration] %s: +%d accounts, +%d API keys, +%d responses, verified=%v, deleted %d file(s)",
+		req.Action, res.ImportedAccounts, res.ImportedKeys, res.ImportedResponses, res.Verified, len(res.Deleted))
+	writeJSON(w, res)
 }

@@ -120,3 +120,47 @@ type ResponseStore interface {
 	LoadResponse(ctx context.Context, id string) ([]byte, time.Time, error)
 	PurgeResponses(ctx context.Context, olderThan time.Time, keepMax int) (int, error)
 }
+
+// MigrationStatus describes a leftover config.json next to a PostgreSQL
+// backend, compared against what the database holds.
+type MigrationStatus struct {
+	Database    bool      `json:"database"`
+	State       string    `json:"state"` // none | pending | migrated | diverged
+	JSONPath    string    `json:"jsonPath"`
+	JSONExists  bool      `json:"jsonExists"`
+	JSONSize    int64     `json:"jsonSize"`
+	JSONModTime time.Time `json:"jsonModified,omitempty"`
+	AutoImport  bool      `json:"autoImport"`
+
+	JSONAccounts  int `json:"jsonAccounts"`
+	JSONKeys      int `json:"jsonKeys"`
+	JSONResponses int `json:"jsonResponses"`
+	DBAccounts    int `json:"dbAccounts"`
+	DBKeys        int `json:"dbKeys"`
+
+	MissingAccounts  int `json:"missingAccounts"`
+	MissingKeys      int `json:"missingKeys"`
+	MissingResponses int `json:"missingResponses"`
+}
+
+// MigrationResult reports one migration action.
+type MigrationResult struct {
+	Action            string           `json:"action"`
+	ImportedAccounts  int              `json:"importedAccounts"`
+	ImportedKeys      int              `json:"importedKeys"`
+	ImportedResponses int              `json:"importedResponses"`
+	Skipped           int              `json:"skipped"`
+	Verified          bool             `json:"verified"`
+	Deleted           []string         `json:"deleted,omitempty"`
+	Status            *MigrationStatus `json:"status"`
+}
+
+// Migrator moves a config.json (and stored responses) into the database.
+type Migrator interface {
+	Status(ctx context.Context) (*MigrationStatus, error)
+	// Run performs "import" (fill an empty database or merge what is
+	// missing), "replace" (overwrite the database with the JSON) or "delete"
+	// (remove the JSON files once everything is verified in the database).
+	// With deleteAfter, import/replace also delete after verification.
+	Run(ctx context.Context, action string, deleteAfter bool) (*MigrationResult, error)
+}

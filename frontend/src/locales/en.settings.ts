@@ -235,4 +235,42 @@ export const settingsEn = {
   'settings.retentionHint': 'Request history older than this is deleted automatically. Default 30 days.',
   'settings.retentionInvalid': 'Enter a whole number of days between 1 and 3650.',
   'settings.days': 'days',
+
+  // config.json → PostgreSQL migration
+  'migration.title.pending': 'Move your data into PostgreSQL',
+  'migration.title.migrated': 'Finish the migration',
+  'migration.title.diverged': 'config.json has data the database is missing',
+  'migration.title.none': 'Migration',
+  'migration.text.pending':
+    'A config.json was found and the database has no accounts yet. Import it, verify, and remove the JSON file.',
+  'migration.text.migrated':
+    'Everything in config.json is already in PostgreSQL (verified). The file is no longer read and can be deleted.',
+  'migration.text.diverged':
+    'Some accounts, API keys or stored responses exist only in config.json. Import the missing items (nothing in the database is overwritten), then delete the file.',
+  'migration.text.none': '',
+  'migration.badge.pending': 'Not migrated',
+  'migration.badge.migrated': 'Verified',
+  'migration.badge.diverged': 'Needs import',
+  'migration.badge.none': '',
+  'migration.accounts': 'Accounts',
+  'migration.keys': 'API keys',
+  'migration.responses': 'Stored responses',
+  'migration.missing': 'Missing',
+  'migration.modified': 'modified {ago}',
+  'migration.onlyResponses': 'Only stored response files are left',
+  'migration.deleteAfter': 'Delete config.json and stored response files after a verified transfer',
+  'migration.deleteAfterHint': 'Files are removed only when every account, key and response is confirmed in the database. Other files in the data folder are untouched.',
+  'migration.migrate': 'Migrate now',
+  'migration.importMissing': 'Import {n} missing',
+  'migration.deleteNow': 'Delete JSON files',
+  'migration.replace': 'Replace database with config.json…',
+  'migration.replaceWarn':
+    'This overwrites all settings, accounts and API keys in the database ({n} accounts) with the contents of config.json. Changes made since the import are lost.',
+  'migration.replaceConfirm': 'Replace database',
+  'migration.later': 'Remind me later',
+  'migration.clean': 'No config.json left over — all data lives in PostgreSQL.',
+  'migration.doneDeleted': 'Migration complete',
+  'migration.doneDeletedHint': 'Verified in the database and removed {n} JSON file(s).',
+  'migration.doneImported': 'Imported {a} accounts, {k} API keys, {r} responses',
+  'migration.failed': 'Migration failed',
 } as const
