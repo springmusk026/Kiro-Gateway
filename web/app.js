@@ -12,8 +12,16 @@
   }
   let password = sessionStorage.getItem('admin_password') || localStorage.getItem('admin_password') || '';
   const supportedLangs = ['zh', 'en', 'vi'];
-  let currentLang = localStorage.getItem('kiro_lang') || 'zh';
-  if (!supportedLangs.includes(currentLang)) currentLang = 'zh';
+  function detectLang() {
+    const langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en']);
+    for (const l of langs) {
+      const code = String(l || '').toLowerCase().slice(0, 2);
+      if (supportedLangs.includes(code)) return code;
+    }
+    return 'en';
+  }
+  let currentLang = localStorage.getItem('kiro_lang') || detectLang();
+  if (!supportedLangs.includes(currentLang)) currentLang = 'en';
   const dict = { en: null, zh: null, vi: null };
   let accountsData = [];
   const selectedAccounts = new Set();
@@ -116,7 +124,7 @@
   }
   function t(key, ...args) {
     const active = dict[currentLang] || {};
-    const fallback = dict.zh || {};
+    const fallback = dict.en || dict.zh || {};
     let text = active[key] || fallback[key] || key;
     args.forEach((arg, idx) => { text = text.replace('{' + idx + '}', arg); });
     return text;
@@ -133,7 +141,7 @@
     refreshCustomSelects();
   }
   async function setLang(lang) {
-    if (!supportedLangs.includes(lang)) lang = 'zh';
+    if (!supportedLangs.includes(lang)) lang = 'en';
     currentLang = lang;
     localStorage.setItem('kiro_lang', lang);
     await loadLocale(lang);
@@ -143,6 +151,8 @@
     renderModelMappings();
     renderPromptRules();
     renderLogs(logsCache);
+    updatePageHeader();
+    document.dispatchEvent(new CustomEvent('kiro:lang', { detail: { lang } }));
   }
   function updateLangButtons() {
     qsa('.lang-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === currentLang));
@@ -670,6 +680,10 @@
   function showMain() {
     $('loginPage').classList.add('hidden');
     $('mainPage').classList.remove('hidden');
+    let tab = 'overview';
+    try { tab = localStorage.getItem('kiro_tab') || 'overview'; } catch (e) { /* storage unavailable */ }
+    switchTab(tab);
+    document.dispatchEvent(new CustomEvent('kiro:ready'));
   }
 
   // Data loaders
@@ -691,6 +705,18 @@
     $('statFailed').textContent = d.failedRequests || 0;
     $('statTokens').textContent = formatNum(d.totalTokens || 0);
     $('statCredits').textContent = (d.totalCredits || 0).toFixed(1);
+    const avail = $('ovAvailable');
+    if (avail) avail.textContent = d.available != null ? d.available : (d.accounts || 0);
+    const rate = $('ovSuccessRate');
+    if (rate) rate.textContent = d.totalRequests ? ((100 * (d.successRequests || 0)) / d.totalRequests).toFixed(1) + '%' : '–';
+    const up = $('ovUptime');
+    if (up) up.textContent = formatUptime(d.uptime || 0);
+  }
+  function formatUptime(sec) {
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d) return d + 'd ' + h + 'h';
+    if (h) return h + 'h ' + m + 'm';
+    return m + 'm';
   }
 
   // ===== Logs =====
@@ -3159,11 +3185,25 @@
   function closeUpdateModal() { closeDialog('updateModal'); }
 
   // Tabs
+  let currentTab = 'overview';
+  function updatePageHeader() {
+    const title = $('pageTitle');
+    const sub = $('pageSubtitle');
+    if (title) title.textContent = t('nav.' + currentTab);
+    if (sub) sub.textContent = t('page.' + currentTab);
+  }
   function switchTab(tab) {
+    const panel = $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    if (!panel) tab = 'overview';
+    currentTab = tab;
     qsa('.tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
     qsa('.tab-content').forEach(c => c.classList.add('hidden'));
     $('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
+    try { localStorage.setItem('kiro_tab', tab); } catch (e) { /* storage unavailable */ }
+    document.body.classList.remove('sidebar-open');
+    updatePageHeader();
     if (tab === 'logs') loadLogs();
+    document.dispatchEvent(new CustomEvent('kiro:tab', { detail: { tab } }));
   }
 
   // Event wiring
@@ -3617,11 +3657,20 @@
     bindTestEvents();
   }
 
+  // Shared helpers for dashboard.js (models, playground, overview widgets).
+  window.KiroAdmin = {
+    t, api, escapeHtml, escapeAttr, copyText, switchTab,
+    toast: (msg, variant) => toast(msg, variant),
+    get lang() { return currentLang; },
+    get password() { return password; },
+    get baseUrl() { return baseUrl; },
+  };
+
   // Init
   async function init() {
     initTheme();
     await loadLocale(currentLang);
-    if (currentLang !== 'zh') await loadLocale('zh');
+    if (currentLang !== 'en') await loadLocale('en');
     applyTranslations();
     initCustomSelectObserver();
     initPrivacyMode();
