@@ -14,6 +14,9 @@ type ResponsesRequest struct {
 	Temperature        *float64          `json:"temperature,omitempty"`
 	MaxOutputTokens    *int              `json:"max_output_tokens,omitempty"`
 	Metadata           map[string]string `json:"metadata,omitempty"`
+	TopP               *float64          `json:"top_p,omitempty"`
+	ParallelToolCalls  *bool             `json:"parallel_tool_calls,omitempty"`
+	Truncation         string            `json:"truncation,omitempty"`
 }
 
 type ResponsesObject struct {

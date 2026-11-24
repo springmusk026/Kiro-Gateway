@@ -820,10 +820,20 @@ func extractClaudeUserContent(content interface{}) (string, []KiroImage, []KiroT
 					resultContent = toolResultImagePlaceholder
 				}
 			}
+			status := "success"
+			if isErr, _ := block["is_error"].(bool); isErr {
+				// Kiro has an error status for tool results; the text prefix
+				// keeps the failure visible once results are narrated into
+				// history, where the status is lost.
+				status = "error"
+				if !strings.HasPrefix(strings.TrimSpace(resultContent), "Error") {
+					resultContent = "Error: " + resultContent
+				}
+			}
 			toolResults = append(toolResults, KiroToolResult{
 				ToolUseID: toolUseID,
 				Content:   []KiroResultContent{{Text: resultContent}},
-				Status:    "success",
+				Status:    status,
 			})
 		}
 	}
@@ -1285,6 +1295,18 @@ type OpenAIRequest struct {
 	Stream      bool            `json:"stream,omitempty"`
 	Tools       []OpenAITool    `json:"tools,omitempty"`
 	ToolChoice  interface{}     `json:"tool_choice,omitempty"`
+	// ParallelToolCalls=false limits the turn to a single tool call.
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
+	// MaxCompletionTokens is the newer name for max_tokens.
+	MaxCompletionTokens int                  `json:"max_completion_tokens,omitempty"`
+	N                   *int                 `json:"n,omitempty"`
+	StreamOptions       *OpenAIStreamOptions `json:"stream_options,omitempty"`
+	// Stop is a string or an array of up to 4 strings.
+	Stop interface{} `json:"stop,omitempty"`
+}
+
+type OpenAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
 type OpenAIMessage struct {
@@ -1489,8 +1511,10 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 				}
 				toolUses = append(toolUses, KiroToolUse{
 					ToolUseID: tc.ID,
-					Name:      tc.Function.Name,
-					Input:     input,
+					// Same shortening as the tool specs, so a replayed call
+					// matches the tool it invoked.
+					Name:  shortenToolName(tc.Function.Name),
+					Input: input,
 				})
 			}
 
@@ -1589,10 +1613,22 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 	}
 
 	// 转换工具
-	kiroTools := convertOpenAITools(req.Tools)
+	toolsForConversion := req.Tools
+	toolChoiceType, toolChoiceName := openAIToolChoiceTypeAndName(req.ToolChoice)
+	if toolChoiceType == "none" {
+		toolsForConversion = nil
+	}
+	kiroTools, toolNameMap := convertOpenAIToolsWithNames(toolsForConversion)
+	if directive := buildClaudeToolChoiceDirective(toolChoiceType, toolChoiceName, kiroTools, toolNameMap); directive != "" {
+		finalContent = appendBackendDirective(finalContent, directive)
+	}
+	if req.ParallelToolCalls != nil && !*req.ParallelToolCalls && len(kiroTools) > 0 {
+		finalContent = appendBackendDirective(finalContent, singleToolCallDirective)
+	}
 
 	// 构建 payload
 	payload := &KiroPayload{}
+	payload.ToolNameMap = toolNameMap
 	payload.ConversationState.ChatTriggerType = "MANUAL"
 	payload.ConversationState.AgentTaskType = "vibe"
 	payload.ConversationState.ConversationID = buildConversationID(modelID, systemPrompt, firstOpenAIConversationAnchor(nonSystemMessages))
@@ -1618,9 +1654,13 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 		payload.ConversationState.History = history
 	}
 
-	if req.MaxTokens > 0 || req.Temperature > 0 || req.TopP > 0 {
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = req.MaxCompletionTokens
+	}
+	if maxTokens > 0 || req.Temperature > 0 || req.TopP > 0 {
 		payload.InferenceConfig = &InferenceConfig{
-			MaxTokens:   req.MaxTokens,
+			MaxTokens:   maxTokens,
 			Temperature: req.Temperature,
 			TopP:        req.TopP,
 		}
@@ -1629,6 +1669,70 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 	truncatePayloadToLimit(payload, systemPrompt != "")
 
 	return payload
+}
+
+const singleToolCallDirective = "Backend tool directive: call at most one tool in this turn; do not issue parallel tool calls."
+
+// openAIToolChoiceTypeAndName maps an OpenAI Chat Completions or Responses
+// tool_choice onto the Anthropic vocabulary used by
+// buildClaudeToolChoiceDirective: "none", "auto", "any" (required) or "tool"
+// with a name.
+func openAIToolChoiceTypeAndName(choice interface{}) (string, string) {
+	switch v := choice.(type) {
+	case nil:
+		return "", ""
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "none":
+			return "none", ""
+		case "required", "any":
+			return "any", ""
+		case "auto":
+			return "auto", ""
+		}
+		return "", ""
+	case map[string]interface{}:
+		typ := strings.ToLower(toolChoiceStringField(v, "type"))
+		switch typ {
+		case "function", "custom", "tool":
+			name := toolChoiceStringField(v, "name")
+			if fn, ok := v["function"].(map[string]interface{}); ok && name == "" {
+				name = toolChoiceStringField(fn, "name")
+			}
+			if fn, ok := v["custom"].(map[string]interface{}); ok && name == "" {
+				name = toolChoiceStringField(fn, "name")
+			}
+			if name == "" {
+				return "", ""
+			}
+			return "tool", name
+		case "allowed_tools":
+			if strings.EqualFold(toolChoiceStringField(v, "mode"), "required") {
+				return "any", ""
+			}
+			return "auto", ""
+		case "none", "auto":
+			return typ, ""
+		case "any", "required":
+			return "any", ""
+		}
+		return "", ""
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return "", ""
+		}
+		var decoded interface{}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return "", ""
+		}
+		if _, isMap := decoded.(map[string]interface{}); !isMap {
+			if _, isString := decoded.(string); !isString {
+				return "", ""
+			}
+		}
+		return openAIToolChoiceTypeAndName(decoded)
+	}
 }
 
 func extractOpenAIUserContent(content interface{}) (string, []KiroImage) {
@@ -2506,12 +2610,20 @@ func describeCustomToolFormat(desc string, format map[string]interface{}) string
 }
 
 func convertOpenAITools(tools []OpenAITool) []KiroToolWrapper {
+	result, _ := convertOpenAIToolsWithNames(tools)
+	return result
+}
+
+// convertOpenAIToolsWithNames converts tools and returns the map from the name
+// sent to Kiro back to the client's name, for names that had to be shortened.
+func convertOpenAIToolsWithNames(tools []OpenAITool) ([]KiroToolWrapper, map[string]string) {
 	if len(tools) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	flat := flattenOpenAITools(tools, 0)
 	result := make([]KiroToolWrapper, 0, len(flat))
+	var nameMap map[string]string
 	for _, tool := range flat {
 		// Server-side tool types (web_search, tool_search, image_generation,
 		// local_shell) are executed by the model host, not by Kiro. Forward
@@ -2534,13 +2646,19 @@ func convertOpenAITools(tools []OpenAITool) []KiroToolWrapper {
 			// Kiro rejects tools with empty names; skip unusable specs.
 			continue
 		}
+		if name != tool.Function.Name {
+			if nameMap == nil {
+				nameMap = make(map[string]string)
+			}
+			nameMap[name] = tool.Function.Name
+		}
 		wrapper := KiroToolWrapper{}
 		wrapper.ToolSpecification.Name = name
 		wrapper.ToolSpecification.Description = normalizeToolDesc(desc, name)
 		wrapper.ToolSpecification.InputSchema = InputSchema{JSON: schema}
 		result = append(result, wrapper)
 	}
-	return result
+	return result, nameMap
 }
 
 // collectCustomToolNames records which tools arrived as Codex freeform tools so
@@ -2561,6 +2679,7 @@ func collectCustomToolNames(tools []OpenAITool) map[string]bool {
 			names = make(map[string]bool)
 		}
 		names[name] = true
+		names[tool.Function.Name] = true
 	}
 	return names
 }
@@ -2706,6 +2825,7 @@ func collectToolNamespaces(tools []OpenAITool) map[string]string {
 			out = make(map[string]string)
 		}
 		out[name] = tool.Namespace
+		out[tool.Function.Name] = tool.Namespace
 	}
 	return out
 }

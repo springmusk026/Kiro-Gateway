@@ -337,6 +337,24 @@ func cliRuntimeURL(account *config.Account) string {
 	return fmt.Sprintf("https://runtime.%s.kiro.dev/", config.SafeRegion(region))
 }
 
+// withToolNameRestore wraps OnToolUse so tool calls reach the client under the
+// original (unshortened) tool name.
+func withToolNameRestore(payload *KiroPayload, callback *KiroStreamCallback) *KiroStreamCallback {
+	if payload == nil || callback == nil || callback.OnToolUse == nil || len(payload.ToolNameMap) == 0 {
+		return callback
+	}
+	originalOnToolUse := callback.OnToolUse
+	nameMap := payload.ToolNameMap
+	wrapped := *callback
+	wrapped.OnToolUse = func(tu KiroToolUse) {
+		if original, ok := nameMap[tu.Name]; ok {
+			tu.Name = original
+		}
+		originalOnToolUse(tu)
+	}
+	return &wrapped
+}
+
 // getSortedEndpoints returns endpoints ordered by user preference, with optional fallback.
 func getSortedEndpoints(preferred string) []kiroEndpoint {
 	fallback := config.GetEndpointFallback()
@@ -406,18 +424,7 @@ func callKiroLegacyAPIContext(ctx context.Context, account *config.Account, payl
 	}
 
 	// Wrap OnToolUse to restore original tool names for the client.
-	if callback != nil && callback.OnToolUse != nil && len(payload.ToolNameMap) > 0 {
-		originalOnToolUse := callback.OnToolUse
-		nameMap := payload.ToolNameMap
-		wrapped := *callback
-		wrapped.OnToolUse = func(tu KiroToolUse) {
-			if original, ok := nameMap[tu.Name]; ok {
-				tu.Name = original
-			}
-			originalOnToolUse(tu)
-		}
-		callback = &wrapped
-	}
+	callback = withToolNameRestore(payload, callback)
 
 	if payload != nil && strings.TrimSpace(payload.ProfileArn) == "" && !config.IsAPIKeyAccount(account) {
 		if profileArn, err := ResolveProfileArn(account); err == nil {

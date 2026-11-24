@@ -134,6 +134,10 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	if req.MaxOutputTokens != nil {
 		openaiReq.MaxTokens = *req.MaxOutputTokens
 	}
+	if req.TopP != nil {
+		openaiReq.TopP = *req.TopP
+	}
+	openaiReq.ParallelToolCalls = req.ParallelToolCalls
 
 	openaiReq.Model = actualModel
 
