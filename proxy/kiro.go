@@ -621,6 +621,22 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 		callback = &KiroStreamCallback{}
 	}
 
+	// Tool-call XML leak fix: separate leaked tool-call XML from normal text and
+	// rescue it as structured tool_use. Wrap OnToolUse so every structured tool
+	// emitted by the normal path is recorded for later dedup against leaked copies.
+	leakFilter := newToolLeakFilter()
+	if leakFilter.enabled {
+		inner := callback.OnToolUse
+		cbCopy := *callback
+		cbCopy.OnToolUse = func(toolUse KiroToolUse) {
+			leakFilter.markSeen(toolUse.Name, toolUse.Input)
+			if inner != nil {
+				inner(toolUse)
+			}
+		}
+		callback = &cbCopy
+	}
+
 	// Read directly without bufio to avoid buffering latency in streaming responses.
 	var inputTokens, outputTokens int
 	var totalCredits float64
@@ -696,9 +712,18 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 		case "assistantResponseEvent":
 			if content, ok := event["content"].(string); ok && content != "" {
 				sawOutput = true
-				if callback.OnText != nil {
-					emitted = true
-					callback.OnText(content, false)
+				emitText := func(text string) {
+					if callback.OnText != nil && text != "" {
+						emitted = true
+						callback.OnText(text, false)
+					}
+				}
+				if leakFilter.enabled {
+					// Cross-frame filter: split normal text from leaked tool-call XML.
+					leakFilter.carry += content
+					leakFilter.process(false, emitText)
+				} else {
+					emitText(content)
 				}
 			}
 		case "reasoningContentEvent":
@@ -734,12 +759,26 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 		}
 	}
 
+	// Tool-call XML leak fix: flush any residual carry as text, then inject the
+	// rescued leaked tools (deduplicated against structured tool_use already seen).
+	if leakFilter.enabled {
+		leakFilter.process(true, func(s string) {
+			if callback.OnText != nil && s != "" {
+				emitted = true
+				callback.OnText(s, false)
+			}
+		})
+	}
+
 	// Flush tools that never received a stop frame, in arrival order.
 	if err := pending.flushAll(callback); err != nil {
 		return emitted, err
 	}
 	if !sawOutput {
 		return emitted, errEmptyKiroStream
+	}
+	if leakFilter.enabled {
+		leakFilter.injectLeaked(callback)
 	}
 	if callback.OnCredits != nil && totalCredits > 0 {
 		callback.OnCredits(totalCredits)
