@@ -1,0 +1,1 @@
+import{t as e}from"./useRouter-BdReChh1.js";import{B as t,L as n}from"./api-VaVcZnUX.js";var r=t(n(),1);function i(t){let n=e();return r.useCallback(e=>n.navigate({...e,from:e.from??t?.from}),[t?.from,n])}export{i as t};

@@ -1,9 +1,10 @@
-import { Filter, Globe, Route, ShieldCheck, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
+import { Database, Filter, Globe, Route, ShieldCheck, Sparkles, Wrench, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { PageHeader } from '@/components/app/page-header'
 import { useI18n } from '@/lib/i18n'
 import type { MessageKey } from '@/locales/en'
 import { cn } from '@/lib/utils'
+import { LoggingCard, StorageCard } from './logging-section'
 import { AboutCard, ResetStatsCard } from './maintenance-section'
 import { MappingsCard, ThinkingCard } from './models-section'
 import { ProxyCard } from './network-section'
@@ -19,6 +20,7 @@ const SECTIONS: Section[] = [
   { id: 'models', icon: Sparkles, title: 'settings.secModels', desc: 'settings.secModelsDesc', cards: [ThinkingCard, MappingsCard] },
   { id: 'prompt-filter', icon: Filter, title: 'settings.secFilter', desc: 'settings.secFilterDesc', cards: [PromptFilterCard] },
   { id: 'network', icon: Globe, title: 'settings.secNetwork', desc: 'settings.secNetworkDesc', cards: [ProxyCard] },
+  { id: 'logging', icon: Database, title: 'settings.secLogging', desc: 'settings.secLoggingDesc', cards: [StorageCard, LoggingCard] },
   { id: 'maintenance', icon: Wrench, title: 'settings.secMaintenance', desc: 'settings.secMaintenanceDesc', cards: [ResetStatsCard, AboutCard] },
 ]
 

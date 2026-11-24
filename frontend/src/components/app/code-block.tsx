@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 export function CodeBlock({ code, className }: { code: string; className?: string }) {
   return (
-    <div className={cn('group relative rounded-lg border bg-zinc-950 text-zinc-100 dark:bg-black/40', className)}>
+    <div className={cn('group relative min-w-0 max-w-full rounded-lg border bg-zinc-950 text-zinc-100 dark:bg-black/40', className)}>
       <pre className="overflow-x-auto p-4 pr-12 font-mono text-[12.5px] leading-relaxed">{code}</pre>
       <div className="absolute right-2 top-2 opacity-70 transition-opacity group-hover:opacity-100">
         <CopyButton value={code} className="text-zinc-300 hover:bg-white/10 hover:text-white" />

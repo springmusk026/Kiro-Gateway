@@ -1,18 +1,22 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Activity, ArrowRight, CheckCircle2, Coins, ShieldAlert, Users } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { CodeBlock } from '@/components/app/code-block'
 import { StatCard } from '@/components/app/stat-card'
 import { ActivityFeed } from '@/components/overview/activity-feed'
 import { TopModels } from '@/components/overview/top-models'
 import { TrafficChart } from '@/components/overview/traffic-chart'
+import { UsageBreakdown } from '@/components/overview/usage-breakdown'
+import { OVERVIEW_RANGES, UsageChart, type OverviewRange } from '@/components/overview/usage-chart'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { compact, duration } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { useLogs, useModels, useStatus } from '@/lib/queries'
+import { useStorageInfo } from '@/lib/queries.history'
 
 export const Route = createFileRoute('/_app/')({ component: OverviewPage })
 
@@ -21,11 +25,33 @@ function greetingKey() {
   return h < 12 ? 'overview.greetingMorning' : h < 18 ? 'overview.greetingAfternoon' : 'overview.greetingEvening'
 }
 
+const RANGE_KEY = 'kiro_overview_range'
+function readRange(): OverviewRange {
+  try {
+    const v = localStorage.getItem(RANGE_KEY)
+    if (v && v in OVERVIEW_RANGES) return v as OverviewRange
+  } catch {
+    /* storage unavailable */
+  }
+  return '24h'
+}
+
 function OverviewPage() {
   const { t } = useI18n()
   const { data: status } = useStatus()
   const { data: logs = [] } = useLogs(10_000)
   const { data: catalog } = useModels()
+  const { data: storage } = useStorageInfo()
+  const db = !!storage?.database
+  const [range, setRange] = useState<OverviewRange>(() => readRange())
+  const changeRange = (v: OverviewRange) => {
+    setRange(v)
+    try {
+      localStorage.setItem(RANGE_KEY, v)
+    } catch {
+      /* storage unavailable */
+    }
+  }
 
   const avgLatency = useMemo(() => {
     const ok = logs.filter((l) => l.status === 'success' && l.duration > 0)
@@ -60,13 +86,13 @@ function OverviewPage() {
       )}
 
       {!status ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-[118px] rounded-xl" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 stagger">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 stagger">
           <StatCard
             label={t('overview.accounts')}
             value={status.available}
@@ -109,38 +135,77 @@ function OverviewPage() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('overview.traffic')}</CardTitle>
-            <CardDescription>{t('overview.trafficHint')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TrafficChart logs={logs} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('overview.topModels')}</CardTitle>
-            <CardDescription>{t('overview.topModelsHint')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TopModels logs={logs} />
-          </CardContent>
-        </Card>
-      </div>
+      {db ? (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <Card className="min-w-0">
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1.5">
+                <CardTitle>{t('overview.traffic')}</CardTitle>
+                <CardDescription>{t(`overview.u.trafficHint.${range}` as const)}</CardDescription>
+              </div>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={range}
+                onValueChange={(v) => v && changeRange(v as OverviewRange)}
+                aria-label={t('overview.u.range')}
+              >
+                {(Object.keys(OVERVIEW_RANGES) as OverviewRange[]).map((r) => (
+                  <ToggleGroupItem key={r} value={r} className="px-3 text-xs">
+                    {t(`logs.range.${r}` as const)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </CardHeader>
+            <CardContent>
+              <UsageChart range={range} />
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>{t('overview.u.breakdown')}</CardTitle>
+              <CardDescription>{t(`overview.u.breakdownHint.${range}` as const)}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UsageBreakdown hours={OVERVIEW_RANGES[range].hours} />
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>{t('overview.traffic')}</CardTitle>
+              <CardDescription>{t('overview.trafficHint')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TrafficChart logs={logs} />
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>{t('overview.topModels')}</CardTitle>
+              <CardDescription>{t('overview.topModelsHint')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TopModels logs={logs} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-        <Card>
-          <CardHeader className="flex-row items-center gap-2">
-            <span className="size-2 rounded-full bg-success text-success animate-pulse-ring" />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <Card className="min-w-0">
+          <CardHeader className="flex flex-row items-center gap-2">
+            <span className="size-2 shrink-0 rounded-full bg-success text-success animate-pulse-ring" />
             <CardTitle>{t('overview.recent')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ActivityFeed logs={logs} />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="min-w-0">
           <CardHeader>
             <CardTitle>{t('overview.quickStart')}</CardTitle>
             <CardDescription>{t('overview.quickStartHint')}</CardDescription>

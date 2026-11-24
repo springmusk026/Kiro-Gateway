@@ -2,7 +2,6 @@ import { Ban, CircleAlert, CircleCheck, CircleHelp, CreditCard, Gauge, KeyRound,
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/lib/i18n'
 import type { MessageKey } from '@/locales/en'
-import type { RequestLog } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export const ERROR_TYPES: { id: string; label: MessageKey; hint: MessageKey; icon: LucideIcon }[] = [
@@ -18,6 +17,7 @@ export const ENDPOINT_LABEL: Record<string, MessageKey> = {
   claude: 'logs.ep.claude',
   openai: 'logs.ep.openai',
   responses: 'logs.ep.responses',
+  count_tokens: 'logs.ep.count_tokens',
 }
 
 export function EndpointChip({ endpoint }: { endpoint: string }) {
@@ -30,6 +30,7 @@ export function EndpointChip({ endpoint }: { endpoint: string }) {
         endpoint === 'claude' && 'border-primary/30 bg-primary/[0.06] text-primary',
         endpoint === 'openai' && 'border-success/30 bg-success/[0.07] text-success',
         endpoint === 'responses' && 'border-info/30 bg-info/[0.07] text-info',
+        endpoint === 'count_tokens' && 'border-border bg-muted/50 text-muted-foreground',
       )}
     >
       {key ? t(key) : endpoint || '–'}
@@ -37,7 +38,7 @@ export function EndpointChip({ endpoint }: { endpoint: string }) {
   )
 }
 
-export function StatusBadge({ log }: { log: RequestLog }) {
+export function StatusBadge({ log }: { log: { status: string } }) {
   const { t } = useI18n()
   if (log.status === 'success') {
     return (
