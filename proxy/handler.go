@@ -252,6 +252,12 @@ func validateOpenAIRequestShape(req *OpenAIRequest) string {
 	if len(req.Messages) == 0 {
 		return "messages must not be empty"
 	}
+	if req.N != nil && *req.N > 1 {
+		return "n > 1 is not supported; request one choice at a time"
+	}
+	if seqs := openAIStopSequences(req.Stop); len(seqs) > 4 {
+		return "stop accepts at most 4 sequences"
+	}
 
 	hasNonSystem := false
 	hasUserContext := false
@@ -2048,6 +2054,9 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
 	ctx := withStopSequences(r.Context(), openAIStopSequences(req.Stop))
+	if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
+		ctx = context.WithValue(ctx, includeUsageKey{}, true)
+	}
 	if req.Stream {
 		h.handleOpenAIStream(ctx, w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
@@ -2529,6 +2538,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			finishReason = "stop"
 		}
 
+		usage := buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil)
 		chunk := map[string]interface{}{
 			"id":      chatID,
 			"object":  "chat.completion.chunk",
@@ -2540,9 +2550,26 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				"logprobs":      nil,
 				"finish_reason": finishReason,
 			}},
-			"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
+		}
+		includeUsage, _ := ctx.Value(includeUsageKey{}).(bool)
+		if !includeUsage {
+			// Not official without stream_options.include_usage, but clients
+			// that never ask for it still read usage from the finish chunk.
+			chunk["usage"] = usage
 		}
 		writeChunk(chunk)
+		if includeUsage {
+			// Official shape: usage arrives in its own final chunk with an
+			// empty choices array.
+			writeChunk(map[string]interface{}{
+				"id":      chatID,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []interface{}{},
+				"usage":   usage,
+			})
+		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		flusher.Flush()
 		return
@@ -2571,6 +2598,10 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	}
 	h.sendOpenAIUpstreamError(w, lastErr)
 }
+
+// includeUsageKey marks a chat stream whose client set
+// stream_options.include_usage.
+type includeUsageKey struct{}
 
 // handleOpenAINonStream OpenAI 非流式响应
 func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWriter, payload *KiroPayload, model string, thinking bool, estimatedInputTokens int, cacheProfile *promptCacheProfile, apiKeyID string) {

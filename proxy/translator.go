@@ -2767,7 +2767,13 @@ func KiroToOpenAIResponseWithReasoning(content, reasoningContent string, toolUse
 	}
 
 	if len(toolUses) > 0 {
-		message["content"] = nil
+		// Text the model wrote before its tool calls is kept, as the official
+		// API does; content is null only when there was none.
+		if strings.TrimSpace(content) != "" {
+			message["content"] = content
+		} else {
+			message["content"] = nil
+		}
 		toolCalls := make([]map[string]interface{}, len(toolUses))
 		for i, tu := range toolUses {
 			args, _ := json.Marshal(tu.Input)
