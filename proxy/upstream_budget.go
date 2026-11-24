@@ -3,8 +3,11 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -81,4 +84,65 @@ func attemptsUsed(ctx context.Context) int {
 		return max
 	}
 	return used
+}
+
+// retryBackoff is the wait before retry number n (0-based), following the
+// official Kiro client: 250 ms·2ⁿ for transient errors and 1 s·2ⁿ for
+// throttling, capped at 20 s (jitter is added by waitForStreamRetry).
+func retryBackoff(n int, throttled bool) time.Duration {
+	d := 250 * time.Millisecond
+	if throttled {
+		d = time.Second
+	}
+	for i := 0; i < n && d < 20*time.Second; i++ {
+		d *= 2
+	}
+	if d > 20*time.Second {
+		d = 20 * time.Second
+	}
+	return d
+}
+
+// kiroRetryAfter extracts the upstream's retry hint: the
+// x-amzn-kiro-ratelimit-retry-after header (milliseconds), a
+// retryAfterMilliseconds field in the body, or a standard Retry-After header
+// (seconds). Capped at 300 s like the official client.
+func kiroRetryAfter(h http.Header, body []byte) time.Duration {
+	var d time.Duration
+	if v, err := strconv.ParseInt(strings.TrimSpace(h.Get("x-amzn-kiro-ratelimit-retry-after")), 10, 64); err == nil && v > 0 {
+		d = time.Duration(v) * time.Millisecond
+	} else if m := retryAfterMsPattern.FindSubmatch(body); m != nil {
+		if v, err := strconv.ParseInt(string(m[1]), 10, 64); err == nil && v > 0 {
+			d = time.Duration(v) * time.Millisecond
+		}
+	} else if v, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After"))); err == nil && v > 0 {
+		d = time.Duration(v) * time.Second
+	}
+	if d > 300*time.Second {
+		d = 300 * time.Second
+	}
+	return d
+}
+
+var retryAfterMsPattern = regexp.MustCompile(`"retryAfterMilliseconds"\s*:\s*(\d+)`)
+
+// isUsageLimitBody reports a usage-limit rejection, which the official client
+// never retries (only a reset or more quota helps).
+func isUsageLimitBody(body []byte) bool {
+	s := strings.ToUpper(string(body))
+	for _, k := range []string{"MONTHLY_REQUEST_COUNT", "DAILY_REQUEST_COUNT", "WEEKLY_REQUEST_COUNT", "HOURLY_REQUEST_COUNT", "USAGE_LIMIT_REACHED"} {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryAfterTag encodes a retry hint into an error message for failover.
+func retryAfterTag(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	secs := int((d + time.Second - 1) / time.Second)
+	return fmt.Sprintf(" (retry-after=%d)", secs)
 }

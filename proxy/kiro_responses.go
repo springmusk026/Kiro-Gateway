@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"kiro-go/config"
 	"kiro-go/logger"
@@ -148,10 +149,18 @@ func buildResponsesRequest(payload *KiroPayload) *responsesRequest {
 	if id := strings.TrimSpace(payload.ConversationState.ConversationID); id != "" {
 		meta["kiro:conversation_id"] = id
 	}
+	if id := strings.TrimSpace(payload.ConversationState.ConversationID); id != "" {
+		root := strings.TrimSpace(payload.ConversationState.RootConversationID)
+		if root == "" {
+			root = id
+		}
+		meta["kiro:root_conversation_id"] = root
+	}
 	if id := strings.TrimSpace(payload.ConversationState.AgentContinuationId); id != "" {
 		meta["kiro:agent_continuation_id"] = id
 	}
-	if t := strings.TrimSpace(payload.ConversationState.AgentTaskType); t != "" {
+	// The official client only sends the task type for spec tasks.
+	if t := strings.TrimSpace(payload.ConversationState.AgentTaskType); strings.EqualFold(strings.ReplaceAll(t, "_", ""), "spectask") {
 		meta["kiro:agent_task_type"] = t
 	}
 	req.Metadata = meta
@@ -364,7 +373,10 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 		applyKiroBaseHeaders(req, account, headerValues)
 		req.Header.Set("x-amzn-kiro-origin", responsesOrigin(payload))
 		req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-		req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", attempt, maxStreamAttemptsPerEndpoint))
+		req.Header.Set("x-amzn-kiro-attempt", fmt.Sprintf("%d;max=%d", attempt, maxStreamAttemptsPerEndpoint))
+		if arn := strings.TrimSpace(payload.ProfileArn); arn != "" {
+			req.Header.Set("x-amzn-kiro-profile", arn)
+		}
 
 		if budgetErr := takeUpstreamAttempt(ctx); budgetErr != nil {
 			return budgetErr
@@ -376,7 +388,7 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 			if !isRetryableStreamError(doErr) {
 				return doErr
 			}
-			if err := streamRetryWait(ctx, streamRetryBackoff); err != nil {
+			if err := streamRetryWait(ctx, retryBackoff(attempt-1, false)); err != nil {
 				return err
 			}
 			continue
@@ -386,19 +398,29 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
 			lastErr = classifyResponsesHTTPError(resp.StatusCode, errBody)
-			if resp.StatusCode == http.StatusTooManyRequests {
-				if s := retryAfterSuffix(resp.Header.Get("Retry-After")); s != "" {
-					lastErr = fmt.Errorf("%w%s", lastErr, s)
-				}
-			}
 			logger.Warnf("[ResponsesAPI] HTTP %d: %s", resp.StatusCode, lastErr)
-			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
-				if attempt < maxStreamAttemptsPerEndpoint {
-					if err := streamRetryWait(ctx, streamRetryBackoff); err != nil {
-						return err
-					}
-					continue
+			if resp.StatusCode == http.StatusTooManyRequests {
+				hint := kiroRetryAfter(resp.Header, errBody)
+				lastErr = fmt.Errorf("%w%s", lastErr, retryAfterTag(hint))
+				// Usage limits never clear by retrying, and a long hint means
+				// this account should cool down: hand it to account failover.
+				if isUsageLimitBody(errBody) || hint > 3*time.Second || attempt >= maxStreamAttemptsPerEndpoint {
+					return lastErr
 				}
+				wait := retryBackoff(attempt-1, true)
+				if hint > wait {
+					wait = hint
+				}
+				if err := streamRetryWait(ctx, wait); err != nil {
+					return err
+				}
+				continue
+			}
+			if resp.StatusCode >= 500 && attempt < maxStreamAttemptsPerEndpoint {
+				if err := streamRetryWait(ctx, retryBackoff(attempt-1, false)); err != nil {
+					return err
+				}
+				continue
 			}
 			return lastErr
 		}
@@ -417,7 +439,7 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 		}
 		logger.Warnf("[ResponsesAPI] stream failed (attempt %d/%d): %v", attempt, maxStreamAttemptsPerEndpoint, parseErr)
 		if attempt < maxStreamAttemptsPerEndpoint {
-			if err := streamRetryWait(ctx, streamRetryBackoff); err != nil {
+			if err := streamRetryWait(ctx, retryBackoff(attempt-1, false)); err != nil {
 				return err
 			}
 		}

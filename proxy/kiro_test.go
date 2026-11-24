@@ -570,8 +570,9 @@ func TestCallKiroAPIRetriesAPIKeyEndpointAfterEmptyStream(t *testing.T) {
 	var waits int
 	installKiroRetryWait(t, func(delay time.Duration) {
 		waits++
-		if delay != streamRetryBackoff {
-			t.Errorf("retry delay = %s, want %s", delay, streamRetryBackoff)
+		// Exponential backoff (250 ms base) as in the official client.
+		if delay < 250*time.Millisecond || delay > 20*time.Second {
+			t.Errorf("retry delay = %s, want exponential backoff in [250ms, 20s]", delay)
 		}
 	})
 
@@ -623,8 +624,9 @@ func TestCallKiroAPIRetriesCurrentEndpointBeforeFallback(t *testing.T) {
 			"assistantResponseEvent", map[string]interface{}{"content": "fallback"}))), nil
 	}))
 	installKiroRetryWait(t, func(delay time.Duration) {
-		if delay != streamRetryBackoff {
-			t.Errorf("retry delay = %s, want %s", delay, streamRetryBackoff)
+		// Exponential backoff (250 ms base) as in the official client.
+		if delay < 250*time.Millisecond || delay > 20*time.Second {
+			t.Errorf("retry delay = %s, want exponential backoff in [250ms, 20s]", delay)
 		}
 		trace = append(trace, "wait")
 	})

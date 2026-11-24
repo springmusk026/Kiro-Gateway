@@ -144,7 +144,9 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     90 * time.Second,
 		// Bound the wait for upstream to start answering.
-		ResponseHeaderTimeout: 120 * time.Second,
+		// Matches the official client's 300 s converse timeout: a slow first
+		// token is still a valid answer, and aborting wastes the generation.
+		ResponseHeaderTimeout: 300 * time.Second,
 		DisableCompression:    false,
 		ForceAttemptHTTP2:     true,
 	}
@@ -184,7 +186,10 @@ type KiroPayload struct {
 		AgentTaskType       string `json:"agentTaskType,omitempty"`
 		ChatTriggerType     string `json:"chatTriggerType"`
 		ConversationID      string `json:"conversationId"`
-		CurrentMessage      struct {
+		// RootConversationID is always sent by the official client (equal to
+		// conversationId for a conversation that was not forked).
+		RootConversationID string `json:"rootConversationId,omitempty"`
+		CurrentMessage     struct {
 			UserInputMessage KiroUserInputMessage `json:"userInputMessage"`
 		} `json:"currentMessage"`
 		History []KiroHistoryMessage `json:"history,omitempty"`
@@ -341,8 +346,10 @@ func getSortedEndpoints(preferred string) []kiroEndpoint {
 	case "amazonq":
 		primary = 2
 	default:
-		// "auto": Kiro first, then fallback to others
-		return []kiroEndpoint{kiroEndpoints[0], kiroEndpoints[1], kiroEndpoints[2]}
+		// "auto": Kiro first, then CodeWhisperer. The AmazonQ SendMessage
+		// operation is SigV4-only in the official clients, so a bearer-token
+		// request to it can only fail; it is used only when chosen explicitly.
+		return []kiroEndpoint{kiroEndpoints[0], kiroEndpoints[1]}
 	}
 
 	if !fallback {
@@ -353,7 +360,7 @@ func getSortedEndpoints(preferred string) []kiroEndpoint {
 	// With fallback: selected first, then others in order
 	result := []kiroEndpoint{kiroEndpoints[primary]}
 	for i, ep := range kiroEndpoints {
-		if i != primary {
+		if i != primary && i != 2 {
 			result = append(result, ep)
 		}
 	}
@@ -521,7 +528,7 @@ endpointLoop:
 				// rate limit, so that only adds calls. Return and let the
 				// account cooldown (and protocol fallback) handle it.
 				logger.Warnf("[KiroAPI] Endpoint %s returned 429 for %s", ep.Name, accountEmailForLog(account))
-				return fmt.Errorf("HTTP 429 from %s%s: %s", ep.Name, retryAfterSuffix(resp.Header.Get("Retry-After")), strings.TrimSpace(string(body429)))
+				return fmt.Errorf("HTTP 429 from %s%s: %s", ep.Name, retryAfterTag(kiroRetryAfter(resp.Header, body429)), strings.TrimSpace(string(body429)))
 			}
 
 			if resp.StatusCode != 200 {
@@ -539,11 +546,17 @@ endpointLoop:
 						len(reqBody)/1024, maxPayloadBytesForModel(payload.ConversationState.CurrentMessage.UserInputMessage.ModelID)/1024,
 						len(payload.ConversationState.History))
 				}
-				// Authentication errors and payment errors are not retried across endpoints.
-				if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 402 {
+				// Client errors (4xx) are deterministic: the same request would be
+				// rejected by every endpoint, and the official clients never
+				// retry them. Only server errors fall through to the next
+				// endpoint, after a backoff.
+				if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 					return lastErr
 				}
 				logger.Warnf("[KiroAPI] Endpoint %s error: %v", ep.Name, lastErr)
+				if err := waitForStreamRetry(ctx, retryBackoff(epIndex, false)); err != nil {
+					return err
+				}
 				continue endpointLoop
 			}
 
@@ -576,7 +589,7 @@ endpointLoop:
 
 			logger.Warnf("[KiroAPI] Endpoint %s stream failed before any output (attempt %d/%d): %v",
 				ep.Name, streamAttempt, maxStreamAttemptsPerEndpoint, err)
-			if err := streamRetryWait(ctx, streamRetryBackoff); err != nil {
+			if err := streamRetryWait(ctx, retryBackoff(streamAttempt-1, false)); err != nil {
 				return err
 			}
 			if !hasSameEndpointRetry {

@@ -17,8 +17,12 @@ type memSink struct {
 	reqs []*telemetry.RequestRecord
 }
 
-func (m *memSink) RecordRequest(r *telemetry.RequestRecord) { m.mu.Lock(); m.reqs = append(m.reqs, r); m.mu.Unlock() }
-func (m *memSink) RecordAudit(*telemetry.AuditEvent)        {}
+func (m *memSink) RecordRequest(r *telemetry.RequestRecord) {
+	m.mu.Lock()
+	m.reqs = append(m.reqs, r)
+	m.mu.Unlock()
+}
+func (m *memSink) RecordAudit(*telemetry.AuditEvent) {}
 
 func TestTraceRecordsStatusTTFBAndFlushStillWorks(t *testing.T) {
 	sink := &memSink{}

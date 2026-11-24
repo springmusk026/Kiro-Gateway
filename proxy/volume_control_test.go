@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -67,4 +68,35 @@ func TestAccountSlotsQueueRequests(t *testing.T) {
 		t.Fatal("slot should be free after release")
 	}
 	r2()
+}
+
+func TestRetryBackoffMatchesOfficialClient(t *testing.T) {
+	if retryBackoff(0, false) != 250*time.Millisecond || retryBackoff(2, false) != time.Second {
+		t.Fatal("transient backoff should be 250ms·2ⁿ")
+	}
+	if retryBackoff(0, true) != time.Second || retryBackoff(10, true) != 20*time.Second {
+		t.Fatal("throttle backoff should be 1s·2ⁿ capped at 20s")
+	}
+}
+
+func TestKiroRetryAfterSources(t *testing.T) {
+	h := http.Header{}
+	h.Set("x-amzn-kiro-ratelimit-retry-after", "1500")
+	if d := kiroRetryAfter(h, nil); d != 1500*time.Millisecond {
+		t.Fatalf("header ms: %s", d)
+	}
+	if d := kiroRetryAfter(http.Header{}, []byte(`{"reason":"USER_REQUEST_RATE_EXCEEDED","retryAfterMilliseconds": 2500}`)); d != 2500*time.Millisecond {
+		t.Fatalf("body ms: %s", d)
+	}
+	h2 := http.Header{}
+	h2.Set("Retry-After", "9999")
+	if d := kiroRetryAfter(h2, nil); d != 300*time.Second {
+		t.Fatalf("cap: %s", d)
+	}
+	if !isUsageLimitBody([]byte(`{"reason":"MONTHLY_REQUEST_COUNT"}`)) || isUsageLimitBody([]byte(`{"reason":"USER_REQUEST_RATE_EXCEEDED"}`)) {
+		t.Fatal("usage-limit detection")
+	}
+	if retryAfterTag(1500*time.Millisecond) != " (retry-after=2)" {
+		t.Fatal("tag rounds up to seconds")
+	}
 }

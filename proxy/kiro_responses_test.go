@@ -74,7 +74,8 @@ func TestBuildResponsesRequestMapping(t *testing.T) {
 	}
 	if req.Metadata["kiro:agent_mode"] != "vibe" ||
 		req.Metadata["kiro:conversation_id"] != "conv-1" ||
-		req.Metadata["kiro:agent_task_type"] != "SPEC_TASK" {
+		req.Metadata["kiro:agent_task_type"] != "SPEC_TASK" ||
+		req.Metadata["kiro:root_conversation_id"] != "conv-1" {
 		t.Fatalf("metadata wrong: %+v", req.Metadata)
 	}
 	if req.Reasoning["type"] != "adaptive" || req.Reasoning["effort"] != "medium" {
