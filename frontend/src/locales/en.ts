@@ -5,6 +5,7 @@ import { playgroundEn } from './en.playground'
 import { keysEn } from './en.keys'
 import { logsEn } from './en.logs'
 import { settingsEn } from './en.settings'
+import { analyticsEn } from './en.analytics'
 
 /** English messages: the source of truth for all UI text. */
 export const en = {
@@ -15,6 +16,7 @@ export const en = {
   ...keysEn,
   ...logsEn,
   ...settingsEn,
+  ...analyticsEn,
 
   'app.name': 'Kiro-Go',
   'app.tagline': 'API Gateway',
@@ -32,7 +34,7 @@ export const en = {
   'nav.settings': 'Settings',
   'page.overview': 'Health, traffic and what your gateway is doing right now',
   'page.accounts': 'Kiro accounts in the routing pool',
-  'page.models': 'Live model catalog from Kiro — choose what clients can use',
+  'page.models': 'Which models clients can use, the names they call them by, and how they think',
   'page.playground': 'Talk to any model through the gateway',
   'page.keys': 'Endpoints, client setup and API keys',
   'page.logs': 'Every request the gateway handled recently',

@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccountsRouteImport } from './routes/_app/accounts'
+import { Route as AppAnalyticsRouteImport } from './routes/_app/analytics'
 import { Route as AppKeysRouteImport } from './routes/_app/keys'
 import { Route as AppLogsRouteImport } from './routes/_app/logs'
 import { Route as AppModelsRouteImport } from './routes/_app/models'
@@ -36,6 +37,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppAccountsRoute = AppAccountsRouteImport.update({
   id: '/accounts',
   path: '/accounts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
 const AppKeysRoute = AppKeysRouteImport.update({
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/accounts': typeof AppAccountsRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/keys': typeof AppKeysRoute
   '/logs': typeof AppLogsRoute
   '/models': typeof AppModelsRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/accounts': typeof AppAccountsRoute
+  '/analytics': typeof AppAnalyticsRoute
   '/keys': typeof AppKeysRoute
   '/logs': typeof AppLogsRoute
   '/models': typeof AppModelsRoute
@@ -89,6 +97,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/accounts': typeof AppAccountsRoute
+  '/_app/analytics': typeof AppAnalyticsRoute
   '/_app/keys': typeof AppKeysRoute
   '/_app/logs': typeof AppLogsRoute
   '/_app/models': typeof AppModelsRoute
@@ -102,6 +111,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/accounts'
+    | '/analytics'
     | '/keys'
     | '/logs'
     | '/models'
@@ -111,6 +121,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/accounts'
+    | '/analytics'
     | '/keys'
     | '/logs'
     | '/models'
@@ -122,6 +133,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/accounts'
+    | '/_app/analytics'
     | '/_app/keys'
     | '/_app/logs'
     | '/_app/models'
@@ -165,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAccountsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/analytics': {
+      id: '/_app/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/keys': {
       id: '/_app/keys'
       path: '/keys'
@@ -205,6 +224,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAccountsRoute: typeof AppAccountsRoute
+  AppAnalyticsRoute: typeof AppAnalyticsRoute
   AppKeysRoute: typeof AppKeysRoute
   AppLogsRoute: typeof AppLogsRoute
   AppModelsRoute: typeof AppModelsRoute
@@ -215,6 +235,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAccountsRoute: AppAccountsRoute,
+  AppAnalyticsRoute: AppAnalyticsRoute,
   AppKeysRoute: AppKeysRoute,
   AppLogsRoute: AppLogsRoute,
   AppModelsRoute: AppModelsRoute,

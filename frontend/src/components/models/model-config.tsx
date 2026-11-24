@@ -10,7 +10,7 @@ import { useModels } from '@/lib/queries'
 import { useModelMappings, useSaveModelMappings, useSaveThinking, useThinking } from '@/lib/queries.settings'
 import type { ModelMapping, ThinkingConfig, ThinkingFormat, ThinkingMode } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SectionCard, runSave, useDraft } from './section-card'
+import { SectionCard, runSave, useDraft } from '@/components/settings/section-card'
 
 const FORMATS: ThinkingFormat[] = ['reasoning_content', 'thinking', 'think']
 const DEFAULT_SUFFIX = '-thinking'
