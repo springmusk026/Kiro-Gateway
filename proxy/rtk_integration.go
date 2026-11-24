@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"kiro-go/logger"
-	"kiro-go/rtk"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/rtk"
 )
 
 func maybeCompressRequestBody(raw []byte) []byte {

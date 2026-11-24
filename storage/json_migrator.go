@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // JSONMigrator lets the admin console finish a move from config.json to

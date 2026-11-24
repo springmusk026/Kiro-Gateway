@@ -20,13 +20,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kiro-go .
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o kiro-gateway .
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
-COPY --from=builder /app/kiro-go .
+COPY --from=builder /app/kiro-gateway .
 COPY --from=console /console/dist/client ./web
 RUN mkdir -p /app/data
 
@@ -35,4 +35,4 @@ VOLUME /app/data
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
 
-CMD ["./kiro-go"]
+CMD ["./kiro-gateway"]

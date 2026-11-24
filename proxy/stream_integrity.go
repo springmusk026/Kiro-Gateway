@@ -2,8 +2,8 @@ package proxy
 
 import (
 	"context"
-	"kiro-go/config"
-	"kiro-go/logger"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
 	"strings"
 	"sync"
 )

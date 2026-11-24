@@ -1,6 +1,6 @@
 # Architecture
 
-Kiro-Go is a single Go binary (plus an optional PostgreSQL database) that serves the public APIs, the admin
+Kiro Gateway is a single Go binary (plus an optional PostgreSQL database) that serves the public APIs, the admin
 console and its API.
 
 ```
@@ -45,11 +45,11 @@ Kiro serves chat through two transports:
 - **`generateAssistantResponse`** — the older AWS event-stream API on the Kiro IDE / CodeWhisperer / Amazon Q
   endpoints. It reports cache read/write tokens in its metadata events.
 
-In `auto` mode Kiro-Go tries the preferred transport for each account and remembers what works, falling
+In `auto` mode Kiro Gateway tries the preferred transport for each account and remembers what works, falling
 back when the upstream rejects the protocol (for example "profileArn is required"). Kiro API key accounts
 use the Kiro CLI runtime directly.
 
-See [kiro-protocol.md](kiro-protocol.md) for the full map of Kiro's APIs and how Kiro-Go compares.
+See [kiro-protocol.md](kiro-protocol.md) for the full map of Kiro's APIs and how Kiro Gateway compares.
 
 Requests are shaped like the official clients': on `/v1/responses` the exact raw header set (origin, profile, `TokenType`,
 the IDE's own user agent — or the CLI's for API-key accounts — attempt and fallback counters, metadata in

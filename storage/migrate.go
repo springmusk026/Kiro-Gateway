@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // ImportResult summarizes a JSON → database import.

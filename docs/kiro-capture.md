@@ -74,7 +74,7 @@ v2 turn completed and printed `Hello from fake server.`
 2. **The default A/B arm is GenerateAssistantResponse.** `create_response_api` defaults to `"disabled"`. With an empty
    featureConfiguration, KAS sends `KiroRuntimeService.GenerateAssistantResponse` (awsJson) to `runtime.us-east-1.kiro.dev`.
    It uses `/v1/responses` only when the server returns the hashed `create_response_api=create_response` key.
-3. **`/v1/responses` headers match the doc and Kiro-Go's current set exactly, in this order:** `Content-Type, Authorization,
+3. **`/v1/responses` headers match the doc and Kiro Gateway's current set exactly, in this order:** `Content-Type, Authorization,
    x-amzn-kiro-origin, x-amzn-codewhisperer-optout, [x-amzn-kiro-profile], [TokenType], User-Agent,
    x-amzn-kiro-attempt: 1;max=3, x-amzn-kiro-fallback: 0;max=0, Content-Length, Host, Connection: close`. It is HTTP/1.1 with
    no Accept, no Accept-Encoding and no x-amz-user-agent. **However, optout was `false`** (default settings, both API key and Builder ID),
@@ -82,7 +82,7 @@ v2 turn completed and printed `Hello from fake server.`
 4. **The UA tail is `acp-client/kiro-cli` (interactive) or `acp-client/kiro-cli-non-interactive`.** Example:
    `KiroCLI/3.5.0 KAS/0.66.119 os/linux md/appVersion-3.5.0 app/AmazonQ-For-CLI acp-client/kiro-cli`.
 5. **The system prompt goes into `input`/`history` as a user turn followed by the assistant reply `"I will follow these
-   instructions."`.** This happens on both CR and GAR (v3), and `instructions` is absent. That is exactly Kiro-Go's priming pair.
+   instructions."`.** This happens on both CR and GAR (v3), and `instructions` is absent. That is exactly Kiro Gateway's priming pair.
    The v2 Rust engine instead uses `"Follow this instruction: …"` / `"I will fully incorporate this information …"`.
 6. **conversation IDs are `sess_<uuid-v4>`** in v3, both in `metadata.kiro:conversation_id` and in
    `conversationState.conversationId`. `rootConversationId` equals it, and `agentContinuationId` is a fresh UUID v4. v2 uses a bare UUID v4.
@@ -172,12 +172,12 @@ Wire details:
 * **Optout.** KAS's smithy GAR/CPS/MCP calls omit `x-amzn-codewhisperer-optout`. Rust always sends `x-amzn-codewhisperer-optout: false`.
 * **Accept headers.** Rust sends `accept: */*` and `accept-encoding: gzip`. KAS smithy sends neither, and raw `/v1/responses` sends neither.
 
-## 5. Comparison with Kiro-Go (HEAD b0362127)
+## 5. Comparison with Kiro Gateway (HEAD b0362127)
 
-Kiro-Go sources read: `proxy/kiro_responses.go`, `proxy/kiro_headers.go`, `proxy/kiro.go`, `proxy/kiro_api.go`, `proxy/websearch.go`, `proxy/upstream_protocol.go`, `proxy/translator.go`.
+Kiro Gateway sources read: `proxy/kiro_responses.go`, `proxy/kiro_headers.go`, `proxy/kiro.go`, `proxy/kiro_api.go`, `proxy/websearch.go`, `proxy/upstream_protocol.go`, `proxy/translator.go`.
 
-### 5.1 `/v1/responses` (Kiro-Go: OAuth accounts, `callKiroResponsesAPIContext`)
-| Item | Official (observed) | Kiro-Go | Verdict |
+### 5.1 `/v1/responses` (Kiro Gateway: OAuth accounts, `callKiroResponsesAPIContext`)
+| Item | Official (observed) | Kiro Gateway | Verdict |
 |---|---|---|---|
 | URL | `https://runtime.us-east-1.kiro.dev/v1/responses` | same (`kiro_responses.go:179`) | **match** |
 | Header names, order of Set calls | Content-Type, Authorization, x-amzn-kiro-origin, x-amzn-codewhisperer-optout, [x-amzn-kiro-profile], [TokenType], User-Agent, x-amzn-kiro-attempt, x-amzn-kiro-fallback, Content-Length, Host, Connection | same set (`:429-443`). Go canonicalizes names (`Tokentype`, `X-Amzn-Kiro-Origin`), writes Host/User-Agent first and the rest alphabetically, adds `Accept-Encoding: gzip` (`DisableCompression:false`), uses keep-alive (no `Connection: close`), and uses **HTTP/2** when no proxy is configured (`ForceAttemptHTTP2:true`, `kiro.go:150`) | **set matches; wire framing differs** |
@@ -194,7 +194,7 @@ Kiro-Go sources read: `proxy/kiro_responses.go`, `proxy/kiro_headers.go`, `proxy
 | Tool history | `function_call {call_id,name,arguments}` + `function_call_output {call_id,output}` (no status) | structured only with `KIRO_KEEP_STRUCTURED_TOOL_HISTORY=1` | previously documented difference, confirmed shape |
 
 ### 5.2 GenerateAssistantResponse
-| Item | Official v3 KAS (default arm) | Official v2 Rust | Kiro-Go API-key path (`kiro.go:77`, legacy branch) | Kiro-Go OAuth legacy arm (`kiro.go:54-73`) |
+| Item | Official v3 KAS (default arm) | Official v2 Rust | Kiro Gateway API-key path (`kiro.go:77`, legacy branch) | Kiro Gateway OAuth legacy arm (`kiro.go:54-73`) |
 |---|---|---|---|---|
 | Host / path | `runtime.us-east-1.kiro.dev` `POST /` | `runtime.us-east-1.kiro.dev` `POST /` | `runtime.{region}.kiro.dev/` | `q.us-east-1…/generateAssistantResponse`, `codewhisperer…` |
 | Protocol / target | awsJson1.0, **`KiroRuntimeService.GenerateAssistantResponse`** | awsJson1.0, `AmazonCodeWhispererStreamingService.GenerateAssistantResponse` | awsJson1.0, `AmazonCodeWhispererStreamingService.GenerateAssistantResponse`: **matches v2** | restJson-ish on retired hosts: **matches neither** |
@@ -205,12 +205,12 @@ Kiro-Go sources read: `proxy/kiro_responses.go`, `proxy/kiro_headers.go`, `proxy
 | Priming | user `{content,origin,modelId}` + assistant `"I will follow these instructions."` | `"Follow this instruction: …"` + `"I will fully incorporate this information…"` | v3 wording on the v2 transport (a hybrid) | – |
 | currentMessage | `{content, userInputMessageContext{[toolResults],tools}, origin:"KIRO_CLI", modelId}` | `{content, userInputMessageContext{envState,tools}, origin, modelId}` | similar | – |
 
-**Verdict.** Kiro-Go's API-key path matches the v2 Rust engine in host, target and content type. The UA, the missing
+**Verdict.** Kiro Gateway's API-key path matches the v2 Rust engine in host, target and content type. The UA, the missing
 attempt/fallback headers, the body order and the priming text are differences. The real v3 default is awsJson
-`KiroRuntimeService.GenerateAssistantResponse`, which Kiro-Go does not implement at all.
+`KiroRuntimeService.GenerateAssistantResponse`, which Kiro Gateway does not implement at all.
 
 ### 5.3 Side calls
-| Call | Official (observed) | Kiro-Go | Verdict |
+| Call | Official (observed) | Kiro Gateway | Verdict |
 |---|---|---|---|
 | ListAvailableModels | management.{region}.kiro.dev `POST /`, `KiroControlPlaneBearerService.ListAvailableModels`, body `{"origin":"KIRO_CLI"[,"profileArn"]}`, no maxResults; once per session (5 min TTL), not per turn | `GET codewhisperer.us-east-1…/ListAvailableModels?origin=AI_EDITOR&maxResults=50&profileArn=` | **difference** (host, protocol, origin) |
 | GetUsageLimits | KAS (OAuth only): `KiroControlPlaneBearerService.GetUsageLimits` `{"profileArn","origin":"KIRO_CLI"}`, `attempt=1; max=1`. Rust host (API key too): `AmazonCodeWhispererService.GetUsageLimits` on **management** with query and body `{"origin":"KIRO_CLI","isEmailRequired":false}` | `GET {codewhisperer\|q}/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST&isEmailRequired=true` | **difference** |

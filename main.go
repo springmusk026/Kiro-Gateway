@@ -17,11 +17,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"kiro-go/config"
-	"kiro-go/logger"
-	"kiro-go/pool"
-	"kiro-go/proxy"
-	"kiro-go/storage"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/pool"
+	"github.com/springmusk026/Kiro-Gateway/proxy"
+	"github.com/springmusk026/Kiro-Gateway/storage"
 	"log"
 	"net/http"
 	"os"
@@ -45,7 +45,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	// Subcommands: `kiro-go migrate` / `kiro-go export` (see cli.go).
+	// Subcommands: `kiro-gateway migrate` / `kiro-gateway export` (see cli.go).
 	if len(os.Args) > 1 {
 		os.Exit(runCommand(os.Args[1], os.Args[2:], configPath))
 	}
@@ -123,7 +123,7 @@ func main() {
 
 	// 启动服务器
 	addr := fmt.Sprintf("%s:%d", config.GetHost(), config.GetPort())
-	logger.Infof("Kiro-Go starting on http://%s (log level: %s)", addr, logger.LevelName(logger.GetLevel()))
+	logger.Infof("Kiro Gateway starting on http://%s (log level: %s)", addr, logger.LevelName(logger.GetLevel()))
 	logger.Infof("Admin panel: http://%s/admin", addr)
 	logger.Infof("Claude API: http://%s/v1/messages", addr)
 	logger.Infof("OpenAI API: http://%s/v1/chat/completions", addr)

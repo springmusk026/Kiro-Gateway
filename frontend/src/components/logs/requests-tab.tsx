@@ -207,6 +207,7 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
                 <SelectItem value="all">{t('logs.allStatuses')}</SelectItem>
                 <SelectItem value="success">{t('logs.success')}</SelectItem>
                 <SelectItem value="error">{t('logs.error')}</SelectItem>
+                <SelectItem value="cancelled">{t('logs.cancelled')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={endpoint} onValueChange={setEndpoint}>

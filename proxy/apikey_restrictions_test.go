@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func seedRestrictedKey(t *testing.T, e config.ApiKeyEntry) config.ApiKeyEntry {

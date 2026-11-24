@@ -1,8 +1,8 @@
 import type { MessageKey } from './en'
 export const zh: Partial<Record<MessageKey, string>> = {
-  'app.name': 'Kiro-Go',
-  'app.tagline': 'API 网关',
-  'app.title': 'Kiro-Go 控制台',
+  'app.name': 'Kiro Gateway',
+  'app.tagline': '管理控制台',
+  'app.title': 'Kiro Gateway 控制台',
 
   'nav.workspace': '工作区',
   'nav.developers': '开发者',
@@ -1060,7 +1060,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'settings.enablePgTitle': '启用 PostgreSQL 以保存完整历史',
   'settings.enablePgStep1': '将 DATABASE_URL 设置为 PostgreSQL 连接地址并重启服务。',
   'settings.enablePgStep2': '使用 Docker 时，默认的 docker-compose.yml 已包含 postgres:16 服务并设置了 DATABASE_URL。',
-  'settings.enablePgStep3': '首次启动时会自动导入现有的 data/config.json；也可以使用 kiro-go migrate 手动迁移。',
+  'settings.enablePgStep3': '首次启动时会自动导入现有的 data/config.json；也可以使用 kiro-gateway migrate 手动迁移。',
   'settings.enablePgMigrate': '可选：手动迁移',
   'settings.logging': '请求历史',
   'settings.loggingDesc': '每个请求保存哪些内容以及保留多久。',
@@ -1276,7 +1276,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'cost.fbSelf': '模型不能回退到自身',
   'cost.fbTooMany': '每个模型最多 5 个回退',
   'cost.fbFix': '请修正高亮的行后再保存',
-  'cost.fbHint': '每个请求只会在开始流式输出前尝试第一个回退模型一次。响应会带有 x-kiro-go-fallback-model 头，请求日志中也会显示该回退。',
+  'cost.fbHint': '每个请求只会在开始流式输出前尝试第一个回退模型一次。响应会带有 x-kiro-gateway-fallback-model 头，请求日志中也会显示该回退。',
   'cost.fbUnknown': '不在当前模型目录中',
   'cost.fbLogLabel': '回退模型',
   'cost.routing': '按用量路由',
@@ -1333,4 +1333,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'pager.prev': '上一页',
   'pager.next': '下一页',
   'pager.last': '最后一页',
+  'logs.cancelled': '已取消',
+  'logs.cancelledHint': '客户端在响应完成前断开连接，上游请求已停止。',
+  'logs.err.client_closed': '客户端已断开',
 }

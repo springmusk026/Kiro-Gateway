@@ -1,105 +1,121 @@
-# Kiro-Go
+<div align="center">
 
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker)](docker-compose.yml)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)](docs/configuration.md#storage)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<img src="docs/images/logo.svg" width="88" height="88" alt="Kiro Gateway logo" />
 
-**Gateway tự host biến một nhóm tài khoản Kiro thành API tương thích Anthropic và OpenAI** — dành cho việc chạy
-Claude Code, Codex, các agent trong IDE và SDK trên Kiro, kèm bảng quản trị, lịch sử request và cách gọi upstream
-thận trọng.
+# Kiro Gateway
 
-[English](README.md) | [中文](README_CN.md) | [Tiếng Việt](README_VI.md)
+**Dùng tài khoản Kiro với chính các công cụ bạn đang dùng — Claude Code, Codex, agent trong IDE và mọi SDK tương thích OpenAI hoặc Anthropic.**
 
-> Kiro-Go khởi đầu từ [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) (MIT) và nay đã được viết lại
-> thành một dự án độc lập: bảng quản trị mới, lưu trữ PostgreSQL, thinking theo từng request, cải thiện tương
-> thích API và hành vi upstream giống client Kiro chính thức. Xem [CHANGELOG.md](CHANGELOG.md).
+Gateway tự host với bảng quản trị chuyên nghiệp, nhóm tài khoản, phân tích mức sử dụng và kiểm soát chi phí.
 
-## Điểm nổi bật
+[![CI](https://github.com/springmusk026/Kiro-Gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/springmusk026/Kiro-Gateway/actions/workflows/ci.yml)
+[![Docker image](https://img.shields.io/badge/image-ghcr.io%2Fspringmusk026%2Fkiro--gateway-2496ED?logo=docker&logoColor=white)](https://github.com/springmusk026/Kiro-Gateway/pkgs/container/kiro-gateway)
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE)
 
-**Các API mà công cụ của bạn đã dùng**
-- Anthropic Messages (`/v1/messages`, `count_tokens`), OpenAI Chat Completions, OpenAI Responses
-  (`/v1/responses`, có lưu response và `previous_response_id`) và `/v1/models`.
-- Mã lỗi chính thức (Claude Code tự nén ngữ cảnh khi gặp "prompt is too long", Codex nhận
-  `context_length_exceeded`), heartbeat SSE, `tool_choice`, stop sequence, request id, CORS cho SDK trên trình duyệt.
-- **Thinking theo request** — Anthropic `thinking` / `output_config.effort`, OpenAI `reasoning_effort`,
-  Responses `reasoning`; mức effort được chuyển nguyên bản tới các mô hình hỗ trợ. Hậu tố `-thinking` cũ vẫn dùng được.
-- Công cụ `web_search` được chuyển qua endpoint MCP của Kiro.
+[English](README.md) · [中文](README_CN.md) · Tiếng Việt
 
-**Nhóm tài khoản ổn định**
-- Builder ID, IAM Identity Center / SSO doanh nghiệp, Microsoft SSO, SSO token, credential JSON và Kiro API key; tự làm mới token.
-- Giữ mỗi cuộc hội thoại trên một tài khoản để cache prompt của Kiro luôn được dùng lại.
-- Giới hạn số lần gọi upstream cho mỗi request, tuân theo `retry-after` của Kiro, không gửi lại lỗi phía client,
-  tạm nghỉ tài khoản bị giới hạn hoặc hết hạn mức, tùy chọn giới hạn đồng thời theo tài khoản.
-- Tự chọn giao thức upstream theo tài khoản (`/v1/responses` hoặc `generateAssistantResponse`), dạng request và
-  header giống Kiro CLI chính thức.
+<br />
 
-**Bảng quản trị dễ dùng** (`/admin`)
-- Tổng quan lưu lượng và mức dùng, tài khoản (hạn mức, tình trạng), danh mục mô hình (bật/tắt), Playground,
-  API key (hạn mức theo key, đoạn cấu hình client sao chép sẵn).
-- Lịch sử request đầy đủ và nhật ký kiểm tra thao tác quản trị trong PostgreSQL, tùy chọn lưu nội dung request/response —
-  ghi bất đồng bộ nên không làm chậm suy luận.
-- English, 中文, Tiếng Việt; giao diện sáng/tối; dùng tốt trên điện thoại.
+<img src="docs/images/overview.png" alt="Kiro Gateway" width="100%" />
+
+</div>
+
+## Vì sao chọn Kiro Gateway
+
+Kiro cung cấp các mô hình mạnh nhưng chỉ dùng được trong ứng dụng của Kiro. Kiro Gateway đưa các tài khoản đó ra
+sau API **Anthropic** và **OpenAI** tiêu chuẩn, để agent và công cụ bạn quen dùng hoạt động mà không cần sửa đổi —
+kèm theo những gì một nhóm cần: nhóm tài khoản dùng chung, API key cho từng người, giới hạn chi tiêu và cái nhìn rõ
+ràng về mức sử dụng.
+
+| | |
+|---|---|
+| **Tương thích công cụ của bạn** | Claude Code, Codex, Cline, Continue, Cursor, LiteLLM và SDK chính thức chỉ cần base URL và key. Streaming, công cụ, hình ảnh, tài liệu và extended thinking hoạt động như API chính thức. |
+| **Một nhóm, nhiều tài khoản** | Thêm tài khoản bằng Builder ID, IAM Identity Center, Microsoft SSO hoặc Kiro API key. Request được phân bổ giữa các tài khoản khỏe mạnh, mỗi cuộc hội thoại giữ trên một tài khoản để tận dụng prompt cache, và tài khoản gần hết hạn mức được ưu tiên tránh. |
+| **Kiểm soát chi phí** | Giới hạn credit theo ngày cho toàn gateway và từng key, cảnh báo ở 80% và 100% (trong bảng quản trị và qua Slack hoặc Discord), bật/tắt từng mô hình và tự chuyển sang mô hình dự phòng khi cần. |
+| **Thấy rõ mọi thứ** | Lịch sử request đầy đủ, phân tích xu hướng theo mô hình, tài khoản, key và client, nhật ký thao tác quản trị và Prometheus metrics. |
+| **An toàn mặc định** | Đăng nhập quản trị bằng phiên, API key với danh sách mô hình cho phép, giới hạn tốc độ và hạn dùng, mã hóa thông tin xác thực khi lưu trữ, và cách gọi máy chủ Kiro giống client chính thức. |
+
+## Vì sao có dự án này
+
+Các mô hình của Kiro rất tốt và gói đăng ký đáng giá. Điều khiến nhiều lập trình viên vướng mắc là trải nghiệm xung quanh:
+agent và khả năng điều phối của Kiro — lập kế hoạch nhiều bước, sửa file, dùng công cụ, quản lý ngữ cảnh và làm việc trong
+terminal — vẫn chưa bằng Claude Code hay Codex trong công việc hằng ngày, trong khi đó lại là những công cụ mọi người đã quen,
+tự động hóa được và tin dùng.
+
+Kiro Gateway cho phép bạn giữ gói Kiro và dùng nó từ agent bạn thích. Chỉ vậy thôi: bạn vẫn trả tiền cho tài khoản của mình,
+dùng trong hạn mức của chúng và nhận cùng các mô hình qua một quy trình làm việc tốt hơn.
+
+## Gửi đội ngũ Kiro
+
+Nếu bạn làm việc tại Kiro và đang xem xét dự án này: chúng tôi xây dựng nó vì thích các mô hình của Kiro và muốn tiếp tục dùng,
+không phải để né việc trả phí. Kết quả tốt nhất là Kiro khiến gateway này trở nên không cần thiết, chẳng hạn:
+
+- **API chính thức** cho người đăng ký, có tài liệu, key và báo cáo mức dùng, để Claude Code, Codex và các công cụ khác kết nối trực tiếp;
+- **Trải nghiệm agent mạnh hơn** ngay trong Kiro: lập kế hoạch và điều phối tốt hơn, dùng công cụ nhanh và ổn định hơn, quản lý ngữ cảnh tốt trong phiên dài và quy trình terminal hạng nhất;
+- **Khả năng tương tác**: hỗ trợ giao thức agent mở và định dạng API tiêu chuẩn.
+
+Trong lúc đó, gateway được thiết kế để là một client đúng mực: chỉ dùng tài khoản do chính chủ kết nối và trong hạn mức của họ;
+tuân theo tín hiệu giới hạn tốc độ và thử lại của Kiro, không gửi lại request bị từ chối, giới hạn số lần gọi upstream cho mỗi request
+và tạm nghỉ tài khoản bị giới hạn hoặc hết hạn mức; giữ mỗi cuộc hội thoại trên một tài khoản để prompt cache hoạt động đúng, và tự xử lý
+những gì có thể (đếm token, request khởi động) thay vì gọi Kiro; dành cho cá nhân và nhóm dùng tài khoản của chính mình, không phải để bán lại quyền truy cập, và cố gắng không tạo thêm tải ngoài mức
+các lập trình viên đó vốn tạo ra trong ứng dụng của Kiro.
+
+Chúng tôi sẵn lòng trao đổi. Nếu dự án gây vấn đề cho Kiro, hãy [mở issue](https://github.com/springmusk026/Kiro-Gateway/issues)
+hoặc liên hệ người duy trì, chúng tôi sẽ cùng giải quyết.
+
+## Tham quan nhanh
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/analytics.png" alt="Phân tích" /><br /><b>Phân tích</b> — request, tỷ lệ thành công, credit, token, tỷ lệ cache và độ trễ, kèm xu hướng.</td>
+    <td width="50%"><img src="docs/images/accounts.png" alt="Tài khoản" /><br /><b>Tài khoản</b> — tình trạng, hạn mức và credit còn lại của từng tài khoản.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/playground.png" alt="Playground" /><br /><b>Playground</b> — thử mô hình với streaming và phần suy luận hiển thị, sao chép dạng cURL.</td>
+    <td><img src="docs/images/keys.png" alt="API key" /><br /><b>API & Keys</b> — cấu hình sẵn cho từng công cụ, key với giới hạn và hạn chế.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/logs.png" alt="Nhật ký request" /><br /><b>Nhật ký request</b> — thời gian, định tuyến, mức dùng và (tùy chọn) nội dung từng request.</td>
+    <td><img src="docs/images/models.png" alt="Mô hình" /><br /><b>Mô hình</b> — danh mục trực tiếp, bí danh, dự phòng và thinking.</td>
+  </tr>
+</table>
+
+Bảng quản trị có English, 中文 và Tiếng Việt, dùng tốt trên điện thoại.
 
 ## Bắt đầu nhanh
 
-### Docker Compose (khuyên dùng)
+Cần Docker và Docker Compose.
 
 ```bash
-git clone https://github.com/springmusk026/Kiro-Go.git
-cd Kiro-Go
+git clone https://github.com/springmusk026/Kiro-Gateway.git
+cd Kiro-Gateway
 docker compose up -d
-docker compose logs kiro-go | grep -i password   # lần chạy đầu in ra mật khẩu quản trị được tạo
 ```
 
-Lệnh này chạy Kiro-Go ở cổng `8080` cùng một container PostgreSQL 16. Mở `http://localhost:8080/admin`, đăng
-nhập, thêm tài khoản và tạo API key. Đặt `ADMIN_PASSWORD` (và `POSTGRES_PASSWORD`) trong file `.env` để dùng mật khẩu riêng.
+Gateway chạy ở cổng **8080** cùng một cơ sở dữ liệu PostgreSQL. Tiếp theo:
+
+1. Xem mật khẩu quản trị được tạo: `docker compose logs kiro-gateway | grep -i password` (hoặc đặt `ADMIN_PASSWORD` trong file `.env` trước khi chạy).
+2. Mở **http://localhost:8080/admin** và đăng nhập.
+3. **Tài khoản → Thêm tài khoản** để kết nối tài khoản Kiro.
+4. **API & Keys → Tạo key**, rồi làm theo đoạn cấu hình cho công cụ của bạn.
 
 Cập nhật về sau:
 
 ```bash
-git pull && docker compose up -d --build
+git pull && docker compose up -d --build --remove-orphans
 ```
 
-Đang dùng `config.json`? Dữ liệu được nhập tự động ở lần chạy đầu và bảng quản trị sẽ hướng dẫn kiểm tra rồi xóa
-file — xem [di chuyển dữ liệu](docs/configuration.md#migrating-from-configjson).
+Các cách cài đặt khác: [docs/installation.md](docs/installation.md). Nâng cấp từ Kiro-Go: [docs/upgrading.md](docs/upgrading.md).
 
-### Docker image
-
-Image đa kiến trúc (amd64, arm64) được phát hành tại `ghcr.io/springmusk026/kiro-go` — `latest` từ nhánh `main`, kèm tag theo phiên bản:
-
-```bash
-docker run -d --name kiro-go -p 8080:8080 \
-  -e ADMIN_PASSWORD=change-me \
-  -e DATABASE_URL="postgres://kiro:kiro@db-host:5432/kiro?sslmode=disable" \
-  -v "$PWD/data:/app/data" \
-  --restart unless-stopped ghcr.io/springmusk026/kiro-go:latest
-```
-
-Không có `DATABASE_URL` thì mọi thứ được lưu trong `data/config.json` (không có lịch sử request).
-
-### Build từ mã nguồn
-
-Cần Go 1.25+ và Node 22+ (cho bảng quản trị).
-
-```bash
-git clone https://github.com/springmusk026/Kiro-Go.git && cd Kiro-Go
-(cd frontend && npm ci && npm run build)   # build bảng quản trị vào ./web
-go build -o kiro-go .
-./kiro-go
-```
-
-## Kết nối client
-
-Trang **API & Keys** tạo sẵn các đoạn cấu hình này theo máy chủ, key và mô hình của bạn.
+## Kết nối công cụ
 
 **Claude Code**
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_AUTH_TOKEN=<your-api-key>
+export ANTHROPIC_AUTH_TOKEN=<gateway-key-cua-ban>
 export ANTHROPIC_MODEL=claude-sonnet-4.5
-export ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4.5
 claude
 ```
 
@@ -108,45 +124,48 @@ claude
 ```toml
 model = "claude-sonnet-4.5"
 model_provider = "kiro"
-model_reasoning_effort = "medium"
 
 [model_providers.kiro]
-name = "Kiro-Go"
+name = "Kiro Gateway"
 base_url = "http://localhost:8080/v1"
 env_key = "KIRO_API_KEY"
 wire_api = "responses"
 ```
 
-**OpenAI / Anthropic SDK** — trỏ `base_url` tới `http://localhost:8080/v1` (OpenAI) hoặc `http://localhost:8080`
-(Anthropic) và dùng API key của Kiro-Go.
-
-Thêm client khác (Cline, Continue, LiteLLM, cURL) và tùy chọn thinking: [docs/clients.md](docs/clients.md).
+**SDK và công cụ khác**: base URL OpenAI là `http://localhost:8080/v1`, Anthropic là `http://localhost:8080`, kèm API key của gateway.
+Xem thêm: [docs/clients.md](docs/clients.md).
 
 ## Tài liệu (tiếng Anh)
 
-| | |
+| Hướng dẫn | |
 |---|---|
-| [docs/clients.md](docs/clients.md) | Cấu hình Claude Code, Codex, SDK và các công cụ khác |
-| [docs/api.md](docs/api.md) | Endpoint, ghi chú tương thích, thinking, mô hình, mã lỗi |
-| [docs/configuration.md](docs/configuration.md) | Biến môi trường, cài đặt, lưu trữ, di chuyển từ JSON, ghi log |
-| [docs/architecture.md](docs/architecture.md) | Luồng request, giao thức upstream, nhóm tài khoản, cache và chi phí |
-| [docs/development.md](docs/development.md) | Build, kiểm thử, phát triển bảng quản trị, phát hành |
-| [CHANGELOG.md](CHANGELOG.md) | Lịch sử thay đổi, gồm cả khác biệt so với dự án gốc |
+| [Cài đặt](docs/installation.md) | Docker Compose, image dựng sẵn, build từ mã nguồn, triển khai production |
+| [Kết nối client](docs/clients.md) | Claude Code, Codex, agent trong IDE, SDK, LiteLLM |
+| [Cấu hình](docs/configuration.md) | Cài đặt, biến môi trường, lưu trữ, log, ngân sách |
+| [API](docs/api.md) | Endpoint, tương thích, thinking, mã lỗi |
+| [Kiến trúc](docs/architecture.md) | Luồng request, nhóm tài khoản, cache và chi phí |
+| [Nâng cấp](docs/upgrading.md) | Chuyển từ Kiro-Go, từ JSON sang PostgreSQL |
+| [Khắc phục sự cố](docs/troubleshooting.md) | Sự cố thường gặp và cách xử lý |
+| [Phát triển](docs/development.md) | Build, kiểm thử và đóng góp mã |
 
 ## Bảo mật
 
-- Máy chủ lắng nghe trên `0.0.0.0`. Hãy **tạo API key** (hoặc bật xác thực API key trong Cài đặt) trước khi công khai;
-  nếu không, bất kỳ ai truy cập được cổng đều dùng được tài khoản của bạn. Bảng quản trị sẽ cảnh báo khi chưa bật.
-- Mật khẩu quản trị được tạo ở lần chạy đầu nếu chưa đặt; đăng nhập quản trị bị giới hạn tần suất và so sánh thời gian
-  hằng; bảng quản trị gửi các header bảo mật nghiêm ngặt.
-- Mặc định không lưu nội dung request/response vì prompt có thể nhạy cảm.
-- Đặt TLS phía trước (Caddy, nginx, Cloudflare) khi công khai ra ngoài.
+Gateway nắm giữ thông tin đăng nhập tài khoản Kiro của bạn. Trước khi mở ra ngoài, hãy bật **Yêu cầu API key**
+(Cài đặt → Bảo mật), tạo key và đặt HTTPS phía trước; đặt `KIRO_ENCRYPTION_KEY` để mã hóa thông tin xác thực và lưu giữ
+khóa này an toàn. Xem [SECURITY.md](SECURITY.md).
+
+## Đóng góp
+
+Hoan nghênh báo lỗi, ý tưởng và pull request. Vui lòng đọc [CONTRIBUTING.md](CONTRIBUTING.md) và [Quy tắc ứng xử](CODE_OF_CONDUCT.md).
+
+## Ghi nhận
+
+Kiro Gateway khởi đầu là một bản fork của [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) và đã được viết lại, mở rộng. Cảm ơn tác giả và những người đóng góp.
 
 ## Miễn trừ trách nhiệm
 
-Chỉ dành cho mục đích học tập và nghiên cứu. Không liên kết với Amazon, AWS hay Kiro. Người dùng tự chịu trách
-nhiệm tuân thủ điều khoản dịch vụ của tài khoản đang dùng và pháp luật liên quan.
+Kiro Gateway là dự án độc lập, không liên kết, không được Amazon, AWS hay Kiro xác nhận hoặc hỗ trợ. Người dùng tự chịu trách nhiệm tuân thủ điều khoản dịch vụ của tài khoản và pháp luật liên quan.
 
 ## Giấy phép
 
-[MIT](LICENSE). Một phần mã có nguồn gốc từ [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) (cũng theo MIT).
+[MIT](LICENSE)

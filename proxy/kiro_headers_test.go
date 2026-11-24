@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
 	"strings"
 	"testing"

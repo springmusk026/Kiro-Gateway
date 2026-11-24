@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // Tests run against a real PostgreSQL when KIRO_TEST_DATABASE_URL is set,

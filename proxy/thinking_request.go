@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // Request-driven thinking.

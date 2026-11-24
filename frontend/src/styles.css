@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Kiro-Go console design tokens.
+ * Kiro Gateway console design tokens.
  * Neutral surfaces tinted slightly toward the brand hue, one saturated accent
  * (violet) reserved for primary actions and live signals, and semantic
  * status colours that always appear with a label or icon.

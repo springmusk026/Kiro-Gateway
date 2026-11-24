@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // Prometheus metrics at GET /metrics, in the text exposition format (written

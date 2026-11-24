@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // A 4xx is deterministic: the official clients never retry it, so it must

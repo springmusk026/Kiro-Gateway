@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // ConfigStore persists the gateway configuration in three tables: one

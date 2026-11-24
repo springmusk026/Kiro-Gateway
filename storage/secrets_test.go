@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 func storageCodec(t *testing.T, seed byte) *config.SecretCodec {

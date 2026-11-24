@@ -1,1 +1,0 @@
-import{t as e}from"./useRouter-B90eufI7.js";import{H as t,z as n}from"./api-Bk__2xAd.js";var r=t(n(),1);function i(t){let n=e();return r.useCallback(e=>n.navigate({...e,from:e.from??t?.from}),[t?.from,n])}export{i as t};

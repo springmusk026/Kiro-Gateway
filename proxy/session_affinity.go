@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/logger"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
 )
 
 // pickAccount selects the upstream account for one attempt.

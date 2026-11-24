@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // Analytics aggregates the request history for one window: a summary (and the
@@ -142,8 +142,9 @@ func (r *Recorder) Analytics(ctx context.Context, q telemetry.AnalyticsQuery) (*
 
 func (r *Recorder) analyticsSummary(ctx context.Context, w analyticsWhere, s *telemetry.AnalyticsSummary) error {
 	return r.db.Pool.QueryRow(ctx, `SELECT count(*),
-		count(*) FILTER (WHERE status <> 'success'),
-		count(*) FILTER (WHERE http_status BETWEEN 400 AND 499 AND http_status <> 429),
+		count(*) FILTER (WHERE status = 'error'),
+		count(*) FILTER (WHERE status = 'cancelled'),
+		count(*) FILTER (WHERE status = 'error' AND http_status BETWEEN 400 AND 498 AND http_status <> 429),
 		count(*) FILTER (WHERE `+throttledExpr+`),
 		`+tokenAggs+`,
 		COALESCE(avg(duration_ms) FILTER (WHERE status = 'success'), 0),
@@ -162,7 +163,7 @@ func (r *Recorder) analyticsSummary(ctx context.Context, w analyticsWhere, s *te
 		COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY output_tokens * 1000.0 / GREATEST(duration_ms - ttfb_ms, 1))
 			FILTER (WHERE status = 'success' AND output_tokens > 0 AND duration_ms > 0), 0)
 		FROM kiro_request_logs WHERE `+w.sql, w.args...).Scan(
-		&s.Requests, &s.Errors, &s.ClientErrors, &s.Throttled,
+		&s.Requests, &s.Errors, &s.Cancelled, &s.ClientErrors, &s.Throttled,
 		&s.InputTokens, &s.OutputTokens, &s.CacheRead, &s.CacheWrite, &s.Credits,
 		&s.AvgLatencyMs, &s.P50LatencyMs, &s.P95LatencyMs, &s.P99LatencyMs, &s.P50TTFBMs, &s.P95TTFBMs,
 		&s.AvgAttempts, &s.Retried, &s.Streamed, &s.RequestBytes, &s.ResponseBytes,
@@ -173,7 +174,7 @@ func (r *Recorder) analyticsSeries(ctx context.Context, w analyticsWhere, bucket
 	args := append(append([]any{}, w.args...), bucket.Seconds())
 	n := len(args)
 	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT to_timestamp(floor(extract(epoch FROM ts) / $%d) * $%d) AS b,
-		count(*), count(*) FILTER (WHERE status <> 'success'), count(*) FILTER (WHERE %s),
+		count(*), count(*) FILTER (WHERE status = 'error'), count(*) FILTER (WHERE status = 'cancelled'), count(*) FILTER (WHERE %s),
 		%s, %s
 		FROM kiro_request_logs WHERE %s GROUP BY b ORDER BY b`, n, n, throttledExpr, tokenAggs, latencyAggs, w.sql), args...)
 	if err != nil {
@@ -183,7 +184,7 @@ func (r *Recorder) analyticsSeries(ctx context.Context, w analyticsWhere, bucket
 	out := []telemetry.AnalyticsPoint{}
 	for rows.Next() {
 		var p telemetry.AnalyticsPoint
-		if err := rows.Scan(&p.Time, &p.Requests, &p.Errors, &p.Throttled,
+		if err := rows.Scan(&p.Time, &p.Requests, &p.Errors, &p.Cancelled, &p.Throttled,
 			&p.InputTokens, &p.OutputTokens, &p.CacheRead, &p.CacheWrite, &p.Credits,
 			&p.P50LatencyMs, &p.P95LatencyMs, &p.P50TTFBMs); err != nil {
 			return nil, err
@@ -200,7 +201,7 @@ func (r *Recorder) analyticsGroup(ctx context.Context, w analyticsWhere, dimensi
 		label = "max(account_email)"
 	}
 	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT %s AS k, %s,
-		count(*), count(*) FILTER (WHERE status <> 'success'), count(*) FILTER (WHERE %s),
+		count(*), count(*) FILTER (WHERE status = 'error'), count(*) FILTER (WHERE %s),
 		%s, %s,
 		COALESCE(avg(attempts) FILTER (WHERE attempts > 0), 0), max(ts)
 		FROM kiro_request_logs WHERE %s GROUP BY k ORDER BY count(*) DESC LIMIT %d`,
@@ -225,7 +226,7 @@ func (r *Recorder) analyticsGroup(ctx context.Context, w analyticsWhere, dimensi
 func (r *Recorder) analyticsErrors(ctx context.Context, w analyticsWhere) ([]telemetry.AnalyticsError, error) {
 	rows, err := r.db.Pool.Query(ctx, `SELECT COALESCE(NULLIF(error_type, ''), 'unknown'), http_status, count(*),
 		(array_agg(left(error, 300) ORDER BY ts DESC))[1], max(ts)
-		FROM kiro_request_logs WHERE status <> 'success' AND `+w.sql+`
+		FROM kiro_request_logs WHERE status = 'error' AND `+w.sql+`
 		GROUP BY 1, 2 ORDER BY count(*) DESC LIMIT 30`, w.args...)
 	if err != nil {
 		return nil, err
@@ -247,7 +248,7 @@ func (r *Recorder) analyticsHeatmap(ctx context.Context, w analyticsWhere, loc *
 	args := append(append([]any{}, w.args...), loc.String())
 	n := len(args)
 	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT extract(dow FROM ts AT TIME ZONE $%d)::int AS d,
-		extract(hour FROM ts AT TIME ZONE $%d)::int AS h, count(*), count(*) FILTER (WHERE status <> 'success')
+		extract(hour FROM ts AT TIME ZONE $%d)::int AS h, count(*), count(*) FILTER (WHERE status = 'error')
 		FROM kiro_request_logs WHERE %s GROUP BY d, h`, n, n, w.sql), args...)
 	if err != nil {
 		return nil, err

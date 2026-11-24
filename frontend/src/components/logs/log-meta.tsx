@@ -1,4 +1,4 @@
-import { Ban, CircleAlert, CircleCheck, CircleHelp, CreditCard, Gauge, KeyRound, UserX, type LucideIcon } from 'lucide-react'
+import { Ban, CircleAlert, CircleCheck, CircleHelp, CreditCard, Gauge, KeyRound, UserX, type LucideIcon, CircleSlash } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useI18n } from '@/lib/i18n'
 import type { MessageKey } from '@/locales/en'
@@ -10,6 +10,7 @@ export const ERROR_TYPES: { id: string; label: MessageKey; hint: MessageKey; ico
   { id: 'suspended', label: 'logs.err.suspended', hint: 'logs.err.suspendedHint', icon: Ban },
   { id: 'auth', label: 'logs.err.auth', hint: 'logs.err.authHint', icon: KeyRound },
   { id: 'profile', label: 'logs.err.profile', hint: 'logs.err.profileHint', icon: UserX },
+  { id: 'client_closed', label: 'logs.err.client_closed', hint: 'logs.cancelledHint', icon: CircleSlash },
   { id: 'unknown', label: 'logs.err.unknown', hint: 'logs.err.unknownHint', icon: CircleHelp },
 ]
 
@@ -45,6 +46,14 @@ export function StatusBadge({ log }: { log: { status: string } }) {
       <Badge variant="outline" className="border-success/30 bg-success/[0.08] text-success">
         <CircleCheck />
         {t('logs.success')}
+      </Badge>
+    )
+  }
+  if (log.status === 'cancelled') {
+    return (
+      <Badge variant="outline" className="text-muted-foreground" title={t('logs.cancelledHint')}>
+        <CircleSlash />
+        {t('logs.cancelled')}
       </Badge>
     )
   }

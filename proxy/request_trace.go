@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // requestTrace accumulates what the gateway learns about one client request.
@@ -294,6 +296,17 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 	t.mu.Unlock()
 	if !tw.firstByte.IsZero() {
 		rec.TTFBMs = tw.firstByte.Sub(t.start).Milliseconds()
+	}
+	// A request whose client went away before it finished is neither a
+	// success nor an upstream error: record it as cancelled (HTTP 499, the
+	// conventional "client closed request").
+	if rec.Status != "success" && rec.Status != "error" && errors.Is(r.Context().Err(), context.Canceled) {
+		rec.Status = "cancelled"
+		rec.ErrorType = "client_closed"
+		rec.Error = fmt.Sprintf("Client disconnected after %s (%d bytes sent)", end.Sub(t.start).Round(time.Millisecond), tw.bytes)
+		if tw.status == 0 || tw.status < 400 {
+			rec.HTTPStatus = 499
+		}
 	}
 	if rec.Status == "" {
 		if rec.HTTPStatus >= 400 {

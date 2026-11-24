@@ -3,9 +3,9 @@ package proxy
 import (
 	"errors"
 	"fmt"
-	"kiro-go/config"
-	"kiro-go/logger"
-	"kiro-go/pool"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/pool"
 	"strconv"
 	"strings"
 	"time"

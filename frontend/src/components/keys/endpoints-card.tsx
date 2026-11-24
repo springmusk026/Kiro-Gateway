@@ -19,7 +19,7 @@ const ENDPOINTS: { method: string; path: string; label: MessageKey; tag: string 
   { method: 'POST', path: '/v1/chat/completions', label: 'keys.epChat', tag: 'OpenAI' },
   { method: 'POST', path: '/v1/responses', label: 'keys.epResponses', tag: 'OpenAI' },
   { method: 'GET', path: '/v1/models', label: 'keys.epModels', tag: 'OpenAI · Anthropic' },
-  { method: 'GET', path: '/v1/stats', label: 'keys.epStats', tag: 'Kiro-Go' },
+  { method: 'GET', path: '/v1/stats', label: 'keys.epStats', tag: 'Kiro Gateway' },
 ]
 
 export function EndpointsCard() {

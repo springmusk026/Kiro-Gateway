@@ -187,6 +187,7 @@ type AnalyticsQuery struct {
 type AnalyticsSummary struct {
 	Requests       int64   `json:"requests"`
 	Errors         int64   `json:"errors"`
+	Cancelled      int64   `json:"cancelled"`    // the client disconnected before the response finished
 	ClientErrors   int64   `json:"clientErrors"` // HTTP 4xx returned to the client
 	Throttled      int64   `json:"throttled"`    // HTTP 429/529/503
 	InputTokens    int64   `json:"inputTokens"`
@@ -216,6 +217,7 @@ type AnalyticsPoint struct {
 	Time         time.Time `json:"time"`
 	Requests     int64     `json:"requests"`
 	Errors       int64     `json:"errors"`
+	Cancelled    int64     `json:"cancelled"`
 	Throttled    int64     `json:"throttled"`
 	InputTokens  int64     `json:"inputTokens"`
 	OutputTokens int64     `json:"outputTokens"`

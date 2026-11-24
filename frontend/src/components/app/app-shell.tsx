@@ -271,11 +271,11 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <div className="rounded-xl border bg-card/60 p-3 text-xs text-muted-foreground">
         <div className="flex items-center justify-between">
-          <span>Kiro-Go</span>
+          <span>Kiro Gateway</span>
           <span className="font-mono">{data?.version ? 'v' + data.version : '—'}</span>
         </div>
         <a
-          href="https://github.com/springmusk026/Kiro-Go"
+          href="https://github.com/springmusk026/Kiro-Gateway"
           target="_blank"
           rel="noreferrer"
           className="mt-1 inline-block underline-offset-4 hover:text-foreground hover:underline"

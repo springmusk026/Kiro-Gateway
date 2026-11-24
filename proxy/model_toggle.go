@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // disabledModelMessage returns a client-facing error when the resolved model

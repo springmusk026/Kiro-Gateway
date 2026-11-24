@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"kiro-go/config"
+	"github.com/springmusk026/Kiro-Gateway/config"
 )
 
 // Admin login throttling: after adminMaxFailures wrong passwords from one

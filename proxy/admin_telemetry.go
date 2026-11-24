@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/logger"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/logger"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 func queryInt(r *http.Request, key string, def int) int {

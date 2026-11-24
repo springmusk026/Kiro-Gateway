@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 const requestSelect = `SELECT l.id, l.ts, l.method, l.path, l.endpoint, l.model, l.account_id, l.account_email,
@@ -150,7 +150,7 @@ func (r *Recorder) UsageSeries(ctx context.Context, since time.Time, bucket time
 		bucket = time.Minute
 	}
 	rows, err := r.db.Pool.Query(ctx, `SELECT to_timestamp(floor(extract(epoch FROM ts) / $2) * $2) AS b,
-		count(*), count(*) FILTER (WHERE status <> 'success'),
+		count(*), count(*) FILTER (WHERE status = 'error'),
 		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(cache_read_tokens), 0),
 		COALESCE(sum(credits), 0), COALESCE(avg(duration_ms) FILTER (WHERE status = 'success'), 0)
 		FROM kiro_request_logs WHERE ts >= $1 GROUP BY b ORDER BY b`, since, bucket.Seconds())
@@ -185,7 +185,7 @@ func (r *Recorder) UsageBy(ctx context.Context, dimension string, since time.Tim
 	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
-	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT %s AS k, count(*), count(*) FILTER (WHERE status <> 'success'),
+	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT %s AS k, count(*), count(*) FILTER (WHERE status = 'error'),
 		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(cache_read_tokens), 0), COALESCE(sum(credits), 0)
 		FROM kiro_request_logs WHERE ts >= $1 GROUP BY k ORDER BY count(*) DESC LIMIT %d`, col, limit), since)
 	if err != nil {

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"kiro-go/config"
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 // memSessionStore is an in-memory telemetry.AdminSessionStore.

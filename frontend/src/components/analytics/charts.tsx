@@ -46,7 +46,7 @@ export function useSeriesRows(report: AnalyticsReport | undefined, lang: string)
         t: ts,
         label: '',
         long: '',
-        ok: Math.max(0, p.requests - p.errors),
+        ok: Math.max(0, p.requests - p.errors - (p.cancelled ?? 0)),
         err: p.errors,
         throttled: p.throttled,
         input: p.inputTokens,

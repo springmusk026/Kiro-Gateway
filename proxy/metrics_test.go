@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"kiro-go/telemetry"
+	"github.com/springmusk026/Kiro-Gateway/telemetry"
 )
 
 func withMetrics(t *testing.T, on bool) {

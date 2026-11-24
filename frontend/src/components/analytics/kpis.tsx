@@ -100,8 +100,9 @@ const pct = (r: number) => (r * 100).toFixed(1) + '%'
 
 export function KpiGrid({ s, p, hours, range }: { s: AnalyticsSummary; p: AnalyticsSummary; hours: number; range: AnalyticsRange }) {
   const { t } = useI18n()
-  const success = ratio(s.requests - s.errors, s.requests)
-  const prevSuccess = ratio(p.requests - p.errors, p.requests)
+  // Requests the client abandoned are neither successes nor failures.
+  const success = ratio(s.requests - s.errors - (s.cancelled ?? 0), s.requests - (s.cancelled ?? 0))
+  const prevSuccess = ratio(p.requests - p.errors - (p.cancelled ?? 0), p.requests - (p.cancelled ?? 0))
   const cache = Math.min(1, ratio(s.cacheReadTokens, s.inputTokens))
   const prevCache = Math.min(1, ratio(p.cacheReadTokens, p.inputTokens))
   const retried = ratio(s.retried, s.requests)

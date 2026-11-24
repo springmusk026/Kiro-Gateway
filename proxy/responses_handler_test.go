@@ -3,9 +3,9 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"github.com/springmusk026/Kiro-Gateway/config"
+	accountpool "github.com/springmusk026/Kiro-Gateway/pool"
 	"io"
-	"kiro-go/config"
-	accountpool "kiro-go/pool"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"

@@ -22,9 +22,9 @@ export const en = {
   ...securityEn,
   ...costEn,
 
-  'app.name': 'Kiro-Go',
-  'app.tagline': 'API Gateway',
-  'app.title': 'Kiro-Go Console',
+  'app.name': 'Kiro Gateway',
+  'app.tagline': 'Admin console',
+  'app.title': 'Kiro Gateway Console',
 
   'nav.workspace': 'Workspace',
   'nav.developers': 'Developers',

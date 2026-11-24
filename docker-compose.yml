@@ -1,5 +1,5 @@
 services:
-  kiro-go:
+  kiro-gateway:
     build: .
     ports:
       - "8080:8080"
