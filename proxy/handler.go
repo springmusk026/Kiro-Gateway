@@ -489,7 +489,7 @@ func (h *Handler) setAPICORSHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 	w.Header().Set("Access-Control-Max-Age", "86400")
-	w.Header().Set("Access-Control-Expose-Headers", "request-id, x-request-id, retry-after, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
+	w.Header().Set("Access-Control-Expose-Headers", "request-id, x-request-id, retry-after, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens, x-kiro-gateway-fallback-model")
 }
 
 func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
@@ -3117,8 +3117,13 @@ func (h *Handler) apiGetAccounts(w http.ResponseWriter, r *http.Request) {
 	// 隐藏敏感信息
 	result := make([]map[string]interface{}, len(accounts))
 	for i, a := range accounts {
-		// 获取运行时统计
-		stats := statsMap[a.ID]
+		// Runtime statistics live in the pool, which only holds routable
+		// accounts; disabled or over-quota accounts fall back to their saved
+		// counters instead of showing zero activity.
+		stats, ok := statsMap[a.ID]
+		if !ok {
+			stats = a
+		}
 
 		result[i] = map[string]interface{}{
 			"id":                a.ID,

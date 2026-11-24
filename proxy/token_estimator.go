@@ -116,6 +116,12 @@ func estimateClaudeValueTokens(v interface{}) int {
 			if content, ok := value["content"]; ok {
 				return estimateClaudeValueTokens(content)
 			}
+		case "image":
+			return imageTokenEstimate
+		case "document":
+			return estimateDocumentTokens(value)
+		case "redacted_thinking":
+			return 0
 		}
 
 		total := 0
@@ -182,6 +188,30 @@ func estimateOpenAIContentTokens(content interface{}) int {
 		return 0
 	case string:
 		return estimateApproxTokens(value)
+	case []interface{}:
+		// Count parts individually so inline attachments are not counted as
+		// base64 text.
+		total := 0
+		for _, p := range value {
+			part, ok := p.(map[string]interface{})
+			if !ok {
+				total += estimateJSONTokens(p)
+				continue
+			}
+			switch t, _ := part["type"].(string); t {
+			case "text", "input_text", "output_text":
+				if s, ok := part["text"].(string); ok {
+					total += estimateApproxTokens(s)
+				}
+			case "image_url", "input_image", "image":
+				total += imageTokenEstimate
+			case "file", "input_file", "document":
+				total += documentTokenEstimate
+			default:
+				total += estimateJSONTokens(part)
+			}
+		}
+		return total
 	default:
 		text := extractOpenAIMessageText(value)
 		if text != "" {
@@ -193,4 +223,33 @@ func estimateOpenAIContentTokens(content interface{}) int {
 
 func estimateOpenAIOutputTokens(content, reasoningContent string, toolUses []KiroToolUse) int {
 	return estimateClaudeOutputTokens(content, reasoningContent, toolUses)
+}
+
+// Attachments are billed by content, not by their base64 size; counting the
+// encoded bytes as text inflated estimates far past the context window and
+// made clients compact needlessly when Kiro reported no context usage.
+const (
+	// imageTokenEstimate approximates a typical image (Anthropic counts about
+	// width*height/750, capped near 1,600 for images resized to fit).
+	imageTokenEstimate = 1600
+	// documentTokenEstimate is used when a binary document's text is unknown.
+	documentTokenEstimate = 2000
+)
+
+// estimateDocumentTokens counts a text document's text and uses a flat
+// estimate for binary (base64 or URL) documents.
+func estimateDocumentTokens(block map[string]interface{}) int {
+	src, _ := block["source"].(map[string]interface{})
+	if src == nil {
+		return documentTokenEstimate
+	}
+	switch t, _ := src["type"].(string); t {
+	case "text":
+		if s, ok := src["data"].(string); ok {
+			return estimateApproxTokens(s)
+		}
+	case "content":
+		return estimateClaudeValueTokens(src["content"])
+	}
+	return documentTokenEstimate
 }

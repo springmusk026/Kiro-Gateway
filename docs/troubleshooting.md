@@ -6,8 +6,11 @@ the error, the account used and the upstream attempts for every request.
 ## Setup and access
 
 **I don't know the admin password.**
-It is printed once on first start: `docker compose logs kiro-gateway | grep -i password`. To set a new one,
-put `ADMIN_PASSWORD=…` in `.env` and restart; that value always wins.
+A generated password is printed once, on the very first start:
+`docker compose logs kiro-gateway | grep -i password`. To reset a forgotten password, add
+`ADMIN_PASSWORD=…` to `.env` and run `docker compose up -d --force-recreate kiro-gateway`. The variable is
+applied on every start but not saved, so either keep it in `.env`, or sign in, set a password under
+Settings → Security and then remove the line. Changing the password signs out all console sessions.
 
 **The console still shows an old version after updating.**
 Rebuild the image: `docker compose up -d --build --remove-orphans`, then reload the page.
