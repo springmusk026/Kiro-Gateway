@@ -57,12 +57,12 @@ type leakedTool struct {
 // toolLeakFilter holds the cross-frame state for separating leaked tool-call
 // XML from normal assistant text.
 type toolLeakFilter struct {
-	enabled    bool
-	debug      bool
-	carry      string
-	leaked     []leakedTool
-	seen       map[string]bool
-	idCounter  int
+	enabled   bool
+	debug     bool
+	carry     string
+	leaked    []leakedTool
+	seen      map[string]bool
+	idCounter int
 }
 
 func newToolLeakFilter() *toolLeakFilter {

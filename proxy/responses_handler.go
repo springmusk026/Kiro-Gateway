@@ -228,7 +228,7 @@ func (h *Handler) handleResponsesNonStream(
 			// Integrity failures are upstream hiccups, not account faults.
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
+				h.dropAffinity(apiKeyID, account.ID)
 			}
 			continue
 		}
@@ -592,7 +592,7 @@ func (h *Handler) handleResponsesStream(
 				// Integrity failures are upstream hiccups, not account faults.
 				if !isStreamIntegrityError(err) {
 					h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
+					h.dropAffinity(apiKeyID, account.ID)
 				}
 				continue
 			}

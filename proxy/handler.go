@@ -2510,6 +2510,12 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiGetAccounts(w, r)
 	case path == "/models" && r.Method == "GET":
 		h.apiGetModels(w, r)
+	// Playground: the dashboard talks to the real API handlers, authenticated
+	// by the admin session instead of a client API key.
+	case path == "/playground/chat/completions" && r.Method == "POST":
+		h.handleOpenAIChat(w, r)
+	case path == "/playground/messages" && r.Method == "POST":
+		h.handleClaudeMessages(w, r)
 	case path == "/accounts" && r.Method == "POST":
 		h.apiAddAccount(w, r)
 	case path == "/accounts/batch" && r.Method == "POST":
