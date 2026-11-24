@@ -192,6 +192,7 @@ func (h *Handler) handleResponsesNonStream(
 	var lastErr error
 	reqStart := time.Now()
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -262,7 +263,7 @@ func (h *Handler) handleResponsesNonStream(
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
-			if isTerminalUpstreamError(err) {
+			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 				break
 			}
 			continue
@@ -309,6 +310,10 @@ func (h *Handler) handleResponsesNonStream(
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		h.sendOpenAINoAccounts(w)
 		return
@@ -498,6 +503,7 @@ func (h *Handler) handleResponsesStream(
 	responseStarted := false
 	reqStart := time.Now()
 
+accountLoop:
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
 		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
@@ -724,7 +730,7 @@ func (h *Handler) handleResponsesStream(
 					h.handleAccountFailure(account, err)
 					h.dropAffinity(apiKeyID, account.ID)
 				}
-				if isTerminalUpstreamError(err) {
+				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
 					break
 				}
 				continue
@@ -785,6 +791,10 @@ func (h *Handler) handleResponsesStream(
 		return
 	}
 
+	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
+		model, excluded = fb, make(map[string]bool)
+		goto accountLoop
+	}
 	if lastErr == nil {
 		sendFailed(nil, "server_overloaded", noAvailableAccountsMessage)
 		return

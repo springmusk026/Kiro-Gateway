@@ -335,7 +335,7 @@ Token file / refresh correctness notes from KAS ([JS] `FileAuthProvider`, `s4e`)
 | GetFeatureConfiguration | always, before first turn | never | missing |
 | Token refresh | per §1.8, single-flight, symlink-safe | matches intent; UA + IdC token-type gaps | partial |
 | Native effort / thinking | `reasoning.effort` + `thinking.type` from model schema | `reasoning.effort` only (`thinking_request.go`), `thinking.type` parsed but never emitted | partial |
-| Prompt caching | model-declared `promptCaching`, `cachePoint` blocks | capability stored, never used | missing |
+| Prompt caching | model-declared `promptCaching`, `cachePoint` blocks | experimental cache points on GAR behind `KIRO_CACHE_POINTS=1` (`proxy/cache_points.go`), unverified | partial |
 | Documents | pdf/docx/csv/… as `input_file` | `input_file` / `documents[]` | matches |
 | Images | per-family size/edge limits (§4) | generic base64 passthrough | partial |
 | User-Agent | `KiroCLI/3.5.0 KAS/<ver> os/… md/appVersion-3.5.0 app/AmazonQ-For-CLI` (raw) + SDK UA on smithy calls | `aws-sdk-js/… KiroIDE-<ver>-<machineId>` everywhere | **divergent** |

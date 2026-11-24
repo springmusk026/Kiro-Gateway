@@ -27,6 +27,7 @@ var modelInputTokenLimits sync.Map
 // list that reports one. Safe to call from any model-refresh path.
 func recordModelTokenLimits(models []ModelInfo) {
 	recordModelReasoningControls(models)
+	recordModelPromptCaching(models)
 	for _, m := range models {
 		if m.TokenLimits == nil || m.TokenLimits.MaxInputTokens <= 0 {
 			continue

@@ -273,9 +273,11 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		// sending this account requests that can only fail.
 		until := nextUTCMidnight(time.Now())
 		h.pool.ParkUntil(account.ID, until)
+		h.requestUsageRefresh(account.ID)
 		logger.Warnf("[AccountFailover] %s reached its usage limit; parked until %s", account.Email, until.Format(time.RFC3339))
 	case isQuotaErrorMessage(errMsg):
 		h.pool.RecordError(account.ID, true)
+		h.requestUsageRefresh(account.ID)
 	case isRateLimitMessage(errMsg):
 		// Repeated throttling backs off exponentially (30 s → 5 min) and
 		// honours an upstream Retry-After, instead of re-trying every 30 s.

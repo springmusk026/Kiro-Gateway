@@ -106,6 +106,7 @@ export interface ApiKeyInput {
   allowedModels?: string[]
   rpmLimit?: number
   expiresAt?: number
+  dailyCreditLimit?: number
 }
 
 export function useApiKeys() {

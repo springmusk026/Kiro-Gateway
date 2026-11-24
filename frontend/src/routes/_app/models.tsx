@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MappingsCard, ThinkingCard } from '@/components/models/model-config'
+import { FallbacksCard } from '@/components/models/fallbacks-card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compact, timeAgo } from '@/lib/format'
@@ -87,8 +88,9 @@ function ModelsPage() {
         <TabsContent value="catalog" className="mt-0">
           <CatalogTab onAliases={() => setTab('aliases')} />
         </TabsContent>
-        <TabsContent value="aliases" className="mt-0 max-w-4xl animate-rise">
+        <TabsContent value="aliases" className="mt-0 max-w-4xl animate-rise space-y-4">
           <MappingsCard />
+          <FallbacksCard />
         </TabsContent>
         <TabsContent value="thinking" className="mt-0 max-w-4xl animate-rise">
           <ThinkingCard />

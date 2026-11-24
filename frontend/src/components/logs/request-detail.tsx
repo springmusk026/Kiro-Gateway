@@ -142,6 +142,7 @@ export function RequestDetailSheet({
                     rows={[
                       [t('logs.h.method'), `${r.method} ${r.path}`],
                       [t('logs.colModel'), r.model || '–'],
+                      ...(r.fallbackModel ? [[t('cost.fbLogLabel'), r.fallbackModel] as [string, string]] : []),
                       [t('logs.h.stream'), r.stream ? t('logs.h.yes') : t('logs.h.no')],
                       [t('logs.h.colProtocol'), r.protocol || '–'],
                     ]}

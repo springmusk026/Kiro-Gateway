@@ -32,6 +32,8 @@ until an expiry date.
 
 `request-id` and `x-request-id` (same value, also shown in Request logs), `retry-after` on 429/529/503, and
 CORS headers that echo the browser's requested headers (so the Anthropic and OpenAI browser SDKs work).
+A request served by a fallback model also carries `x-kiro-go-fallback-model` (see
+[configuration.md](configuration.md#model-fallbacks)).
 
 ## Anthropic Messages
 
@@ -179,6 +181,7 @@ Errors use each API's own envelope — Anthropic `{"type":"error","error":{"type
 | Body too large | 413 | `request_too_large` | `invalid_request_error` |
 | Upstream throttling | 429 + `retry-after` | `rate_limit_error` | `rate_limit_exceeded` |
 | Account quota exhausted | 429 | `rate_limit_error` | `insufficient_quota` |
+| Daily credit budget reached (global or key) | 429 + `retry-after` until the reset | `rate_limit_error` | `insufficient_quota` |
 | No account available / upstream overloaded | 529 (Anthropic) / 503 (OpenAI) + `retry-after` | `overloaded_error` | `server_error` |
 | Anything else upstream | 500 | `api_error` | `server_error` |
 

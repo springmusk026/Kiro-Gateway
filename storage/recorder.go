@@ -143,7 +143,7 @@ func (r *Recorder) loop() {
 var requestColumns = []string{"id", "ts", "method", "path", "endpoint", "model", "account_id", "account_email",
 	"api_key_id", "client_ip", "user_agent", "stream", "protocol", "status", "http_status", "error", "error_type",
 	"input_tokens", "output_tokens", "credits", "duration_ms", "ttfb_ms", "attempts", "request_bytes", "response_bytes",
-	"cache_read_tokens", "cache_write_tokens"}
+	"cache_read_tokens", "cache_write_tokens", "fallback_model"}
 
 func (r *Recorder) writeRequests(batch []*telemetry.RequestRecord) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -154,7 +154,7 @@ func (r *Recorder) writeRequests(batch []*telemetry.RequestRecord) {
 		rows = append(rows, []any{x.ID, x.Time, x.Method, x.Path, x.Endpoint, x.Model, x.AccountID, x.AccountEmail,
 			x.APIKeyID, x.ClientIP, clean(x.UserAgent, 512), x.Stream, x.Protocol, x.Status, x.HTTPStatus, clean(x.Error, 8000),
 			x.ErrorType, x.InputTokens, x.OutputTokens, x.Credits, x.DurationMs, x.TTFBMs, x.Attempts,
-			x.RequestBytes, x.ResponseBytes, x.CacheRead, x.CacheWrite})
+			x.RequestBytes, x.ResponseBytes, x.CacheRead, x.CacheWrite, x.FallbackModel})
 		if x.RequestBody != "" || x.ResponseBody != "" {
 			bodies = append(bodies, []any{x.ID, clean(x.RequestBody, 0), clean(x.ResponseBody, 0)})
 		}

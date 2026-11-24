@@ -127,6 +127,10 @@ CREATE INDEX kiro_audit_events_ts ON kiro_audit_events (ts DESC);
 ALTER TABLE kiro_request_logs ADD COLUMN cache_read_tokens INT NOT NULL DEFAULT 0;
 ALTER TABLE kiro_request_logs ADD COLUMN cache_write_tokens INT NOT NULL DEFAULT 0;
 `,
+	// 3: model fallback taken by a request (empty when none).
+	`
+ALTER TABLE kiro_request_logs ADD COLUMN IF NOT EXISTS fallback_model TEXT NOT NULL DEFAULT '';
+`,
 }
 
 // idempotentSchemas run after the numbered migrations on every start, under

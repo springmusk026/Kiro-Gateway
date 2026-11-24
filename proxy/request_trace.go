@@ -36,6 +36,7 @@ type requestTrace struct {
 	apiKeyID string
 
 	model, accountID, errMsg, errType, status string
+	fallbackModel                             string
 	input, output                             int
 	cacheRead, cacheWrite                     int
 	credits                                   float64
@@ -76,6 +77,12 @@ func (t *requestTrace) setFailure(model, accountID, msg, typ string) {
 			t.accountID = accountID
 		}
 	}
+	t.mu.Unlock()
+}
+
+func (t *requestTrace) setFallbackModel(m string) {
+	t.mu.Lock()
+	t.fallbackModel = m
 	t.mu.Unlock()
 }
 
@@ -274,6 +281,7 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 		OutputTokens:  t.output,
 		CacheRead:     t.cacheRead,
 		CacheWrite:    t.cacheWrite,
+		FallbackModel: t.fallbackModel,
 		Credits:       t.credits,
 		DurationMs:    end.Sub(t.start).Milliseconds(),
 		RequestBytes:  atomic.LoadInt64(&t.reqBytes),

@@ -62,7 +62,12 @@ with a hash when they exceed Kiro's limit (and restored in responses), and no cl
 2. **Conversation affinity** (default on): a conversation is identified from its first messages and sent to
    the account that served it before, so Kiro's per-account prompt cache stays warm. Bindings expire after an
    hour of inactivity. Optional API-key affinity pins each key to one account.
-3. Otherwise accounts are used in rotation; an optional per-account concurrency limit queues extra requests.
+3. Otherwise accounts are used in rotation, preferring **usage headroom**: accounts at or above the usage
+   threshold (default 97 % of their limit) are a last resort, and lower usage bands win over higher ones
+   (`pool/usage_routing.go`). Usage comes from Kiro's usage API, refreshed per account every 10–15 minutes
+   in the background and after quota errors (`proxy/usage_refresh.go`), plus a local estimate of the
+   credits spent since. A bound conversation moves once its account crosses the threshold. An optional
+   per-account concurrency limit queues extra requests.
 
 ## Retries and account health
 
@@ -79,6 +84,19 @@ retries and account switches, so one request can never fan out into a burst of u
 
 Retries only happen before any content has reached the client; after that, errors are reported in-stream.
 
+**Model fallback** (`proxy/model_fallback.go`): when the model itself is unavailable (Kiro's
+temporarily-unavailable / overloaded errors, a 503/529-class result after the account loop, or an invalid
+model id) and a fallback is configured, the request is retried once on the first fallback model, inside the
+same attempt budget and only before any content was streamed. Explicit model-unavailable errors stop the
+account loop early so the budget is not spent on accounts that would fail the same way.
+
+## Budgets and alerts
+
+Daily credit caps (global and per API key) are checked in memory right after authentication, before any
+upstream call; exceeding one returns `429` in the API's own shape. Daily counters are updated from the
+credits each request reports and persisted with the debounced config writer. A background loop evaluates
+alerts every 30 s and posts new ones to the optional webhook (`proxy/cost_controls.go`).
+
 ## Streaming
 
 Streams are translated event by event. A heartbeat (`ping` for Anthropic, `: keep-alive` comments for
@@ -89,6 +107,8 @@ are matched across chunk boundaries and cancel the upstream call when hit.
 ## Caching and cost
 
 - Kiro caches prompt prefixes **server-side, per account**; the official clients do not send cache markers.
+  `KIRO_CACHE_POINTS=1` adds experimental (unverified) cache points to `generateAssistantResponse` requests
+  (`proxy/cache_points.go`).
   Conversation affinity and byte-stable prompts (deterministic ids, nothing time-based injected) are what
   make those caches hit. Cache read/write tokens are recorded per request when Kiro reports them.
 - Billing is in credits per request, scaled by the model's multiplier (shown on the Models page).

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { Activity, ArrowRight, CheckCircle2, Coins, ShieldAlert, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { CodeBlock } from '@/components/app/code-block'
+import { CostAlertsBanner } from '@/components/app/cost-alerts'
 import { StatCard } from '@/components/app/stat-card'
 import { ActivityFeed } from '@/components/overview/activity-feed'
 import { TopModels } from '@/components/overview/top-models'
@@ -84,6 +85,8 @@ function OverviewPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      <CostAlertsBanner />
 
       {!status ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

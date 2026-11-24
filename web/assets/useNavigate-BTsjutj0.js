@@ -1,1 +1,0 @@
-import{t as e}from"./useRouter-DbESsfIP.js";import{H as t,z as n}from"./api-Cfkabi4m.js";var r=t(n(),1);function i(t){let n=e();return r.useCallback(e=>n.navigate({...e,from:e.from??t?.from}),[t?.from,n])}export{i as t};

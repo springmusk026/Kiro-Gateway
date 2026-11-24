@@ -175,6 +175,8 @@ type ApiKeyEntry struct {
 	// Limits (0 = unlimited)
 	TokenLimit  int64   `json:"tokenLimit,omitempty"`
 	CreditLimit float64 `json:"creditLimit,omitempty"`
+	// DailyCreditLimit caps credits per budget day (see config/cost.go).
+	DailyCreditLimit float64 `json:"dailyCreditLimit,omitempty"`
 
 	// Cumulative usage (never auto-reset)
 	TokensUsed    int64   `json:"tokensUsed,omitempty"`
@@ -279,6 +281,10 @@ type Config struct {
 	// Accepted values: "debug", "info", "warn", "error". Defaults to "info".
 	// Can be overridden by the LOG_LEVEL environment variable.
 	LogLevel string `json:"logLevel,omitempty"`
+
+	// Cost controls: usage-aware routing, model fallbacks, budgets and
+	// alerts (config/cost.go). Embedded so its fields stay top-level in JSON.
+	CostSettings
 
 	// Global statistics (persisted across restarts)
 	TotalRequests   int     `json:"totalRequests,omitempty"`   // Total API requests received

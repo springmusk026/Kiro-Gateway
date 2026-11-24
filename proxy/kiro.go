@@ -241,6 +241,9 @@ type KiroToolWrapper struct {
 		Description string      `json:"description"`
 		InputSchema InputSchema `json:"inputSchema"`
 	} `json:"toolSpecification"`
+	// CachePoint makes this entry the {cachePoint} member of the Tool union
+	// (cache_points.go); ToolSpecification is then not sent.
+	CachePoint *KiroCachePoint `json:"cachePoint,omitempty"`
 }
 
 type InputSchema struct {
@@ -272,6 +275,8 @@ type KiroHistoryMessage struct {
 type KiroAssistantResponseMessage struct {
 	Content  string        `json:"content"`
 	ToolUses []KiroToolUse `json:"toolUses,omitempty"`
+	// CachePoint is an experimental prompt-cache marker (cache_points.go).
+	CachePoint *KiroCachePoint `json:"cachePoint,omitempty"`
 }
 
 type KiroToolUse struct {
@@ -475,7 +480,7 @@ endpointLoop:
 			epURL = cliRuntimeURL(account)
 		}
 
-		reqBody, _ := json.Marshal(payload)
+		reqBody, _ := json.Marshal(withCachePoints(payload))
 		// The serialized body size is the only number that can be compared
 		// against an upstream CONTENT_LENGTH_EXCEEDS_THRESHOLD rejection. It was
 		// previously computed only inside the truncation path and never logged,

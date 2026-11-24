@@ -142,6 +142,7 @@ func TestRecorderWritesAsyncAndQueries(t *testing.T) {
 			ID: fmt.Sprintf("req-%04d", i), Time: now.Add(time.Duration(i) * time.Millisecond), Endpoint: "claude",
 			Model: []string{"claude-sonnet-4.5", "claude-opus-4.7"}[i%2], Status: status, InputTokens: 10, OutputTokens: 5,
 			Error: "bad \xff utf8 \x00 nul", RequestBody: map[bool]string{true: "{\"x\":1}"}[i == 7],
+			FallbackModel: map[bool]string{true: "backup-model"}[i == 7],
 		})
 	}
 	r.RecordAudit(&telemetry.AuditEvent{Time: now, Actor: "admin", Action: "settings.update"})
@@ -165,7 +166,7 @@ func TestRecorderWritesAsyncAndQueries(t *testing.T) {
 		t.Fatalf("error filter: %d", len(errs))
 	}
 	one, err := r.GetRequest(ctx, "req-0007")
-	if err != nil || one.RequestBody != `{"x":1}` {
+	if err != nil || one.RequestBody != `{"x":1}` || one.FallbackModel != "backup-model" {
 		t.Fatalf("get with body: %+v %v", one, err)
 	}
 	by, _ := r.UsageBy(ctx, "model", now.Add(-time.Hour), 10)
