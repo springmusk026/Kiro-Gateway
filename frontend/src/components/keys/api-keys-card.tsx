@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { KeyRound, MoreHorizontal, Pencil, Plus, RotateCcw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/app/confirm'
@@ -208,6 +210,7 @@ export function ApiKeysCard({ onKeyCreated }: { onKeyCreated: (plaintext: string
   const [dialog, setDialog] = useState<{ open: boolean; editing: ApiKeyView | null }>({ open: false, editing: null })
   const [revealed, setRevealed] = useState<string | null>(null)
   const list = keys.data ?? []
+  const pg = usePagination(list, { storageKey: 'keys' })
   const enabledCount = list.filter((k) => k.enabled).length
   const enforced = settings.data?.requireApiKey
 
@@ -283,11 +286,14 @@ export function ApiKeysCard({ onKeyCreated }: { onKeyCreated: (plaintext: string
           }
         />
       ) : (
-        <ul className="stagger divide-y">
-          {list.map((k) => (
-            <KeyRow key={k.id} k={k} onEdit={() => setDialog({ open: true, editing: k })} />
-          ))}
-        </ul>
+        <>
+          <ul className="stagger divide-y">
+            {pg.pageItems.map((k) => (
+              <KeyRow key={k.id} k={k} onEdit={() => setDialog({ open: true, editing: k })} />
+            ))}
+          </ul>
+          <TablePagination page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />
+        </>
       )}
 
       <KeyDialog

@@ -45,6 +45,8 @@ import { cn } from '@/lib/utils'
 import { PoolUsageCard } from './pool-usage'
 import { AccountDetailSheet } from './account-detail'
 import { AccountsCards, AccountsTable } from './accounts-list'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { AccountActionsProvider, type DetailTab } from './actions'
 import { AddAccountDialog } from './add/add-account-dialog'
 import { BatchBar } from './batch-bar'
@@ -177,6 +179,7 @@ export function AccountsPage() {
     () => sortAccounts(accounts.filter((a) => matchesStatus(a, status) && matchesSearch(a, search.trim())), sort),
     [accounts, status, search, sort],
   )
+  const pg = usePagination(visible, { storageKey: 'accounts', resetKey: `${status}|${search}|${sort}` })
   const counts = useMemo(
     () => ({
       total: accounts.length,
@@ -435,8 +438,17 @@ export function AccountsPage() {
               </Card>
             ) : (
               <>
-                <AccountsTable accounts={visible} selected={selected} onSelect={selectOne} onSelectAll={selectAll} highlight={highlight} />
-                <AccountsCards accounts={visible} selected={selected} onSelect={selectOne} onSelectAll={selectAll} highlight={highlight} />
+                <AccountsTable accounts={pg.pageItems} selected={selected} onSelect={selectOne} onSelectAll={selectAll} highlight={highlight} />
+                <AccountsCards accounts={pg.pageItems} selected={selected} onSelect={selectOne} onSelectAll={selectAll} highlight={highlight} />
+                <TablePagination
+                  className="rounded-xl border bg-card"
+                  page={pg.page}
+                  pageCount={pg.pageCount}
+                  pageSize={pg.pageSize}
+                  total={pg.total}
+                  onPage={pg.setPage}
+                  onPageSize={pg.setPageSize}
+                />
                 <p className="text-center text-xs text-muted-foreground">
                   {t('accounts.showing', { n: visible.length, total: accounts.length })}
                   {visible.length > 0 && (

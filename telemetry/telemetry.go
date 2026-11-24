@@ -104,6 +104,8 @@ type UsageGroup struct {
 // Reader queries persisted records (available with a database backend).
 type Reader interface {
 	QueryRequests(ctx context.Context, f LogFilter) ([]RequestRecord, error)
+	// CountRequests counts matches (cursor ignored), capped; capped=true means more.
+	CountRequests(ctx context.Context, f LogFilter) (n int64, capped bool, err error)
 	GetRequest(ctx context.Context, id string) (*RequestRecord, error)
 	UsageSeries(ctx context.Context, since time.Time, bucket time.Duration) ([]UsagePoint, error)
 	UsageBy(ctx context.Context, dimension string, since time.Time, limit int) ([]UsageGroup, error)

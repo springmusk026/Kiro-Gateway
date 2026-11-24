@@ -311,6 +311,9 @@ export interface RequestRecord {
 export interface RequestsPage {
   records: RequestRecord[] | null
   hasMore: boolean
+  /** Matching rows (first page only), capped server-side. */
+  total?: number
+  totalCapped?: boolean
 }
 
 export interface RequestFilters {

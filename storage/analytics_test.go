@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -74,5 +75,33 @@ func TestAnalyticsReport(t *testing.T) {
 	})
 	if err != nil || f.Summary.Requests != 1 || len(f.Breakdowns["model"]) != 1 {
 		t.Fatalf("filtered: %v %+v", err, f.Summary)
+	}
+}
+
+func TestCountRequests(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	for i := 0; i < 7; i++ {
+		status := "success"
+		if i%3 == 0 {
+			status = "error"
+		}
+		if _, err := db.Pool.Exec(ctx, `INSERT INTO kiro_request_logs (id, ts, model, status) VALUES ($1, now() - make_interval(mins => $2), 'm', $3)`,
+			fmt.Sprintf("c%d", i), i, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := &Recorder{db: db}
+	n, capped, err := r.CountRequests(ctx, telemetry.LogFilter{})
+	if err != nil || n != 7 || capped {
+		t.Fatalf("all: n=%d capped=%v err=%v", n, capped, err)
+	}
+	n, _, _ = r.CountRequests(ctx, telemetry.LogFilter{Status: "error", BeforeID: "c1"})
+	if n != 3 {
+		t.Fatalf("errors (cursor ignored) = %d, want 3", n)
+	}
+	page, err := r.QueryRequests(ctx, telemetry.LogFilter{Limit: 3, BeforeID: "c2"})
+	if err != nil || len(page) != 3 || page[0].ID != "c3" {
+		t.Fatalf("keyset page = %v %v", page, err)
 	}
 }

@@ -15,7 +15,7 @@ export function KeysPage() {
       <PageHeader title={t('nav.keys')} description={t('page.keys')} />
       <CostAlertsBanner />
       <div className="stagger space-y-6">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <EndpointsCard />
           <ConnectCard sessionKey={sessionKey} />
         </div>

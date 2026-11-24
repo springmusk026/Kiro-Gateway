@@ -11,6 +11,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { EmptyState } from '@/components/app/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -96,16 +98,17 @@ export function AuditTab() {
     )
   }, [audit.data, search, t])
 
+  const pg = usePagination(filtered, { storageKey: 'audit', pageSize: 50, resetKey: search })
   const days = useMemo(() => {
     const out: { day: string; events: AuditEvent[] }[] = []
-    for (const e of filtered) {
+    for (const e of pg.pageItems) {
       const day = new Date(e.time).toLocaleDateString(lang, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
       const last = out[out.length - 1]
       if (last && last.day === day) last.events.push(e)
       else out.push({ day, events: [e] })
     }
     return out
-  }, [filtered, lang])
+  }, [pg.pageItems, lang])
 
   const failedLogins = (audit.data ?? []).filter((e) => e.action === 'login.failed').length
 
@@ -256,6 +259,7 @@ export function AuditTab() {
           <p className="pt-3 text-center text-xs text-muted-foreground tabular">
             {t('logs.audit.count', { n: filtered.length })}
           </p>
+          <TablePagination className="-mx-4 mt-2 sm:-mx-5" page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />
         </div>
       )}
     </Card>

@@ -62,7 +62,15 @@ func (h *Handler) apiQueryRequests(w http.ResponseWriter, r *http.Request) {
 	if hasMore {
 		recs = recs[:limit]
 	}
-	writeJSON(w, map[string]interface{}{"records": recs, "hasMore": hasMore})
+	resp := map[string]interface{}{"records": recs, "hasMore": hasMore}
+	// count=1 adds the number of matching rows (capped), for "1–50 of N".
+	if q.Get("count") == "1" {
+		if n, capped, err := h.logReader.CountRequests(ctx, f); err == nil {
+			resp["total"] = n
+			resp["totalCapped"] = capped
+		}
+	}
+	writeJSON(w, resp)
 }
 
 // apiGetRequest: GET /admin/api/requests/{id} — one record including bodies.

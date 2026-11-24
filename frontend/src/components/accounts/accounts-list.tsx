@@ -232,7 +232,7 @@ export function AccountsCards({ accounts, selected, onSelect, highlight }: ListP
   const hlRef = useScrollToHighlight(highlight)
   let hlAssigned = false
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:hidden stagger">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden stagger">
       {accounts.map((a) => {
         const hl = highlight.has(a.id)
         const attachRef = hl && !hlAssigned

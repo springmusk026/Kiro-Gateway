@@ -1,4 +1,6 @@
 import { ChevronRight, Database, Eye, EyeOff, Filter, Loader2, RefreshCw, ScrollText, Search, Trash2, X } from 'lucide-react'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { Link } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -23,7 +25,6 @@ import { ENDPOINT_LABEL, ERROR_TYPES, EndpointChip, ErrorTypeBadge, StatusBadge 
 import { SummaryStrip } from './summary-strip'
 
 type Keyed = RequestLog & { key: string }
-const PAGE = 100
 const LIVE_KEY = 'kiro_logs_live'
 const PRIVACY_KEY = 'privacyMode'
 
@@ -83,7 +84,6 @@ export function MemoryLogs() {
   const [errType, setErrType] = useState('all')
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [limit, setLimit] = useState(PAGE)
   const [fresh, setFresh] = useState<Set<string>>(new Set())
   const known = useRef<Set<string> | null>(null)
   const [, tick] = useState(0)
@@ -145,7 +145,7 @@ export function MemoryLogs() {
     })
   }, [rows, status, endpoint, errType, search, accounts.data])
 
-  useEffect(() => setLimit(PAGE), [status, endpoint, errType, search])
+  const pg = usePagination(filtered, { storageKey: 'memory-logs', pageSize: 50, resetKey: `${status}|${endpoint}|${errType}|${search}` })
 
   const filtersActive = status !== 'all' || endpoint !== 'all' || errType !== 'all' || search.trim() !== ''
   const resetFilters = () => {
@@ -356,7 +356,7 @@ export function MemoryLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.slice(0, limit).map((r) => {
+                {pg.pageItems.map((r) => {
                   const open = expanded === r.key
                   return (
                     <Fragment key={r.key}>
@@ -428,16 +428,8 @@ export function MemoryLogs() {
                 })}
               </TableBody>
             </Table>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground">
-              <span className="tabular">
-                {t('logs.showing', { shown: Math.min(limit, filtered.length), total: filtered.length })} · {t('logs.ringNote')}
-              </span>
-              {filtered.length > limit && (
-                <Button variant="ghost" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
-                  {t('logs.showMore')}
-                </Button>
-              )}
-            </div>
+            <TablePagination page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />
+            <p className="border-t px-4 py-2 text-xs text-muted-foreground">{t('logs.ringNote')}</p>
           </>
         )}
       </Card>

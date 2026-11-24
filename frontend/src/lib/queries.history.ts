@@ -1,5 +1,5 @@
 /** React Query hooks for the PostgreSQL-backed request history, usage analytics and audit log. */
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { get, post } from './api'
 import type {
   AuditEvent,
@@ -47,37 +47,28 @@ export function normalizeFilters(f: RequestFilters): RequestFilters {
   return out
 }
 
-const fetchPage = async (f: RequestFilters, before?: string, limit = PAGE_SIZE) => {
-  const page = await get<RequestsPage>('/requests' + qs({ limit, before, ...f }))
-  return { records: page.records ?? [], hasMore: page.hasMore }
+const fetchPage = async (f: RequestFilters, before?: string, limit = PAGE_SIZE, count = false) => {
+  const page = await get<RequestsPage>('/requests' + qs({ limit, before, count: count ? 1 : undefined, ...f }))
+  return { records: page.records ?? [], hasMore: page.hasMore, total: page.total, totalCapped: page.totalCapped }
+}
+
+/**
+ * One page of the request history (keyset cursor = id of the last row of the
+ * previous page). The first page also returns the matching row count; page 1
+ * can poll in live mode.
+ */
+export function useRequestPage(filters: RequestFilters, cursor: string | undefined, pageSize: number, refetchInterval: number | false = false) {
+  const f = normalizeFilters(filters)
+  return useQuery({
+    queryKey: [...hk.requests, 'page', f, cursor ?? '', pageSize],
+    queryFn: () => fetchPage(f, cursor, pageSize, !cursor),
+    placeholderData: keepPreviousData,
+    refetchInterval: cursor ? false : refetchInterval,
+  })
 }
 
 export function useStorageInfo(refetchInterval: number | false = false) {
   return useQuery({ queryKey: hk.storage, queryFn: () => get<StorageInfo>('/storage'), staleTime: 30_000, refetchInterval })
-}
-
-/** Keyset-paginated request history, newest first. */
-export function useRequests(filters: RequestFilters, enabled = true) {
-  const f = normalizeFilters(filters)
-  return useInfiniteQuery({
-    queryKey: [...hk.requests, 'list', f],
-    enabled,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => fetchPage(f, pageParam),
-    getNextPageParam: (last) => (last.hasMore && last.records.length ? last.records[last.records.length - 1].id : undefined),
-    placeholderData: keepPreviousData,
-  })
-}
-
-/** The newest page only — polled in live mode and merged on top of the paginated list. */
-export function useRequestsHead(filters: RequestFilters, refetchInterval: number | false) {
-  const f = normalizeFilters(filters)
-  return useQuery({
-    queryKey: [...hk.requests, 'head', f],
-    enabled: refetchInterval !== false,
-    queryFn: () => fetchPage(f, undefined, 50),
-    refetchInterval,
-  })
 }
 
 export function useRequest(id: string | null) {

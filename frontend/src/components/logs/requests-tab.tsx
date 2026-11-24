@@ -1,4 +1,4 @@
-import { ArrowDown, Filter, Loader2, ScrollText, Search, X } from 'lucide-react'
+import { Filter, ScrollText, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '@/components/app/empty-state'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compact, maskEmail, timeAgo } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { useRequests, useRequestsHead, useUsageBy } from '@/lib/queries.history'
+import { useRequestPage, useUsageBy } from '@/lib/queries.history'
+import { TablePagination } from '@/components/app/table-pagination'
 import { useAccountLookup, useApiKeys } from '@/lib/queries.settings'
 import type { RequestFilters, RequestRecord, StorageInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -93,8 +94,38 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
   const filterKey = JSON.stringify(filters)
   const narrowed = status !== 'all' || endpoint !== 'all' || model !== 'all' || account !== 'all' || apiKey !== 'all' || errType !== 'all' || q.trim() !== ''
 
-  const list = useRequests(filters)
-  const head = useRequestsHead(filters, live ? 5_000 : false)
+  // Page navigation keeps a stack of keyset cursors; filters reset it.
+  const [pageSize, setPageSizeState] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('kiro_page_size:requests'))
+      return [25, 50, 100].includes(v) ? v : 50
+    } catch {
+      return 50
+    }
+  })
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined])
+  const pageIndex = cursors.length - 1
+  useEffect(() => setCursors([undefined]), [filterKey, pageSize])
+  const list = useRequestPage(filters, cursors[pageIndex], pageSize, live ? 5_000 : false)
+  const firstPage = useRequestPage(filters, undefined, pageSize)
+  const total = firstPage.data?.total
+  const totalCapped = !!firstPage.data?.totalCapped
+  const setPageSize = (n: number) => {
+    setPageSizeState(n)
+    try {
+      localStorage.setItem('kiro_page_size:requests', String(n))
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const goToPage = (p: number) => {
+    if (p <= 0) return
+    if (p - 1 < pageIndex) setCursors((c) => c.slice(0, p))
+    else if (p - 1 === pageIndex + 1 && list.data?.hasMore && list.data.records.length) {
+      const last = list.data.records[list.data.records.length - 1].id
+      setCursors((c) => [...c, last])
+    }
+  }
   const models = useUsageBy('model', usageHours, 50)
 
   useEffect(() => {
@@ -102,13 +133,7 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
     return () => clearInterval(id)
   }, [])
 
-  const rows = useMemo(() => {
-    const loaded = list.data?.pages.flatMap((p) => p.records) ?? []
-    const seen = new Set(loaded.map((r) => r.id))
-    const newest = loaded.length ? Date.parse(loaded[0].time) : 0
-    const extra = (head.data?.records ?? []).filter((r) => !seen.has(r.id) && Date.parse(r.time) >= newest)
-    return extra.length ? [...extra, ...loaded] : loaded
-  }, [list.data, head.data])
+  const rows = useMemo(() => list.data?.records ?? [], [list.data])
 
   // Highlight rows that arrived since the previous poll (per filter set).
   const known = useRef<{ key: string; ids: Set<string> } | null>(null)
@@ -126,21 +151,6 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
     return () => clearTimeout(id)
   }, [rows, filterKey, list.data, list.isPlaceholderData])
 
-  // Auto-load the next page when the sentinel scrolls into view.
-  const sentinel = useRef<HTMLDivElement>(null)
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = list
-  useEffect(() => {
-    const el = sentinel.current
-    if (!el || !hasNextPage) return
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && !isFetchingNextPage) void fetchNextPage()
-      },
-      { rootMargin: '400px 0px' },
-    )
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, rows.length])
 
   const resetFilters = () => {
     setStatus('all')
@@ -158,7 +168,7 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
 
   return (
     <div className="space-y-4">
-      <HistorySummary rows={rows} narrowed={narrowed} usageHours={usageHours} loading={list.isLoading} hasMore={!!hasNextPage} />
+      <HistorySummary rows={rows} narrowed={narrowed} usageHours={usageHours} loading={list.isLoading} hasMore={pageIndex > 0 || !!list.data?.hasMore} />
 
       <Card className="gap-0 overflow-hidden py-0 shadow-xs">
         <div className="space-y-2 border-b p-3">
@@ -406,17 +416,20 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
                 ))}
               </TableBody>
             </Table>
-            <div ref={sentinel} className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-muted-foreground">
-              <span className="tabular">{t('logs.h.loaded', { n: rows.length.toLocaleString(lang) })}</span>
-              {hasNextPage ? (
-                <Button variant="ghost" size="sm" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
-                  {isFetchingNextPage ? <Loader2 className="animate-spin" /> : <ArrowDown />}
-                  {t('logs.h.loadMore')}
-                </Button>
-              ) : (
-                <span>{t('logs.h.end')}</span>
-              )}
-            </div>
+            <TablePagination
+              page={pageIndex + 1}
+              pageCount={pageIndex + 1 + (list.data?.hasMore ? 1 : 0)}
+              pageSize={pageSize}
+              total={total}
+              totalCapped={totalCapped}
+              sequential
+              shown={rows.length}
+              hasNext={!!list.data?.hasMore}
+              busy={list.isFetching && list.isPlaceholderData}
+              onPage={goToPage}
+              onPageSize={setPageSize}
+              sizes={[25, 50, 100]}
+            />
           </>
         )}
       </Card>

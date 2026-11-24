@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, CircleCheck } from 'lucide-react'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { EmptyState } from '@/components/app/empty-state'
 import { unix } from '@/components/logs/history-bits'
 import { ErrorTypeBadge } from '@/components/logs/log-meta'
@@ -13,6 +15,7 @@ import type { AnalyticsError } from '@/lib/types'
 export function ErrorsCard({ errors, total }: { errors: AnalyticsError[]; total: number }) {
   const { t, lang } = useI18n()
   const sum = errors.reduce((s, e) => s + e.count, 0)
+  const pg = usePagination(errors, { storageKey: 'analytics-errors', pageSize: 10 })
   return (
     <Card className="min-w-0">
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
@@ -31,8 +34,9 @@ export function ErrorsCard({ errors, total }: { errors: AnalyticsError[]; total:
         {errors.length === 0 ? (
           <EmptyState icon={CircleCheck} title={t('analytics.errorsNone')} description={total ? t('analytics.errorsNoneHint') : undefined} />
         ) : (
+          <>
           <ul className="-my-2 divide-y">
-            {errors.map((e) => (
+            {pg.pageItems.map((e) => (
               <li key={`${e.type}-${e.status}`} className="py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <ErrorTypeBadge type={e.type || 'unknown'} />
@@ -55,6 +59,8 @@ export function ErrorsCard({ errors, total }: { errors: AnalyticsError[]; total:
               </li>
             ))}
           </ul>
+          <TablePagination className="-mx-6 -mb-6 mt-2" page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />
+          </>
         )}
       </CardContent>
     </Card>

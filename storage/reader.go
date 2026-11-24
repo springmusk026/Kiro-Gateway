@@ -30,7 +30,8 @@ func scanRequest(row pgx.Row, extra ...any) (*telemetry.RequestRecord, error) {
 	return &x, nil
 }
 
-func (r *Recorder) QueryRequests(ctx context.Context, f telemetry.LogFilter) ([]telemetry.RequestRecord, error) {
+// requestWhere builds the filter shared by QueryRequests and CountRequests.
+func requestWhere(f telemetry.LogFilter) ([]string, []any) {
 	var where []string
 	var args []any
 	add := func(cond string, v any) {
@@ -72,6 +73,33 @@ func (r *Recorder) QueryRequests(ctx context.Context, f telemetry.LogFilter) ([]
 		n := len(args)
 		where = append(where, fmt.Sprintf("(l.ts, l.id) < (SELECT ts, id FROM kiro_request_logs WHERE id = $%d)", n))
 	}
+	return where, args
+}
+
+// countCap bounds CountRequests so a huge history is never fully scanned.
+const countCap = 100000
+
+// CountRequests counts the rows matching f (ignoring its cursor), up to
+// countCap; capped reports that the real number is larger.
+func (r *Recorder) CountRequests(ctx context.Context, f telemetry.LogFilter) (n int64, capped bool, err error) {
+	f.BeforeID = ""
+	where, args := requestWhere(f)
+	q := `SELECT count(*) FROM (SELECT 1 FROM kiro_request_logs l`
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	q += fmt.Sprintf(" LIMIT %d) s", countCap+1)
+	if err = r.db.Pool.QueryRow(ctx, q, args...).Scan(&n); err != nil {
+		return 0, false, err
+	}
+	if n > countCap {
+		return countCap, true, nil
+	}
+	return n, false, nil
+}
+
+func (r *Recorder) QueryRequests(ctx context.Context, f telemetry.LogFilter) ([]telemetry.RequestRecord, error) {
+	where, args := requestWhere(f)
 	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 200

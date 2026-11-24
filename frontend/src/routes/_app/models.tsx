@@ -3,6 +3,8 @@ import { ArrowRight, Boxes, Brain, Shuffle, DatabaseZap, Eye, FlaskConical, Info
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/app/copy-button'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { EmptyState } from '@/components/app/empty-state'
 import { PageHeader } from '@/components/app/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -118,6 +120,7 @@ function CatalogTab({ onAliases }: { onAliases: () => void }) {
         (!needle || `${m.id} ${m.name ?? ''} ${m.description ?? ''}`.toLowerCase().includes(needle)),
     )
   }, [models, q, filter])
+  const pg = usePagination(shown, { storageKey: 'models', resetKey: q + '|' + filter })
 
   const onToggle = (m: CatalogModel, enabled: boolean) =>
     toggle.mutate(
@@ -186,7 +189,17 @@ function CatalogTab({ onAliases }: { onAliases: () => void }) {
           ) : !shown.length ? (
             <EmptyState icon={Search} title={t('models.noMatch')} />
           ) : (
-            <ModelTable models={shown} onToggle={onToggle} suffix={data?.thinkingSuffix || '-thinking'} />
+            <>
+              <ModelTable models={pg.pageItems} onToggle={onToggle} suffix={data?.thinkingSuffix || '-thinking'} />
+              <TablePagination
+                page={pg.page}
+                pageCount={pg.pageCount}
+                pageSize={pg.pageSize}
+                total={pg.total}
+                onPage={pg.setPage}
+                onPageSize={pg.setPageSize}
+              />
+            </>
           )}
         </Card>
 

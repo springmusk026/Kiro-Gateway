@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp, Boxes, CircleAlert, CircleCheck, Filter, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { TablePagination } from '@/components/app/table-pagination'
+import { usePagination } from '@/hooks/use-pagination'
 import { EmptyState } from '@/components/app/empty-state'
 import { fmtMs, unix } from '@/components/logs/history-bits'
 import { Badge } from '@/components/ui/badge'
@@ -109,6 +111,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
     })
     return out
   }, [groups, sort, dim, label])
+  const pg = usePagination(rows, { storageKey: 'analytics-breakdown', pageSize: 10, resetKey: `${dim}|${sort.key}|${sort.desc}` })
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: key !== 'name' }))
@@ -165,7 +168,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((g) => {
+                {pg.pageItems.map((g) => {
                   const l = label(dim, g.key, g.label)
                   const canFilter = filterable && !!g.key
                   const errRate = g.requests ? g.errors / g.requests : 0
@@ -232,6 +235,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
                 })}
               </TableBody>
             </Table>
+            <TablePagination page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />
           </div>
         )}
       </CardContent>
