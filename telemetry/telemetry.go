@@ -37,6 +37,11 @@ type RequestRecord struct {
 	Attempts      int       `json:"attempts"`
 	RequestBytes  int64     `json:"requestBytes"`
 	ResponseBytes int64     `json:"responseBytes"`
+
+	// FallbackModel is the model the request was retried on after its own
+	// model was unavailable (empty when no fallback was taken).
+	FallbackModel string `json:"fallbackModel,omitempty"`
+
 	// Optional captured bodies (only when body capture is enabled).
 	RequestBody  string `json:"requestBody,omitempty"`
 	ResponseBody string `json:"responseBody,omitempty"`

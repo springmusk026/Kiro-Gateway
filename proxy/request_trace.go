@@ -272,6 +272,7 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 		OutputTokens:  t.output,
 		CacheRead:     t.cacheRead,
 		CacheWrite:    t.cacheWrite,
+		FallbackModel: t.fallbackModel,
 		Credits:       t.credits,
 		DurationMs:    end.Sub(t.start).Milliseconds(),
 		RequestBytes:  atomic.LoadInt64(&t.reqBytes),
