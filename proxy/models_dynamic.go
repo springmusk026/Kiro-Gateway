@@ -89,6 +89,7 @@ type adminModelEntry struct {
 	MaxOutput      int      `json:"maxOutputTokens,omitempty"`
 	RateMultiplier float64  `json:"rateMultiplier,omitempty"`
 	Vision         bool     `json:"vision"`
+	Enabled        bool     `json:"enabled"`
 	Accounts       int      `json:"accounts"`
 }
 
@@ -124,6 +125,7 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 			RateMultiplier: m.RateMultiplier,
 			Vision:         modelSupportsImage(m.InputTypes),
 			Accounts:       accountCount[strings.ToLower(m.ModelId)],
+			Enabled:        !config.IsModelDisabled(m.ModelId),
 		}
 		if m.TokenLimits != nil {
 			e.ContextLength = m.TokenLimits.MaxInputTokens
@@ -139,5 +141,6 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 		"ttlSeconds":     int(modelsCacheTTL.Seconds()),
 		"thinkingSuffix": config.GetThinkingConfig().Suffix,
 		"mappings":       config.GetModelMappings(),
+		"disabledModels": config.GetDisabledModels(),
 	})
 }

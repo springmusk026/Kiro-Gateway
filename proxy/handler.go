@@ -552,6 +552,7 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 		buildModelInfoWithTools("gpt-4", "kiro-proxy", true, true),
 	)
 	models = appendConfiguredModelMappings(models, config.GetModelMappings(), thinkingSuffix)
+	models = filterDisabledModels(models, thinkingSuffix, config.GetModelMappings())
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -970,6 +971,10 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := resolveClaudeThinkingMode(req.Model, req.Thinking, thinkingCfg.Suffix)
 	req.Model = actualModel
+	if msg := disabledModelMessage(actualModel); msg != "" {
+		h.sendClaudeError(w, 400, "invalid_request_error", msg)
+		return
+	}
 	effectiveReq := cloneClaudeRequestForThinking(&req, thinking)
 	thinkingResponseOpts := resolveClaudeThinkingResponseOptions(req.Thinking, thinkingCfg.ClaudeFormat)
 	estimatedInputTokens := estimateClaudeRequestInputTokens(effectiveReq)
@@ -1825,6 +1830,10 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
 	req.Model = actualModel
+	if msg := disabledModelMessage(actualModel); msg != "" {
+		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
+		return
+	}
 	estimatedInputTokens := estimateOpenAIRequestInputTokens(&req)
 	cacheProfile := h.promptCache.BuildOpenAIProfile(&req, estimatedInputTokens)
 
@@ -2529,6 +2538,8 @@ func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
 		h.apiGetAccounts(w, r)
 	case path == "/models" && r.Method == "GET":
 		h.apiGetModels(w, r)
+	case path == "/models/toggle" && r.Method == "POST":
+		h.apiSetModelEnabled(w, r)
 	// Playground: the dashboard talks to the real API handlers, authenticated
 	// by the admin session instead of a client API key.
 	case path == "/playground/chat/completions" && r.Method == "POST":

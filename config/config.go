@@ -205,6 +205,10 @@ type Config struct {
 	// ModelMappings exposes client-friendly model IDs while keeping upstream IDs internal.
 	ModelMappings []ModelMapping `json:"modelMappings,omitempty"`
 
+	// DisabledModels lists upstream model IDs the operator switched off: they
+	// are hidden from /v1/models and requests for them are rejected.
+	DisabledModels []string `json:"disabledModels,omitempty"`
+
 	// Endpoint configuration: "auto", "kiro", "codewhisperer", or "amazonq"
 	PreferredEndpoint string `json:"preferredEndpoint,omitempty"`
 	// UpstreamProtocol selects the Kiro data-plane protocol: "responses" (default)
@@ -1529,4 +1533,59 @@ func SafeRegion(region string) string {
 		return region
 	}
 	return "us-east-1"
+}
+
+func normalizeModelID(id string) string { return strings.ToLower(strings.TrimSpace(id)) }
+
+// IsModelDisabled reports whether the operator disabled this upstream model.
+func IsModelDisabled(id string) bool {
+	id = normalizeModelID(id)
+	if id == "" {
+		return false
+	}
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	if cfg == nil {
+		return false
+	}
+	for _, d := range cfg.DisabledModels {
+		if normalizeModelID(d) == id {
+			return true
+		}
+	}
+	return false
+}
+
+// GetDisabledModels returns a copy of the disabled model IDs.
+func GetDisabledModels() []string {
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	if cfg == nil {
+		return []string{}
+	}
+	return append([]string{}, cfg.DisabledModels...)
+}
+
+// SetModelEnabled enables or disables one upstream model and persists it.
+func SetModelEnabled(id string, enabled bool) error {
+	id = normalizeModelID(id)
+	if id == "" {
+		return errors.New("model id is required")
+	}
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	if cfg == nil {
+		return ErrConfigUnavailable
+	}
+	kept := make([]string, 0, len(cfg.DisabledModels)+1)
+	for _, d := range cfg.DisabledModels {
+		if normalizeModelID(d) != id {
+			kept = append(kept, normalizeModelID(d))
+		}
+	}
+	if !enabled {
+		kept = append(kept, id)
+	}
+	cfg.DisabledModels = kept
+	return Save()
 }

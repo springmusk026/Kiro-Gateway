@@ -49,6 +49,10 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	// window lookup would miss and fall back to the smallest tier.
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
+	if msg := disabledModelMessage(actualModel); msg != "" {
+		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
+		return
+	}
 
 	var historyMessages []OpenAIMessage
 	if req.PreviousResponseID != "" {
