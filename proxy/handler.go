@@ -2876,7 +2876,13 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 // ==================== 管理 API ====================
 
 func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
-	// Header-only auth (no cookie: avoids CSRF), constant time, throttled.
+	// Console sign-in / sign-out / whoami (handles its own auth).
+	if r.URL.Path == "/admin/api/session" {
+		h.handleAdminSession(w, r)
+		return
+	}
+	// Session cookie (SameSite=Strict + CSRF header rule) or the
+	// X-Admin-Password header; constant time, throttled.
 	if !h.checkAdminAuth(w, r) {
 		return
 	}
@@ -4570,6 +4576,10 @@ func (h *Handler) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
+	}
+	if req.Password != "" {
+		// A new admin password signs out every console session.
+		RevokeAdminSessions()
 	}
 
 	// 更新超额使用设置

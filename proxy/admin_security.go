@@ -100,9 +100,21 @@ func adminPasswordMatches(provided string) bool {
 	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
 }
 
-// checkAdminAuth validates X-Admin-Password and applies login throttling.
+// checkAdminAuth accepts a console session cookie (see admin_sessions.go) or
+// the X-Admin-Password header, and applies login throttling to passwords.
 // It writes the error response itself and returns false on failure.
 func (h *Handler) checkAdminAuth(w http.ResponseWriter, r *http.Request) bool {
+	if r.Header.Get("X-Admin-Password") == "" {
+		ok, handled := authenticateAdminSession(w, r)
+		if !ok && !handled {
+			// No credentials at all (or an expired session): not a password
+			// guess, so it does not count towards the lockout.
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"Unauthorized"}`))
+		}
+		return ok
+	}
 	ip := clientIP(r)
 	now := time.Now()
 	if locked, wait := adminAuthLimiter.locked(ip, now); locked {

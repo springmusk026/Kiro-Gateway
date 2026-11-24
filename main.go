@@ -104,6 +104,11 @@ func main() {
 			return time.Duration(days) * 24 * time.Hour
 		})
 		handler.UseTelemetry(recorder, recorder, storage.NewResponseStore(db))
+		if sessions, err := storage.NewSessionStore(context.Background(), db); err != nil {
+			logger.Warnf("Admin sessions: not persisted (%v); sign-ins last until restart", err)
+		} else {
+			proxy.UseAdminSessionStore(sessions)
+		}
 		handler.UseMigrator(&storage.JSONMigrator{
 			DB:          db,
 			ConfigPath:  configPath,

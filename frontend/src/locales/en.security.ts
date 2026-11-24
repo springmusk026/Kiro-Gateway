@@ -1,4 +1,4 @@
-/** English strings for key restrictions and console sessions. Keys start with 'keysec.' or 'session.'. */
+/** English strings for API key access restrictions. Keys start with 'keysec.'. */
 export const securityEn = {
   // API key restrictions (key dialog + keys list)
   'keysec.title': 'Access restrictions',
@@ -22,8 +22,4 @@ export const securityEn = {
   'keysec.badgeModels': '{n} models',
   'keysec.badgeModelsHint': 'Only these models: {list}',
   'keysec.expiredHint': 'This key expired on {date}; requests get 401.',
-
-  // Console sessions
-  'session.signedOut': 'Signed out',
-  'session.expired': 'Your session expired. Sign in again.',
 } as const

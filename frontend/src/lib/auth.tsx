@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { createContext, useCallback, useContext, useEffect, type ReactNode } from 'react'
-import { ApiError, apiFetch, clearPassword, setPassword } from './api'
+import { createSession, deleteSession, markSignedOut } from './api'
 
 type LoginResult = 'ok' | 'wrong' | 'locked' | 'unreachable'
 const Ctx = createContext<{ login: (pw: string, remember: boolean) => Promise<LoginResult>; logout: () => void }>({
@@ -9,36 +9,37 @@ const Ctx = createContext<{ login: (pw: string, remember: boolean) => Promise<Lo
   logout: () => {},
 })
 
-export async function checkPassword(pw: string): Promise<LoginResult> {
+/** Exchanges the password for a session cookie. */
+export async function signIn(pw: string, remember: boolean): Promise<LoginResult> {
   try {
-    const res = await apiFetch('/status', {}, pw)
-    if (res.ok) return 'ok'
-    if (res.status === 429) return 'locked'
-    if (res.status === 401) return 'wrong'
+    const status = await createSession(pw, remember)
+    if (status === 200) return 'ok'
+    if (status === 429) return 'locked'
+    if (status === 401) return 'wrong'
     return 'unreachable'
-  } catch (e) {
-    return e instanceof ApiError ? 'wrong' : 'unreachable'
+  } catch {
+    return 'unreachable'
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const logout = useCallback(() => {
-    clearPassword()
+  // Session already gone (401): clear local state only.
+  const signedOut = useCallback(() => {
+    markSignedOut()
     qc.clear()
     navigate({ to: '/login' })
   }, [navigate, qc])
-  const login = useCallback(async (pw: string, remember: boolean) => {
-    const r = await checkPassword(pw)
-    if (r === 'ok') setPassword(pw, remember)
-    return r
-  }, [])
+  // Explicit sign-out: end the session on the server too.
+  const logout = useCallback(() => {
+    void deleteSession().finally(signedOut)
+  }, [signedOut])
+  const login = useCallback((pw: string, remember: boolean) => signIn(pw, remember), [])
   useEffect(() => {
-    const onUnauthorized = () => logout()
-    window.addEventListener('kiro:unauthorized', onUnauthorized)
-    return () => window.removeEventListener('kiro:unauthorized', onUnauthorized)
-  }, [logout])
+    window.addEventListener('kiro:unauthorized', signedOut)
+    return () => window.removeEventListener('kiro:unauthorized', signedOut)
+  }, [signedOut])
   return <Ctx.Provider value={{ login, logout }}>{children}</Ctx.Provider>
 }
 

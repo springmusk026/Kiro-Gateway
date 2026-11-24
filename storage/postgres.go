@@ -129,6 +129,13 @@ ALTER TABLE kiro_request_logs ADD COLUMN cache_write_tokens INT NOT NULL DEFAULT
 `,
 }
 
+// idempotentSchemas run after the numbered migrations on every start, under
+// the same lock. They only use IF NOT EXISTS, so they need no version number
+// and cannot collide with numbered migrations added on other branches.
+var idempotentSchemas = []struct{ name, sql string }{
+	{"admin sessions", adminSessionsSchema},
+}
+
 func (db *DB) migrate(ctx context.Context) error {
 	if _, err := db.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS kiro_schema_migrations (
 		version    INT PRIMARY KEY,
@@ -166,6 +173,11 @@ func (db *DB) migrate(ctx context.Context) error {
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return err
+		}
+	}
+	for _, s := range idempotentSchemas {
+		if _, err := conn.Exec(ctx, s.sql); err != nil {
+			return fmt.Errorf("apply schema %q: %w", s.name, err)
 		}
 	}
 	return nil
