@@ -147,7 +147,7 @@ export function KeyRestrictionsFields({ value: f, onChange }: { value: Restricti
         <ModelPicker value={f.allowedModels} onChange={(allowedModels) => onChange({ ...f, allowedModels })} />
         <p className="text-xs text-muted-foreground">{t('keysec.allowedModelsHint')}</p>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="k-rpm">{t('keysec.rpm')}</Label>
           <Input
@@ -162,9 +162,9 @@ export function KeyRestrictionsFields({ value: f, onChange }: { value: Restricti
           {rpmErr && <p className="text-xs text-destructive">{t('keysec.rpmError')}</p>}
         </div>
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="k-expiry">{t('keysec.expiry')}</Label>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="k-expiry" className="whitespace-nowrap">{t('keysec.expiry')}</Label>
+            <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
               <Switch
                 checked={f.expires}
                 aria-label={t('keysec.expires')}
