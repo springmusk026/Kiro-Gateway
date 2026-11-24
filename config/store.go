@@ -47,29 +47,75 @@ func CurrentStore() Store {
 }
 
 // JSONStore keeps the configuration in a single JSON file (the original format).
+// The file is written 0600, a symlinked file is refused, and credentials are
+// encrypted with KIRO_ENCRYPTION_KEY when it is set (see secrets.go).
 type JSONStore struct {
 	Path string
+	// Codec overrides the default secret codec (nil = KIRO_ENCRYPTION_KEY).
+	Codec *SecretCodec
 }
 
 func (s *JSONStore) Name() string { return "json:" + s.Path }
 
+func (s *JSONStore) codec() *SecretCodec {
+	if s.Codec != nil {
+		return s.Codec
+	}
+	return DefaultSecretCodec()
+}
+
+// checkConfigFile refuses a symlinked config file: it holds credentials, and
+// a link could point writes (or reads) somewhere unintended.
+func checkConfigFile(path string) (os.FileInfo, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("refusing to use %s: it is a symbolic link (point CONFIG_PATH at the real file)", path)
+	}
+	return fi, nil
+}
+
 func (s *JSONStore) Load() (*Config, error) {
-	data, err := os.ReadFile(s.Path)
+	fi, err := checkConfigFile(s.Path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		// Tighten files written by older builds or copied in by hand.
+		_ = os.Chmod(s.Path, 0o600)
+	}
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		return nil, err
+	}
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, err
+	}
+	plain, err := s.codec().DecryptConfig(&c)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", s.Path, err)
+	}
+	if plain && s.codec().Enabled() {
+		NotePlaintextSecrets()
 	}
 	return &c, nil
 }
 
 func (s *JSONStore) Save(c *Config) error {
-	data, err := json.MarshalIndent(c, "", "  ")
+	if _, err := checkConfigFile(s.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	enc, err := s.codec().EncryptConfig(c)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(enc, "", "  ")
 	if err != nil {
 		return err
 	}

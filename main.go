@@ -39,6 +39,12 @@ func main() {
 		configPath = envPath
 	}
 
+	// Encryption at rest: an invalid KIRO_ENCRYPTION_KEY is fatal, so nothing
+	// is ever written in plaintext by mistake.
+	if err := config.InitEncryptionFromEnv(); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Subcommands: `kiro-go migrate` / `kiro-go export` (see cli.go).
 	if len(os.Args) > 1 {
 		os.Exit(runCommand(os.Args[1], os.Args[2:], configPath))
@@ -58,6 +64,9 @@ func main() {
 	// 加载配置
 	if err := config.Init(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	if config.EncryptionEnabled() {
+		logger.Infof("Credentials are encrypted at rest (%s)", config.EncryptionKeyEnv)
 	}
 
 	// Initialize log level: LOG_LEVEL env var takes priority over config, defaulting to "info".

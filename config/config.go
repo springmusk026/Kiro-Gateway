@@ -397,7 +397,7 @@ func Load() error {
 			return err
 		}
 	}
-	return nil
+	return resaveEncryptedLocked()
 }
 
 // saveLocked persists cfg to disk. Caller MUST already hold cfgLock.

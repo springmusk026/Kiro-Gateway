@@ -19,8 +19,14 @@ import (
 // account and one row per API key. Save diffs against what was last written
 // and touches only changed rows, so a stats update on one account is a single
 // small UPDATE instead of rewriting the whole configuration.
+//
+// Credentials are encrypted per row with KIRO_ENCRYPTION_KEY (config.SecretCodec)
+// when it is set; change detection hashes the plaintext, so re-encryption with
+// a fresh nonce does not make every row look changed.
 type ConfigStore struct {
 	db *DB
+	// Codec overrides the default secret codec (nil = KIRO_ENCRYPTION_KEY).
+	Codec *config.SecretCodec
 
 	mu       sync.Mutex
 	settings [32]byte
@@ -33,6 +39,13 @@ func NewConfigStore(db *DB) *ConfigStore {
 }
 
 func (s *ConfigStore) Name() string { return "postgres" }
+
+func (s *ConfigStore) codec() *config.SecretCodec {
+	if s.Codec != nil {
+		return s.Codec
+	}
+	return config.DefaultSecretCodec()
+}
 
 // Empty reports whether nothing has been stored yet (used for first-run import).
 func (s *ConfigStore) Empty(ctx context.Context) (bool, error) {
@@ -58,6 +71,15 @@ func (s *ConfigStore) Load() (*config.Config, error) {
 	}
 	c.Accounts = []config.Account{}
 	c.ApiKeys = nil
+	codec := s.codec()
+	encrypting := codec.Enabled()
+	// Rows holding plaintext credentials while encryption is on are not
+	// remembered as stored, so the next save rewrites them encrypted.
+	stale := map[string]bool{}
+	settingsPlain, err := codec.DecryptSettings(&c)
+	if err != nil {
+		return nil, err
+	}
 
 	rows, err := s.db.Pool.Query(ctx, `SELECT data FROM kiro_accounts ORDER BY position, id`)
 	if err != nil {
@@ -73,6 +95,14 @@ func (s *ConfigStore) Load() (*config.Config, error) {
 		if err := json.Unmarshal(raw, &a); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("decode account: %w", err)
+		}
+		plain, err := codec.DecryptAccount(&a)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if plain && encrypting {
+			stale["a:"+a.ID] = true
 		}
 		c.Accounts = append(c.Accounts, a)
 	}
@@ -96,6 +126,14 @@ func (s *ConfigStore) Load() (*config.Config, error) {
 			rows.Close()
 			return nil, fmt.Errorf("decode api key: %w", err)
 		}
+		plain, err := codec.DecryptApiKey(&k)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if plain && encrypting {
+			stale["k:"+k.ID] = true
+		}
 		c.ApiKeys = append(c.ApiKeys, k)
 	}
 	rows.Close()
@@ -106,7 +144,20 @@ func (s *ConfigStore) Load() (*config.Config, error) {
 	// Everything just loaded is, by definition, what is stored.
 	s.mu.Lock()
 	s.remember(&c)
+	if settingsPlain && encrypting {
+		s.settings = [32]byte{}
+	}
+	for id := range stale {
+		if id[0] == 'a' {
+			delete(s.accounts, id[2:])
+		} else {
+			delete(s.keys, id[2:])
+		}
+	}
 	s.mu.Unlock()
+	if (settingsPlain || len(stale) > 0) && encrypting {
+		config.NotePlaintextSecrets()
+	}
 	return &c, nil
 }
 
@@ -158,12 +209,22 @@ func (s *ConfigStore) Save(c *config.Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	codec := s.codec()
 	settings, err := settingsJSON(c)
 	if err != nil {
 		return err
 	}
 	settingsHash := hashOf(0, settings)
 	settingsChanged := settingsHash != s.settings
+	if settingsChanged && codec.Enabled() {
+		enc := *c
+		if err := codec.EncryptSettings(&enc); err != nil {
+			return err
+		}
+		if settings, err = settingsJSON(&enc); err != nil {
+			return err
+		}
+	}
 
 	var accWrites []rowWrite
 	accSeen := make(map[string]bool, len(c.Accounts))
@@ -178,6 +239,15 @@ func (s *ConfigStore) Save(c *config.Config) error {
 		accSeen[a.ID] = true
 		newAcc[a.ID] = h
 		if s.accounts[a.ID] != h {
+			if codec.Enabled() {
+				enc, err := codec.EncryptAccount(*a)
+				if err != nil {
+					return err
+				}
+				if data, err = json.Marshal(&enc); err != nil {
+					return err
+				}
+			}
 			accWrites = append(accWrites, rowWrite{id: a.ID, position: i, data: data, email: a.Email, enabled: a.Enabled})
 		}
 	}
@@ -201,6 +271,15 @@ func (s *ConfigStore) Save(c *config.Config) error {
 		keySeen[k.ID] = true
 		newKeys[k.ID] = h
 		if s.keys[k.ID] != h {
+			if codec.Enabled() {
+				enc, err := codec.EncryptApiKey(*k)
+				if err != nil {
+					return err
+				}
+				if data, err = json.Marshal(&enc); err != nil {
+					return err
+				}
+			}
 			keyWrites = append(keyWrites, rowWrite{id: k.ID, position: i, data: data})
 		}
 	}

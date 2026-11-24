@@ -97,16 +97,26 @@ func ImportJSON(ctx context.Context, db *DB, configPath string, force bool) (*Im
 }
 
 // ExportJSON writes the database configuration to a config.json file (the
-// rollback path back to the JSON backend).
-func ExportJSON(ctx context.Context, db *DB, outPath string) (*config.Config, error) {
-	c, err := NewConfigStore(db).Load()
+// rollback path back to the JSON backend). By default encrypted credentials
+// are copied as they are stored (and remaining plaintext is encrypted when
+// KIRO_ENCRYPTION_KEY is set); decrypt writes every credential in plaintext
+// and needs the key.
+func ExportJSON(ctx context.Context, db *DB, outPath string, decrypt bool) (*config.Config, error) {
+	cs := NewConfigStore(db)
+	out := &config.JSONStore{Path: outPath}
+	if decrypt {
+		out.Codec = config.PlaintextSecretCodec()
+	} else {
+		cs.Codec = config.RawSecretCodec()
+	}
+	c, err := cs.Load()
 	if err != nil {
 		return nil, err
 	}
 	if c == nil {
 		return nil, errors.New("database contains no configuration")
 	}
-	if err := (&config.JSONStore{Path: outPath}).Save(c); err != nil {
+	if err := out.Save(c); err != nil {
 		return nil, err
 	}
 	return c, nil

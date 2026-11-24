@@ -120,7 +120,7 @@ func TestImportAndExportJSON(t *testing.T) {
 		t.Fatalf("response not imported: %v", err)
 	}
 	out := filepath.Join(dir, "export.json")
-	if _, err := ExportJSON(context.Background(), db, out); err != nil {
+	if _, err := ExportJSON(context.Background(), db, out, false); err != nil {
 		t.Fatal(err)
 	}
 	back, err := config.ReadJSONFile(out)
