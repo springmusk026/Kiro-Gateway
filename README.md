@@ -146,7 +146,13 @@ More clients (Cline, Continue, LiteLLM, cURL) and thinking options: [docs/client
   exposing it — otherwise anyone who can reach the port can use your accounts. The console warns while it is
   open.
 - The admin password is generated on first start if unset; admin logins are rate-limited and compared in
-  constant time; the console sends strict security headers.
+  constant time; the console uses HttpOnly, SameSite=Strict session cookies (the password is never stored in
+  the browser) and sends strict security headers.
+- Set `KIRO_ENCRYPTION_KEY` (`openssl rand -base64 32`) to encrypt account tokens, API keys and passwords at
+  rest; keep the key safe, the data cannot be read without it.
+- API keys can be limited to certain models, a number of requests per minute and an expiry date.
+- Optional: Prometheus metrics (`KIRO_METRICS=1`) and nightly database backups
+  (`docker compose --profile backup up -d`). See [docs/configuration.md](docs/configuration.md#security).
 - Request/response body capture is off by default because prompts can be sensitive.
 - Put TLS in front (Caddy, nginx, Cloudflare) when exposing it beyond localhost.
 

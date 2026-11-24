@@ -10,6 +10,9 @@ services:
       # Admin console password; set it in .env. Left empty, a password is
       # generated on the first start and printed once in the log.
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Optional: encrypt credentials at rest (openssl rand -base64 32). Keep
+      # it safe; data encrypted with it cannot be read without it.
+      - KIRO_ENCRYPTION_KEY=${KIRO_ENCRYPTION_KEY:-}
       # PostgreSQL storage: configuration, stored responses, request history and
       # audit log. On the first start an existing data/config.json is imported
       # automatically (the file is kept as a backup). Remove this line to keep

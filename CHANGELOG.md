@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Security and operations
+- API keys can be restricted to a list of models (exact ids or `prefix-*`, matched after alias resolution),
+  a requests-per-minute limit and an expiry date. Expired keys get 401, other models 403
+  (`permission_error` / `model_not_allowed`), RPM overruns 429 with `retry-after`; `/v1/models` lists only
+  the models a presented key may use. Set in the key dialog; badges in the keys list.
+- `KIRO_ENCRYPTION_KEY` encrypts account tokens, client secrets, Kiro API keys, proxy URLs, API key values
+  and the admin password at rest (AES-256-GCM) in `config.json` and PostgreSQL. Plaintext data is encrypted on
+  the first start with a key; a missing or wrong key stops the start-up instead of losing accounts.
+  `kiro-go export` keeps encrypted values unless `--decrypt` is given.
+- `config.json` is always written `0600` and a symlinked config file is refused.
+- The console signs in with HttpOnly, SameSite=Strict session cookies (`/admin/api/session`) instead of
+  sending the admin password with every call and keeping it in browser storage. Sessions expire after 12 h
+  idle / 7 days (30 days with *keep me signed in*), survive restarts with PostgreSQL and end when the admin
+  password changes. The `X-Admin-Password` header still works for scripts.
+- Prometheus metrics at `/metrics` (`KIRO_METRICS=1`, optional `KIRO_METRICS_TOKEN`).
+- Optional nightly `pg_dump` backups: `docker compose --profile backup up -d` (`BACKUP_KEEP`, default 14).
+
 ## 2.0.0 — independent project
 
 Kiro-Go began as a fork of [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) at version 1.1.5. Since

@@ -3,8 +3,9 @@
 Stack: TanStack Start (SPA mode) + TanStack Router (file routes) + TanStack Query,
 shadcn/ui (new-york, Tailwind v4, Radix), lucide icons, sonner toasts.
 The build is static and served by the Go binary under `/admin` (`npm run build`
-publishes to `../web`). API calls go to `/admin/api/*` with the admin password
-header — always use `src/lib/api.ts` (`get`/`post`/`put`/`del`), never `fetch` directly.
+publishes to `../web`). API calls go to `/admin/api/*` with the session cookie and
+the `X-Requested-With` header the server requires for cookie-authenticated changes —
+always use `src/lib/api.ts` (`get`/`post`/`put`/`del`), never `fetch` directly.
 
 ## Look and feel
 - Calm neutral surfaces, one violet accent (`primary`) for primary actions and
