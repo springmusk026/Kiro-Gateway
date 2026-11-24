@@ -98,6 +98,8 @@ type Handler struct {
 	sink      telemetry.Sink
 	logReader telemetry.Reader
 	respStore telemetry.ResponseStore
+	// conversations maps conversationID → accountID (see pickAccount).
+	conversations conversationBindings
 	// sessionAffinity maps apiKeyID → accountID (see pickAccount).
 	sessionAffinity sync.Map
 }
@@ -886,6 +888,9 @@ func mergeModelInfo(base ModelInfo, extra ModelInfo) ModelInfo {
 	if base.TokenLimits == nil {
 		base.TokenLimits = extra.TokenLimits
 	}
+	if base.PromptCaching == nil {
+		base.PromptCaching = extra.PromptCaching
+	}
 	base.InputTypes = mergeStringLists(base.InputTypes, extra.InputTypes)
 	return base
 }
@@ -997,6 +1002,14 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
 
+	// Claude Code checks the endpoint at start-up with a one-token "quota"
+	// request. Answering it locally saves an upstream request (and its
+	// credits) on every client launch.
+	if !req.Stream && isClaudeQuotaProbe(&req) {
+		writeClaudeProbeResponse(w, req.Model)
+		return
+	}
+
 	// Pure native web_search: relay via Kiro MCP (generateAssistantResponse does not run it).
 	if hasWebSearchTool(&req) {
 		h.handleWebSearchRequest(r.Context(), w, &req, estimatedInputTokens, apiKeyID)
@@ -1066,7 +1079,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}
@@ -1671,7 +1684,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}
@@ -1892,7 +1905,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}
@@ -2315,7 +2328,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}

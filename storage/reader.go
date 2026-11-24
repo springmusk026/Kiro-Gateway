@@ -15,14 +15,15 @@ import (
 
 const requestSelect = `SELECT l.id, l.ts, l.method, l.path, l.endpoint, l.model, l.account_id, l.account_email,
 	l.api_key_id, l.client_ip, l.user_agent, l.stream, l.protocol, l.status, l.http_status, l.error, l.error_type,
-	l.input_tokens, l.output_tokens, l.credits, l.duration_ms, l.ttfb_ms, l.attempts, l.request_bytes, l.response_bytes`
+	l.input_tokens, l.output_tokens, l.credits, l.duration_ms, l.ttfb_ms, l.attempts, l.request_bytes, l.response_bytes,
+	l.cache_read_tokens, l.cache_write_tokens`
 
 func scanRequest(row pgx.Row, extra ...any) (*telemetry.RequestRecord, error) {
 	var x telemetry.RequestRecord
 	dst := []any{&x.ID, &x.Time, &x.Method, &x.Path, &x.Endpoint, &x.Model, &x.AccountID, &x.AccountEmail,
 		&x.APIKeyID, &x.ClientIP, &x.UserAgent, &x.Stream, &x.Protocol, &x.Status, &x.HTTPStatus, &x.Error,
 		&x.ErrorType, &x.InputTokens, &x.OutputTokens, &x.Credits, &x.DurationMs, &x.TTFBMs, &x.Attempts,
-		&x.RequestBytes, &x.ResponseBytes}
+		&x.RequestBytes, &x.ResponseBytes, &x.CacheRead, &x.CacheWrite}
 	if err := row.Scan(append(dst, extra...)...); err != nil {
 		return nil, err
 	}
@@ -122,8 +123,8 @@ func (r *Recorder) UsageSeries(ctx context.Context, since time.Time, bucket time
 	}
 	rows, err := r.db.Pool.Query(ctx, `SELECT to_timestamp(floor(extract(epoch FROM ts) / $2) * $2) AS b,
 		count(*), count(*) FILTER (WHERE status <> 'success'),
-		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(credits), 0),
-		COALESCE(avg(duration_ms) FILTER (WHERE status = 'success'), 0)
+		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(cache_read_tokens), 0),
+		COALESCE(sum(credits), 0), COALESCE(avg(duration_ms) FILTER (WHERE status = 'success'), 0)
 		FROM kiro_request_logs WHERE ts >= $1 GROUP BY b ORDER BY b`, since, bucket.Seconds())
 	if err != nil {
 		return nil, err
@@ -132,7 +133,7 @@ func (r *Recorder) UsageSeries(ctx context.Context, since time.Time, bucket time
 	out := []telemetry.UsagePoint{}
 	for rows.Next() {
 		var p telemetry.UsagePoint
-		if err := rows.Scan(&p.Time, &p.Requests, &p.Errors, &p.InputTokens, &p.OutputTokens, &p.Credits, &p.AvgLatencyMs); err != nil {
+		if err := rows.Scan(&p.Time, &p.Requests, &p.Errors, &p.InputTokens, &p.OutputTokens, &p.CacheRead, &p.Credits, &p.AvgLatencyMs); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -157,7 +158,7 @@ func (r *Recorder) UsageBy(ctx context.Context, dimension string, since time.Tim
 		limit = 10
 	}
 	rows, err := r.db.Pool.Query(ctx, fmt.Sprintf(`SELECT %s AS k, count(*), count(*) FILTER (WHERE status <> 'success'),
-		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(credits), 0)
+		COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0), COALESCE(sum(cache_read_tokens), 0), COALESCE(sum(credits), 0)
 		FROM kiro_request_logs WHERE ts >= $1 GROUP BY k ORDER BY count(*) DESC LIMIT %d`, col, limit), since)
 	if err != nil {
 		return nil, err
@@ -166,7 +167,7 @@ func (r *Recorder) UsageBy(ctx context.Context, dimension string, since time.Tim
 	out := []telemetry.UsageGroup{}
 	for rows.Next() {
 		var g telemetry.UsageGroup
-		if err := rows.Scan(&g.Key, &g.Requests, &g.Errors, &g.InputTokens, &g.OutputTokens, &g.Credits); err != nil {
+		if err := rows.Scan(&g.Key, &g.Requests, &g.Errors, &g.InputTokens, &g.OutputTokens, &g.CacheRead, &g.Credits); err != nil {
 			return nil, err
 		}
 		out = append(out, g)

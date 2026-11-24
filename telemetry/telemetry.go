@@ -29,6 +29,8 @@ type RequestRecord struct {
 	ErrorType     string    `json:"errorType,omitempty"`
 	InputTokens   int       `json:"inputTokens"`
 	OutputTokens  int       `json:"outputTokens"`
+	CacheRead     int       `json:"cacheReadTokens"`  // upstream prompt-cache hits
+	CacheWrite    int       `json:"cacheWriteTokens"` // upstream prompt-cache writes
 	Credits       float64   `json:"credits"`
 	DurationMs    int64     `json:"durationMs"`
 	TTFBMs        int64     `json:"ttfbMs"` // time to first byte written to the client
@@ -78,6 +80,7 @@ type UsagePoint struct {
 	Errors       int64     `json:"errors"`
 	InputTokens  int64     `json:"inputTokens"`
 	OutputTokens int64     `json:"outputTokens"`
+	CacheRead    int64     `json:"cacheReadTokens"`
 	Credits      float64   `json:"credits"`
 	AvgLatencyMs float64   `json:"avgLatencyMs"`
 }
@@ -89,6 +92,7 @@ type UsageGroup struct {
 	Errors       int64   `json:"errors"`
 	InputTokens  int64   `json:"inputTokens"`
 	OutputTokens int64   `json:"outputTokens"`
+	CacheRead    int64   `json:"cacheReadTokens"`
 	Credits      float64 `json:"credits"`
 }
 

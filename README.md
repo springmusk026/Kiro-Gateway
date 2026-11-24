@@ -130,6 +130,32 @@ For users in restricted network regions, configure an outbound proxy in the admi
 
 The setting takes effect immediately without restarting.
 
+## Prompt caching and cost
+
+What Kiro does natively (from the official Kiro CLI 3.5.0 and its bundled agent core):
+
+- **Caching is server-side and automatic.** The runtime schema has `cachePoint` markers (on user/assistant
+  messages and tools) and a `clientCacheConfig`, but the official client never sets them; Kiro caches prompt
+  prefixes on its own, **per account**, and reports `cacheReadInputTokens` / `cacheWriteInputTokens` in
+  `metadataEvent.tokenUsage`. Per-model support (`supportsPromptCaching`, minimum tokens per checkpoint) is
+  published by the control plane. The legacy streaming schema has no cache fields, so markers are not sent.
+- Billing is per request in credits, scaled by each model's credit multiplier (shown on the Models page).
+
+What the gateway does to keep costs down:
+
+- **Conversation affinity (on by default).** Every turn of a conversation goes to the account that served the
+  previous turn, so Kiro's per-account prompt cache stays warm; different conversations still spread across
+  the pool. Disable with `KIRO_CONVERSATION_AFFINITY=0`. (`KIRO_SESSION_AFFINITY=1` additionally pins each API
+  key to one account.)
+- **Stable prompt prefixes.** Conversation IDs are deterministic and nothing random or time-based is injected
+  into the prompt, so repeated turns share a byte-identical prefix.
+- **Real cache accounting.** Upstream cache reads/writes are recorded per request (database backend) next to
+  tokens and credits, so hit rates can be measured instead of guessed.
+- **No wasted requests.** Claude Code's start-up quota probe is answered locally (`KIRO_LOCAL_PROBES=0` to
+  disable); `count_tokens` is computed locally; per-request retry budget, no 4xx replays, exponential backoff
+  and account cooldowns avoid paying for doomed retries; large tool results are compressed (`KIRO_GO_RTK`).
+- Disable models you don't want clients to use (Models page) — e.g. keep expensive models off for a team key.
+
 ## Storage
 
 Kiro-Go stores its data in one of two backends:
@@ -170,6 +196,8 @@ Building from source requires Go 1.25+.
 | `ADMIN_PASSWORD` | Admin panel password (overrides config) | generated on first start |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `KIRO_UPSTREAM_PROTOCOL` | `auto`, `responses` or `legacy` (Settings → Endpoint overrides it) | `auto` |
+| `KIRO_CONVERSATION_AFFINITY` | `0` disables keeping each conversation on one account (prompt-cache reuse) | on |
+| `KIRO_LOCAL_PROBES` | `0` sends Claude Code's start-up quota probe upstream instead of answering locally | on |
 | `KIRO_SESSION_AFFINITY` | `1` keeps each API key on the account that last served it (better prompt-cache reuse) | off |
 | `KIRO_MAX_UPSTREAM_ATTEMPTS` | Maximum upstream chat calls per client request, across all retries and account switches | `4` |
 | `KIRO_MAX_CONCURRENT_PER_ACCOUNT` | Queue requests beyond this many in flight per account (`0` = unlimited) | `0` |

@@ -165,7 +165,7 @@ func (h *Handler) handleResponsesNonStream(
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}
@@ -423,7 +423,7 @@ func (h *Handler) handleResponsesStream(
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, model, excluded)
+		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
 		if account == nil {
 			break
 		}

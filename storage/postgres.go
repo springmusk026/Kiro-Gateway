@@ -122,6 +122,11 @@ CREATE TABLE kiro_audit_events (
 );
 CREATE INDEX kiro_audit_events_ts ON kiro_audit_events (ts DESC);
 `,
+	// 2: upstream prompt-cache accounting per request.
+	`
+ALTER TABLE kiro_request_logs ADD COLUMN cache_read_tokens INT NOT NULL DEFAULT 0;
+ALTER TABLE kiro_request_logs ADD COLUMN cache_write_tokens INT NOT NULL DEFAULT 0;
+`,
 }
 
 func (db *DB) migrate(ctx context.Context) error {

@@ -37,6 +37,7 @@ type requestTrace struct {
 
 	model, accountID, errMsg, errType, status string
 	input, output                             int
+	cacheRead, cacheWrite                     int
 	credits                                   float64
 
 	reqBytes int64
@@ -75,6 +76,12 @@ func (t *requestTrace) setFailure(model, accountID, msg, typ string) {
 			t.accountID = accountID
 		}
 	}
+	t.mu.Unlock()
+}
+
+func (t *requestTrace) setCache(read, write int) {
+	t.mu.Lock()
+	t.cacheRead, t.cacheWrite = read, write
 	t.mu.Unlock()
 }
 
@@ -252,6 +259,8 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 		ErrorType:     t.errType,
 		InputTokens:   t.input,
 		OutputTokens:  t.output,
+		CacheRead:     t.cacheRead,
+		CacheWrite:    t.cacheWrite,
 		Credits:       t.credits,
 		DurationMs:    end.Sub(t.start).Milliseconds(),
 		RequestBytes:  atomic.LoadInt64(&t.reqBytes),

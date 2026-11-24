@@ -899,4 +899,11 @@ type ModelInfo struct {
 		MaxInputTokens  int `json:"maxInputTokens"`
 		MaxOutputTokens int `json:"maxOutputTokens"`
 	} `json:"tokenLimits"`
+	// PromptCaching is the model's server-side prompt-cache capability as
+	// reported by Kiro's control plane (omitted when unknown).
+	PromptCaching *struct {
+		SupportsPromptCaching             bool `json:"supportsPromptCaching"`
+		MinimumTokensPerCacheCheckpoint   int  `json:"minimumTokensPerCacheCheckpoint"`
+		MaximumCacheCheckpointsPerRequest int  `json:"maximumCacheCheckpointsPerRequest"`
+	} `json:"promptCaching,omitempty"`
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"testing"
@@ -98,5 +99,48 @@ func TestKiroRetryAfterSources(t *testing.T) {
 	}
 	if retryAfterTag(1500*time.Millisecond) != " (retry-after=2)" {
 		t.Fatal("tag rounds up to seconds")
+	}
+}
+
+func TestClaudeQuotaProbeIsAnsweredLocally(t *testing.T) {
+	probe := &ClaudeRequest{Model: "claude-haiku-4.5", MaxTokens: 1, Messages: []ClaudeMessage{{Role: "user", Content: "quota"}}}
+	if !isClaudeQuotaProbe(probe) {
+		t.Fatal("Claude Code quota probe not recognised")
+	}
+	blocks := &ClaudeRequest{MaxTokens: 1, Messages: []ClaudeMessage{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "text", "text": "quota"}}}}}
+	if !isClaudeQuotaProbe(blocks) {
+		t.Fatal("block form not recognised")
+	}
+	for _, real := range []*ClaudeRequest{
+		{MaxTokens: 1, Messages: []ClaudeMessage{{Role: "user", Content: "hello"}}},
+		{MaxTokens: 50, Messages: []ClaudeMessage{{Role: "user", Content: "quota"}}},
+		{MaxTokens: 1, Messages: []ClaudeMessage{{Role: "user", Content: "quota"}}, Tools: []ClaudeTool{{Name: "x"}}},
+	} {
+		if isClaudeQuotaProbe(real) {
+			t.Fatalf("real request must go upstream: %+v", real)
+		}
+	}
+	t.Setenv("KIRO_LOCAL_PROBES", "0")
+	if isClaudeQuotaProbe(probe) {
+		t.Fatal("must be disableable")
+	}
+}
+
+func TestUpstreamCacheUsageIsReported(t *testing.T) {
+	var read, write int
+	stream := append(awsEventStreamFrame(t, "assistantResponseEvent", map[string]interface{}{"content": "hi"}),
+		awsEventStreamFrame(t, "metadataEvent", map[string]interface{}{
+			"stopReason": "end_turn",
+			"tokenUsage": map[string]interface{}{"uncachedInputTokens": 120, "cacheReadInputTokens": 9000, "cacheWriteInputTokens": 300, "outputTokens": 5},
+		})...)
+	_, err := parseEventStreamTracked(bytes.NewReader(stream), &KiroStreamCallback{
+		OnText:       func(string, bool) {},
+		OnCacheUsage: func(r, w int) { read, write = r, w },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read != 9000 || write != 300 {
+		t.Fatalf("cache usage not surfaced: read=%d write=%d", read, write)
 	}
 }

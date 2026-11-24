@@ -90,6 +90,9 @@ type adminModelEntry struct {
 	RateMultiplier float64  `json:"rateMultiplier,omitempty"`
 	Vision         bool     `json:"vision"`
 	Enabled        bool     `json:"enabled"`
+	// Prompt caching as reported by Kiro (nil when not reported).
+	PromptCaching *bool `json:"promptCaching,omitempty"`
+	CacheMinTokens int  `json:"cacheMinTokens,omitempty"`
 	Accounts       int      `json:"accounts"`
 }
 
@@ -130,6 +133,11 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 		if m.TokenLimits != nil {
 			e.ContextLength = m.TokenLimits.MaxInputTokens
 			e.MaxOutput = m.TokenLimits.MaxOutputTokens
+		}
+		if m.PromptCaching != nil {
+			v := m.PromptCaching.SupportsPromptCaching
+			e.PromptCaching = &v
+			e.CacheMinTokens = m.PromptCaching.MinimumTokensPerCacheCheckpoint
 		}
 		out = append(out, e)
 	}

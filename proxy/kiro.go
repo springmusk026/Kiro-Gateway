@@ -289,6 +289,10 @@ type KiroStreamCallback struct {
 	// end of stream and only for a non-zero total: integrity checks need to know
 	// that upstream closed the books on the turn, not how much it billed.
 	OnMetering func()
+
+	// OnCacheUsage reports upstream prompt-cache tokens (read, written) when
+	// the service includes them.
+	OnCacheUsage func(read, write int)
 }
 
 // ==================== API Call ====================
@@ -780,6 +784,19 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 			// how callers detect a truncated stream.
 			if reason := firstStringField(event, "stopReason", "stop_reason"); reason != "" && callback.OnStopReason != nil {
 				callback.OnStopReason(reason)
+			}
+			// The runtime service reports its own prompt-cache accounting in
+			// metadataEvent.tokenUsage (cacheReadInputTokens /
+			// cacheWriteInputTokens). Surface it so usage reflects real cache
+			// hits instead of only the local estimate.
+			if callback.OnCacheUsage != nil {
+				if usage, ok := event["tokenUsage"].(map[string]interface{}); ok {
+					read, _ := readTokenNumber(usage, "cacheReadInputTokens", "cache_read_input_tokens")
+					write, _ := readTokenNumber(usage, "cacheWriteInputTokens", "cache_write_input_tokens")
+					if read > 0 || write > 0 {
+						callback.OnCacheUsage(read, write)
+					}
+				}
 			}
 		}
 	}

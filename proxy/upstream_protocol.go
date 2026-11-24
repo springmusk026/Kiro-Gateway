@@ -120,6 +120,17 @@ func trackEmission(cb *KiroStreamCallback) (*KiroStreamCallback, *bool) {
 }
 
 func callKiroWithProtocolSelection(ctx context.Context, account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
+	if tr := traceFrom(ctx); tr != nil && callback != nil {
+		wrapped := *callback
+		inner := callback.OnCacheUsage
+		wrapped.OnCacheUsage = func(read, write int) {
+			tr.setCache(read, write)
+			if inner != nil {
+				inner(read, write)
+			}
+		}
+		callback = &wrapped
+	}
 	if account != nil {
 		release, err := acquireAccountSlot(ctx, account.ID)
 		if err != nil {
