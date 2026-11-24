@@ -1046,6 +1046,9 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		h.sendClaudeError(w, 500, "api_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, claudePingFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
 	// 获取 thinking 输出格式配置
 	thinkingFormat := thinkingOpts.Format
@@ -1507,11 +1510,23 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	if lastErr == nil {
+		if hb.Committed() {
+			h.sendSSE(w, flusher, "error", map[string]interface{}{
+				"type":  "error",
+				"error": map[string]string{"type": "overloaded_error", "message": noAvailableAccountsMessage},
+			})
+			return
+		}
 		h.sendClaudeNoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
+	if hb.Committed() {
+		// A heartbeat already sent the 200 status line.
+		h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(lastErr, estimatedInputTokens, model))
+		return
+	}
 	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
 }
 
@@ -1898,6 +1913,9 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		h.sendOpenAIError(w, 500, "server_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, sseKeepAliveFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
 	// 获取 thinking 输出格式配置
 	thinkingFormat := config.GetThinkingConfig().OpenAIFormat
@@ -2316,11 +2334,26 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	if lastErr == nil {
+		if hb.Committed() {
+			data, _ := json.Marshal(map[string]interface{}{
+				"error": openAIErrorObject("server_error", "server_overloaded", noAvailableAccountsMessage),
+			})
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			return
+		}
 		h.sendOpenAINoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
+	if hb.Committed() {
+		// A heartbeat already sent the 200 status line.
+		data, _ := json.Marshal(map[string]interface{}{"error": openAIStreamErrorObject(lastErr)})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+		return
+	}
 	h.sendOpenAIUpstreamError(w, lastErr)
 }
 

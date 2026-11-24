@@ -393,6 +393,9 @@ func (h *Handler) handleResponsesStream(
 		h.sendOpenAIError(w, 500, "server_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, sseKeepAliveFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
 	send := func(eventName string, payload interface{}) {
 		data, err := json.Marshal(payload)
