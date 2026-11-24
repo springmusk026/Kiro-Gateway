@@ -136,7 +136,7 @@ function HeaderActions({ account: a, onClose }: { account: Account; onClose: () 
   const act = useAccountActions()
   const busy = act.busy.has(a.id)
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2 flex flex-wrap gap-1.5">
       <Button size="sm" variant="outline" onClick={() => act.refresh(a)} disabled={busy}>
         {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} {t('accounts.action.refresh')}
       </Button>
@@ -156,15 +156,17 @@ function HeaderActions({ account: a, onClose }: { account: Account; onClose: () 
         <ClipboardCopy /> {t('accounts.action.copyCredentialsShort')}
       </Button>
       <Button
-        size="sm"
+        size="icon-sm"
         variant="ghost"
         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
         onClick={async () => {
           if (await act.remove(a)) onClose()
         }}
         disabled={busy}
+        aria-label={t('common.delete')}
+        title={t('common.delete')}
       >
-        <Trash2 /> {t('common.delete')}
+        <Trash2 />
       </Button>
     </div>
   )

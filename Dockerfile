@@ -1,3 +1,11 @@
+# Admin console: build the static SPA from frontend/ (served under /admin).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS console
+WORKDIR /console
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build:only
+
 # builder 阶段始终运行在构建机原生平台（amd64），用 Go 交叉编译目标平台二进制
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
@@ -19,7 +27,7 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 COPY --from=builder /app/kiro-go .
-COPY --from=builder /app/web ./web
+COPY --from=console /console/dist/client ./web
 RUN mkdir -p /app/data
 
 EXPOSE 8080

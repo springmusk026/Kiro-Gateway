@@ -144,6 +144,7 @@ const planTone = {
 export function PlanBadge({ account: a }: { account: Account }) {
   const { t } = useI18n()
   const tier = planTier(a)
+  if (!a.subscriptionType && !a.subscriptionTitle) return <span className="text-xs text-muted-foreground">–</span>
   const label = a.subscriptionTitle || (tier === 'other' ? a.subscriptionType || t('accounts.plan.unknown') : t(`accounts.plan.${tier}`))
   return (
     <Badge variant="outline" className={cn('h-5 max-w-40 rounded-md px-1.5 text-[11px]', planTone[tier])}>

@@ -92,6 +92,7 @@ export const accountsEn = {
   'accounts.usage.resets': 'Resets {date}',
   'accounts.usage.none': 'No quota info',
   'accounts.usage.notLoaded': 'Not refreshed yet',
+  'accounts.token.expires': 'Token expires {when}',
   'accounts.token.noExpiry': 'API key · no expiry',
 
   'accounts.auth.microsoft': 'Microsoft',

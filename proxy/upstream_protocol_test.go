@@ -45,6 +45,23 @@ func TestAutoProtocolFallsBackAndRemembers(t *testing.T) {
 	}
 }
 
+func TestAutoProtocolFallsBackWhenResponsesNeedsProfileArn(t *testing.T) {
+	acc := &config.Account{ID: "acc-noarn", RefreshToken: "r"}
+	accountProtocols.Delete(acc.ID)
+	calls := withFakeProtocols(t, func(p string, cb *KiroStreamCallback) error {
+		if p == responsesProtocolResponses {
+			return errors.New("HTTP 400 from Kiro responses: profileArn is required for this request.")
+		}
+		return nil
+	})
+	if err := CallKiroAPIContext(context.Background(), acc, &KiroPayload{}, &KiroStreamCallback{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 2 || (*calls)[1] != responsesProtocolLegacy {
+		t.Fatalf("expected fallback to legacy, got %v", *calls)
+	}
+}
+
 func TestAutoProtocolNeverSwitchesAfterOutput(t *testing.T) {
 	acc := &config.Account{ID: "acc-emitted", RefreshToken: "r"}
 	accountProtocols.Delete(acc.ID)

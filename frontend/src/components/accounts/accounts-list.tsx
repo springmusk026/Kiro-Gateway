@@ -82,8 +82,8 @@ function EnabledControl({ account: a }: { account: Account }) {
   )
 }
 
-function Activity({ account: a }: { account: Account }) {
-  const { t } = useI18n()
+function Activity({ account: a, withLastUsed }: { account: Account; withLastUsed?: boolean }) {
+  const { t, lang } = useI18n()
   return (
     <div className="space-y-0.5 text-xs tabular">
       <p>
@@ -98,6 +98,11 @@ function Activity({ account: a }: { account: Account }) {
       <p className="text-muted-foreground">
         {compact(a.totalTokens)} {t('accounts.col.tok')} · {a.totalCredits.toFixed(1)} {t('accounts.col.cr')}
       </p>
+      {withLastUsed && (
+        <p className="text-muted-foreground">
+          {a.lastUsed ? t('accounts.lastUsed', { when: timeAgo(a.lastUsed, lang) }) : t('accounts.neverUsed')}
+        </p>
+      )}
     </div>
   )
 }
@@ -115,6 +120,13 @@ function TokenCell({ account: a }: { account: Account }) {
       </p>
     </div>
   )
+}
+
+function TokenLine({ account: a }: { account: Account }) {
+  const { t, lang } = useI18n()
+  // Expired tokens already get a badge (with the time in its tooltip).
+  if (isApiKeyAccount(a) || !a.expiresAt || a.expiresAt < Date.now() / 1000 || isBanned(a)) return null
+  return <p className="mt-1 text-[11px] text-muted-foreground">{t('accounts.token.expires', { when: timeAgo(a.expiresAt, lang) })}</p>
 }
 
 function useScrollToHighlight(highlight: ReadonlySet<string>) {
@@ -147,11 +159,9 @@ export function AccountsTable({ accounts, selected, onSelect, onSelectAll, highl
             <TableHead>{t('accounts.col.account')}</TableHead>
             <TableHead>{t('accounts.col.status')}</TableHead>
             <TableHead>{t('accounts.col.plan')}</TableHead>
-            <TableHead className="w-48">{t('accounts.col.usage')}</TableHead>
+            <TableHead className="w-44">{t('accounts.col.usage')}</TableHead>
             <TableHead>{t('accounts.col.activity')}</TableHead>
-            <TableHead>{t('accounts.col.token')}</TableHead>
-            <TableHead className="w-24">{t('accounts.col.enabled')}</TableHead>
-            <TableHead className="w-12" />
+            <TableHead className="w-28 pr-3 text-right">{t('accounts.col.enabled')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="stagger">
@@ -179,11 +189,12 @@ export function AccountsTable({ accounts, selected, onSelect, onSelectAll, highl
                     aria-label={t('accounts.selectOne', { name: act.name(a) })}
                   />
                 </TableCell>
-                <TableCell className="max-w-64">
+                <TableCell className="max-w-60">
                   <Identity account={a} />
                 </TableCell>
                 <TableCell>
                   <StatusBadges account={a} />
+                  <TokenLine account={a} />
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col items-start gap-1">
@@ -198,16 +209,13 @@ export function AccountsTable({ accounts, selected, onSelect, onSelectAll, highl
                   <UsageCell account={a} />
                 </TableCell>
                 <TableCell>
-                  <Activity account={a} />
+                  <Activity account={a} withLastUsed />
                 </TableCell>
-                <TableCell>
-                  <TokenCell account={a} />
-                </TableCell>
-                <TableCell>
-                  <EnabledControl account={a} />
-                </TableCell>
-                <TableCell className="pr-3 text-right">
-                  <AccountMenu account={a} />
+                <TableCell className="pr-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1">
+                    <EnabledControl account={a} />
+                    <AccountMenu account={a} />
+                  </div>
                 </TableCell>
               </TableRow>
             )
@@ -259,7 +267,7 @@ export function AccountsCards({ accounts, selected, onSelect, highlight }: ListP
             </div>
             <div className="flex flex-wrap items-center gap-1">
               <StatusBadges account={a} compact />
-              <PlanBadge account={a} />
+              {(a.subscriptionType || a.subscriptionTitle) && <PlanBadge account={a} />}
               <TrialBadge account={a} />
               <AuthBadge account={a} />
             </div>

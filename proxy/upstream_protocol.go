@@ -76,6 +76,10 @@ func isProtocolRejection(err error) bool {
 		strings.Contains(lower, "unknownoperation") ||
 		strings.Contains(lower, "unknown operation") ||
 		strings.Contains(lower, "does not support this application") ||
+		// /v1/responses insists on a profile ARN; accounts that have none
+		// (Builder ID often cannot resolve one) still work on the legacy
+		// operation, which accepts ARN-less requests.
+		strings.Contains(lower, "profilearn is required") ||
 		pool.HasStatusToken(msg, "404")
 }
 
