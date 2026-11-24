@@ -28,13 +28,13 @@ export function BuilderIdFlow({ onBack, onSuccess }: FlowProps) {
     clearTimeout(timer.current)
     clearInterval(tick.current)
   }
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    alive.current = true
+    return () => {
       alive.current = false
       stop()
-    },
-    [],
-  )
+    }
+  }, [])
 
   const schedule = (sessionId: string, seconds: number, failures: number) => {
     stop()

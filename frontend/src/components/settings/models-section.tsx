@@ -17,8 +17,10 @@ const DEFAULT_SUFFIX = '-thinking'
 
 function FormatSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: ThinkingFormat) => void }) {
   const { t } = useI18n()
+  const v = (value || 'reasoning_content') as ThinkingFormat
   return (
-    <Select value={value || 'reasoning_content'} onValueChange={(v) => onChange(v as ThinkingFormat)}>
+    <div className="space-y-1">
+    <Select value={v} onValueChange={(x) => onChange(x as ThinkingFormat)}>
       <SelectTrigger id={id} className="w-full">
         <SelectValue />
       </SelectTrigger>
@@ -26,11 +28,12 @@ function FormatSelect({ id, value, onChange }: { id: string; value: string; onCh
         {FORMATS.map((f) => (
           <SelectItem key={f} value={f}>
             <span className="font-mono text-[13px]">{f}</span>
-            <span className="text-xs text-muted-foreground">{t(`settings.fmt.${f}` as 'settings.fmt.think')}</span>
           </SelectItem>
         ))}
       </SelectContent>
     </Select>
+    <p className="text-xs text-muted-foreground">{t(`settings.fmt.${v}` as 'settings.fmt.think')}</p>
+    </div>
   )
 }
 

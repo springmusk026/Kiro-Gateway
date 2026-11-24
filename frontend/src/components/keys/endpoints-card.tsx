@@ -62,10 +62,7 @@ export function EndpointsCard() {
                 {e.method}
               </Badge>
               <div className="min-w-0 flex-1">
-                <code className="block truncate font-mono text-[13px]">
-                  <span className="text-muted-foreground">{base}</span>
-                  {e.path}
-                </code>
+                <code className="block truncate font-mono text-[13px]">{e.path}</code>
                 <span className="text-xs text-muted-foreground">
                   {t(e.label)} · {e.tag}
                 </span>

@@ -36,7 +36,7 @@ function UsageMeter({ label, used, limit, format }: { label: string; used: numbe
           <span className="text-muted-foreground"> / {limit && limit > 0 ? format(limit) : t('keys.unlimited')}</span>
         </span>
       </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden={pct == null}>
+      <div className={cn('mt-1.5 h-1.5 overflow-hidden rounded-full', pct != null && 'bg-muted')} aria-hidden={pct == null}>
         {pct != null && (
           <div
             role="progressbar"

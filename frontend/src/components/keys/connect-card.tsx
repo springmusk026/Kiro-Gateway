@@ -155,8 +155,8 @@ console.log(resp.choices[0].message.content)`,
         </div>
       </div>
       <div className="space-y-4 px-5 py-5 sm:px-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_auto]">
-          <div className="space-y-1.5">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <div className="space-y-1.5 sm:col-span-3">
             <Label htmlFor="cx-key" className="text-xs text-muted-foreground">
               {t('keys.snippetKey')}
             </Label>

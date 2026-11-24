@@ -1,7 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { SettingsPage } from '@/components/settings/settings-page'
 
-export const Route = createFileRoute('/_app/settings')({ component: Page })
-
-function Page() {
-  return <div>settings</div>
-}
+export const Route = createFileRoute('/_app/settings')({ component: SettingsPage })
