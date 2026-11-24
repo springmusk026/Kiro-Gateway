@@ -79,7 +79,8 @@ type Handler struct {
 	modelsCacheTime    int64
 	modelsRefreshMu    sync.Mutex // one upstream model refresh at a time
 	promptCache        *promptCacheTracker
-	tokenRefreshMu     sync.Mutex
+	tokenRefreshMu     sync.Mutex // legacy; per-account locks live in refreshLocks
+	refreshLocks       sync.Map   // accountID → *sync.Mutex
 	credentialImportMu sync.Mutex
 	// 请求日志 (环形缓冲区，包含成功和失败)
 	requestLogs   []RequestLog
@@ -344,7 +345,7 @@ func (h *Handler) refreshAllAccounts() {
 		// API Key accounts skip OAuth refresh; still sync usage/subscription.
 		if !config.IsAPIKeyAccount(account) {
 			// 检查 token 是否需要刷新
-			if account.ExpiresAt > 0 && time.Now().Unix() > account.ExpiresAt-tokenRefreshSkewSeconds {
+			if tokenNeedsRefresh(account) {
 				if _, err := h.refreshAccountToken(account, false); err != nil {
 					logger.Warnf("[BackgroundRefresh] Token refresh failed for %s: %v", account.Email, err)
 					h.handleAccountFailure(account, err)
@@ -2406,8 +2407,11 @@ func (h *Handler) refreshAccountToken(account *config.Account, force bool) (bool
 		return false, fmt.Errorf("account is required for token refresh")
 	}
 
-	h.tokenRefreshMu.Lock()
-	defer h.tokenRefreshMu.Unlock()
+	// Per-account lock: one slow identity provider must not block token
+	// refresh for every other account. Holding it across re-reading the stored
+	// account gives double-checked refresh: a waiter sees the fresh token.
+	unlock := h.lockAccountRefresh(account.ID)
+	defer unlock()
 
 	var latest *config.Account
 	accounts := config.GetAccounts()
@@ -2442,7 +2446,7 @@ func (h *Handler) refreshAccountToken(account *config.Account, force bool) (bool
 		return false, nil
 	}
 
-	if !force && (working.ExpiresAt == 0 || time.Now().Unix() < working.ExpiresAt-tokenRefreshSkewSeconds) {
+	if !force && !tokenNeedsRefresh(&working) {
 		h.pool.UpdateCredentialState(
 			account,
 			working.ID,
@@ -2496,7 +2500,7 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 		}
 		return nil
 	}
-	if account.ExpiresAt == 0 || time.Now().Unix() < account.ExpiresAt-tokenRefreshSkewSeconds {
+	if !tokenNeedsRefresh(account) {
 		return nil
 	}
 
@@ -4917,4 +4921,28 @@ func clampInt(v, min, max int) int {
 		return max
 	}
 	return v
+}
+
+// lockAccountRefresh serializes token refresh for one account and returns
+// the unlock function.
+func (h *Handler) lockAccountRefresh(accountID string) func() {
+	v, _ := h.refreshLocks.LoadOrStore(accountID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// tokenNeedsRefresh reports whether an OAuth account's access token must be
+// refreshed before use. An unknown expiry (ExpiresAt == 0) with a refresh
+// token available counts as expired: such accounts (raw JSON imports, legacy
+// configs) were otherwise never refreshed, and their token silently expired
+// an hour later, after which the account was banned on the resulting 401.
+func tokenNeedsRefresh(account *config.Account) bool {
+	if account == nil || config.IsAPIKeyAccount(account) {
+		return false
+	}
+	if account.ExpiresAt == 0 {
+		return strings.TrimSpace(account.RefreshToken) != ""
+	}
+	return time.Now().Unix() >= account.ExpiresAt-tokenRefreshSkewSeconds
 }

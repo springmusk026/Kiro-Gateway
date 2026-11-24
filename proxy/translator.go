@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"kiro-go/config"
@@ -1157,7 +1159,16 @@ func shortenToolName(name string) string {
 			}
 		}
 	}
-	return name[:64]
+	// Truncate on a rune boundary and add a short hash of the full name, so two
+	// long names sharing a 64-byte prefix do not collapse into one (which
+	// corrupted ToolNameMap) and multi-byte characters are never split.
+	sum := sha256.Sum256([]byte(name))
+	suffix := "_" + hex.EncodeToString(sum[:4])
+	cut := 64 - len(suffix)
+	for cut > 0 && !utf8.RuneStart(name[cut]) {
+		cut--
+	}
+	return name[:cut] + suffix
 }
 
 // ==================== Kiro -> Claude 转换 ====================

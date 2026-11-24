@@ -271,6 +271,12 @@ func ResolveProfileArn(account *config.Account) (string, error) {
 	}
 
 	profileLookupSuppressed := isProfileArnResolutionSuppressed(account)
+	if profileLookupSuppressed {
+		// A recent lookup already failed: do not hit ListAvailableProfiles or
+		// the token endpoint again on every request (log floods, IdP
+		// throttling, and refresh-token rotation side effects).
+		return "", fmt.Errorf("profile ARN resolution skipped: recent lookup failed")
+	}
 	var profileUnsupportedErr error
 	var profileUnsupported bool
 
@@ -295,7 +301,18 @@ func ResolveProfileArn(account *config.Account) (string, error) {
 	// consumes profileArn.
 	if account.RefreshToken != "" &&
 		!strings.EqualFold(strings.TrimSpace(account.AuthMethod), "external_idp") {
-		_, _, _, refreshedArn, refreshErr := auth.RefreshToken(account)
+		accessToken, refreshToken, expiresAt, refreshedArn, refreshErr := auth.RefreshToken(account)
+		if refreshErr == nil && accessToken != "" {
+			// Persist the whole refreshed credential: the identity provider may
+			// rotate the refresh token, and discarding it would invalidate the
+			// stored one and get the account banned on its next refresh.
+			if refreshToken == "" {
+				refreshToken = account.RefreshToken
+			}
+			if err := config.UpdateAccountCredentialState(account.ID, accessToken, refreshToken, expiresAt, refreshedArn); err != nil {
+				logger.Warnf("[ProfileArn] Failed to persist refreshed credentials for %s: %v", accountEmailForLog(account), err)
+			}
+		}
 		if refreshErr == nil && refreshedArn != "" {
 			if updateErr := config.UpdateAccountProfileArn(account.ID, refreshedArn); updateErr != nil {
 				logger.Warnf("[ProfileArn] Failed to cache profile ARN for %s: %v", account.Email, updateErr)
@@ -313,7 +330,22 @@ func ResolveProfileArn(account *config.Account) (string, error) {
 		return "", fmt.Errorf("profile ARN unsupported for Builder ID account")
 	}
 
+	// Back off before trying again so a misconfigured account does not
+	// repeat the full lookup (and log a warning) on every request.
+	suppressProfileArnResolutionFor(account, profileArnFailureCooldown)
 	return "", fmt.Errorf("no available Kiro profile")
+}
+
+// profileArnFailureCooldown is how long a generic profile lookup failure is
+// remembered before the next attempt.
+const profileArnFailureCooldown = 5 * time.Minute
+
+func suppressProfileArnResolutionFor(account *config.Account, d time.Duration) {
+	key := profileArnCooldownKey(account)
+	if key == "" {
+		return
+	}
+	profileArnResolutionCooldowns.Store(key, time.Now().Add(d))
 }
 
 func isBuilderIDProfileUnsupportedError(account *config.Account, err error) bool {

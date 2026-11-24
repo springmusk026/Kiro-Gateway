@@ -1047,6 +1047,12 @@ func UpdateAccountStats(id string, requestCount, errorCount, totalTokens int, to
 	defer cfgLock.Unlock()
 	for i, a := range cfg.Accounts {
 		if a.ID == id {
+			// Writers now persist outside the pool lock, so an older snapshot
+			// can arrive after a newer one; never move counters backwards
+			// (a stats reset still applies because it zeroes the stored values).
+			if requestCount < a.RequestCount && lastUsed <= a.LastUsed {
+				return nil
+			}
 			cfg.Accounts[i].RequestCount = requestCount
 			cfg.Accounts[i].ErrorCount = errorCount
 			cfg.Accounts[i].TotalTokens = totalTokens

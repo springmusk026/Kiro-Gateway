@@ -298,7 +298,9 @@ func callMcpAPI(account *config.Account, mcpReq *McpRequest) (*McpResponse, erro
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	guarded := newIdleTimeoutBody(resp.Body, streamIdleTimeout())
+	defer guarded.Close()
+	body, err := io.ReadAll(io.LimitReader(guarded, 8<<20))
 	if err != nil {
 		return nil, err
 	}

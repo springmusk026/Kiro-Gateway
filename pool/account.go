@@ -320,6 +320,17 @@ func (p *AccountPool) RecordError(id string, isQuotaError bool) {
 	}
 }
 
+// Throttle puts an account into a short cooldown (rate limiting), without
+// touching its consecutive-error count.
+func (p *AccountPool) Throttle(id string, d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	until := time.Now().Add(d)
+	if cur, ok := p.cooldowns[id]; !ok || cur.Before(until) {
+		p.cooldowns[id] = until
+	}
+}
+
 // IsAuthFailure reports whether an error indicates the refresh token / credentials
 // have been revoked or invalidated upstream (401, 403 with auth markers, etc.).
 // These accounts cannot be recovered automatically and must be re-authenticated.
@@ -350,6 +361,10 @@ func IsAuthFailure(err error) bool {
 
 // hasStatusToken returns true when status appears in s with non-digit boundaries
 // on both sides, so "401" matches "HTTP 401 from ..." but not "request_401abc".
+// HasStatusToken reports whether status appears in s as a standalone number
+// (not part of a longer digit run such as a request ID).
+func HasStatusToken(s, status string) bool { return hasStatusToken(s, status) }
+
 func hasStatusToken(s, status string) bool {
 	for {
 		idx := strings.Index(s, status)
@@ -490,7 +505,6 @@ func (p *AccountPool) AvailableCount() int {
 // UpdateStats 更新账号统计
 func (p *AccountPool) UpdateStats(id string, tokens int, credits float64) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	var updated bool
 	var requestCount, errorCount, totalTokens int
 	var totalCredits float64
@@ -518,6 +532,10 @@ func (p *AccountPool) UpdateStats(id string, tokens int, credits float64) {
 			p.accounts[i].LastUsed = lastUsed
 		}
 	}
+	// Release the pool lock before touching disk: every account selection
+	// (GetNext*) waits on this lock, so holding it across a config.json
+	// rewrite serialized all traffic behind file I/O.
+	p.mu.Unlock()
 	if updated {
 		// Persist synchronously: a fire-and-forget write races with test cleanup
 		// (and with process shutdown) and can land mid-request.

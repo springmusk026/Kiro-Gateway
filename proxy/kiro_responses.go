@@ -402,8 +402,9 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 			return lastErr
 		}
 
-		emitted, parseErr := parseResponsesSSE(resp.Body, payload, callback)
-		resp.Body.Close()
+		emitted, parseErr := readUpstreamStream(resp.Body, func(r io.Reader) (bool, error) {
+			return parseResponsesSSE(r, payload, callback)
+		})
 		if parseErr == nil {
 			return nil
 		}

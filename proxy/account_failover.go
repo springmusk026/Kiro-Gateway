@@ -4,7 +4,9 @@ import (
 	"errors"
 	"kiro-go/config"
 	"kiro-go/logger"
+	"kiro-go/pool"
 	"strings"
+	"time"
 )
 
 const maxAccountRetryAttempts = 3
@@ -128,9 +130,58 @@ func isStreamIntegrityError(err error) bool {
 	return errors.Is(err, errUpstreamTruncatedResponse)
 }
 
+// isQuotaErrorMessage reports exhausted usage quota (long cooldown). A bare
+// 429 is rate throttling, handled by isRateLimitMessage with a short cooldown.
 func isQuotaErrorMessage(msg string) bool {
 	msg = strings.ToLower(msg)
-	return strings.Contains(msg, "429") || strings.Contains(msg, "quota")
+	return strings.Contains(msg, "quota") ||
+		strings.Contains(msg, "usage limit") ||
+		strings.Contains(msg, "monthly_request_count") ||
+		strings.Contains(msg, "limit reached")
+}
+
+// isRateLimitMessage reports transient upstream throttling.
+func isRateLimitMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return pool.HasStatusToken(msg, "429") ||
+		strings.Contains(lower, "throttl") ||
+		strings.Contains(lower, "rate exceeded") ||
+		strings.Contains(lower, "rate_exceeded") ||
+		strings.Contains(lower, "too many requests")
+}
+
+// isClientRequestErrorMessage reports upstream rejections caused by the request
+// itself (shape or size). Another account would reject it the same way, so it
+// must not count against the account.
+func isClientRequestErrorMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return pool.HasStatusToken(msg, "400") ||
+		pool.HasStatusToken(msg, "413") ||
+		pool.HasStatusToken(msg, "422") ||
+		strings.Contains(lower, "validationexception") ||
+		strings.Contains(lower, "improperly formed") ||
+		strings.Contains(lower, "content_length_exceeds_threshold") ||
+		strings.Contains(lower, "request_body_invalid") ||
+		strings.Contains(lower, "input is too long")
+}
+
+// isNonAccountForbiddenMessage reports 403-like failures that say nothing
+// about the account's credentials: Kiro rejecting the client version or
+// protocol, or an outbound proxy refusing the CONNECT.
+func isNonAccountForbiddenMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "feature_not_supported") ||
+		strings.Contains(lower, "no longer supported") ||
+		strings.Contains(lower, "proxyconnect") ||
+		strings.Contains(lower, "does not support this application")
+}
+
+// isDefinitiveAuthFailure reports errors that a token refresh cannot fix.
+func isDefinitiveAuthFailure(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "invalid_grant") ||
+		strings.Contains(lower, "refresh token expired") ||
+		strings.Contains(lower, "has no refresh token")
 }
 
 func isOverageErrorMessage(msg string) bool {
@@ -213,6 +264,10 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		h.pool.RecordError(account.ID, false)
 	case isQuotaErrorMessage(errMsg):
 		h.pool.RecordError(account.ID, true)
+	case isRateLimitMessage(errMsg):
+		// Throttling clears in seconds; an hour-long quota cooldown here took
+		// healthy accounts out of rotation.
+		h.pool.Throttle(account.ID, rateLimitCooldown)
 	case isSuspensionErrorMessage(errMsg):
 		h.disableAccount(account, "BANNED", "AWS temporarily suspended - unusual user activity detected")
 	case isProfileUnavailableErrorMessage(errMsg):
@@ -220,9 +275,38 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		// Treat as a soft failure: short cooldown so the next request rotates account,
 		// but never auto-disable — operators can still investigate via warn logs.
 		h.pool.RecordError(account.ID, false)
+	case isClientRequestErrorMessage(errMsg):
+		logger.Debugf("[AccountFailover] request rejected by upstream, not penalizing %s: %s", account.Email, errMsg)
+	case isNonAccountForbiddenMessage(errMsg):
+		h.pool.RecordError(account.ID, false)
 	case isAuthErrorMessage(errMsg):
-		h.disableAccount(account, "BANNED", "Authentication failed - token invalid or expired")
+		h.handleAuthFailure(account, errMsg)
 	default:
 		h.pool.RecordError(account.ID, false)
 	}
+}
+
+// rateLimitCooldown keeps a throttled account out of rotation briefly.
+const rateLimitCooldown = 30 * time.Second
+
+// handleAuthFailure reacts to a 401/403-style error. An expired or revoked
+// access token is normal (it lives about an hour), so the account is only
+// banned when a forced refresh also fails, or when the error already says
+// the refresh token itself is invalid.
+func (h *Handler) handleAuthFailure(account *config.Account, errMsg string) {
+	if !isDefinitiveAuthFailure(errMsg) && !config.IsAPIKeyAccount(account) &&
+		strings.TrimSpace(account.RefreshToken) != "" {
+		if _, err := h.refreshAccountToken(account, true); err == nil {
+			logger.Infof("[AccountFailover] Refreshed token for %s after auth error; keeping account enabled", account.Email)
+			h.pool.RecordError(account.ID, false)
+			return
+		} else if !isAuthErrorMessage(err.Error()) && !isDefinitiveAuthFailure(err.Error()) {
+			// Refresh failed for a non-auth reason (network, IdP outage):
+			// do not ban on a transient problem.
+			logger.Warnf("[AccountFailover] Token refresh for %s failed transiently: %v", account.Email, err)
+			h.pool.RecordError(account.ID, false)
+			return
+		}
+	}
+	h.disableAccount(account, "BANNED", "Authentication failed - token invalid or expired")
 }

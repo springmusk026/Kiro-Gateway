@@ -102,7 +102,8 @@ func GetClientForProxy(proxyURL string) *http.Client {
 		return cached.(*http.Client)
 	}
 	client := &http.Client{
-		Timeout:   5 * time.Minute,
+		// No whole-response timeout: streams are bounded by the request
+		// context, ResponseHeaderTimeout and the idle-read guard instead.
 		Transport: buildKiroTransport(proxyURL),
 	}
 	proxyClientCache.Store(proxyURL, client)
@@ -142,8 +143,10 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  false,
-		ForceAttemptHTTP2:   true,
+		// Bound the wait for upstream to start answering.
+		ResponseHeaderTimeout: 120 * time.Second,
+		DisableCompression:    false,
+		ForceAttemptHTTP2:     true,
 	}
 	if proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {
@@ -160,7 +163,7 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 // InitKiroHttpClient initializes (or reinitializes) the HTTP clients used for Kiro API requests.
 func InitKiroHttpClient(proxyURL string) {
 	client := &http.Client{
-		Timeout:   5 * time.Minute,
+		// See GetClientForProxy: streams must not be cut at a fixed length.
 		Transport: buildKiroTransport(proxyURL),
 	}
 	kiroHttpStore.Store(client)
@@ -507,9 +510,12 @@ endpointLoop:
 			}
 
 			if resp.StatusCode == 429 {
+				// Keep the body: it says whether this is throttling
+				// (short cooldown) or exhausted quota (long cooldown).
+				body429, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 				resp.Body.Close()
-				logger.Warnf("[KiroAPI] Endpoint %s quota exhausted (429), trying next...", ep.Name)
-				lastErr = fmt.Errorf("quota exhausted on %s", ep.Name)
+				logger.Warnf("[KiroAPI] Endpoint %s returned 429, trying next...", ep.Name)
+				lastErr = fmt.Errorf("HTTP 429 from %s: %s", ep.Name, strings.TrimSpace(string(body429)))
 				continue endpointLoop
 			}
 
@@ -536,8 +542,9 @@ endpointLoop:
 				continue endpointLoop
 			}
 
-			emitted, err := parseEventStreamTracked(resp.Body, callback)
-			resp.Body.Close()
+			emitted, err := readUpstreamStream(resp.Body, func(r io.Reader) (bool, error) {
+				return parseEventStreamTracked(r, callback)
+			})
 			if err == nil {
 				return nil
 			}

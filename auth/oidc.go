@@ -94,8 +94,7 @@ func refreshOIDCToken(refreshToken, clientID, clientSecret, region string, clien
 		return "", "", 0, "", err
 	}
 
-	expiresAt := time.Now().Unix() + int64(result.ExpiresIn)
-	return result.AccessToken, result.RefreshToken, expiresAt, result.ProfileArn, nil
+	return finishRefresh(result.AccessToken, result.RefreshToken, result.ExpiresIn, result.ProfileArn)
 }
 
 // refreshSocialToken Social (GitHub/Google) token 刷新
@@ -132,6 +131,23 @@ func refreshSocialToken(refreshToken string, client *http.Client) (string, strin
 		return "", "", 0, "", err
 	}
 
-	expiresAt := time.Now().Unix() + int64(result.ExpiresIn)
-	return result.AccessToken, result.RefreshToken, expiresAt, result.ProfileArn, nil
+	return finishRefresh(result.AccessToken, result.RefreshToken, result.ExpiresIn, result.ProfileArn)
+}
+
+// errEmptyAccessToken: an IdP answered 200 without a usable token. Treating
+// that as success stored a blank token, so every later request failed with
+// 401/403 and the account was banned.
+var errEmptyAccessToken = fmt.Errorf("refresh failed: response contained no access token")
+
+// finishRefresh validates a refresh response and computes its expiry. A
+// missing or non-positive expiresIn falls back to one hour instead of "now",
+// which would otherwise force a refresh on every request.
+func finishRefresh(accessToken, refreshToken string, expiresIn int, profileArn string) (string, string, int64, string, error) {
+	if strings.TrimSpace(accessToken) == "" {
+		return "", "", 0, "", errEmptyAccessToken
+	}
+	if expiresIn <= 0 {
+		expiresIn = 3600
+	}
+	return accessToken, refreshToken, time.Now().Unix() + int64(expiresIn), profileArn, nil
 }
