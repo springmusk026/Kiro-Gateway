@@ -19,6 +19,10 @@ If this project helps you, a Star would mean a lot.
 - Usage tracking, account import/export, i18n (CN / EN / VI)
 - Configurable client model mappings, advertised through `/v1/models`
 - Support configuring outbound proxy (SOCKS5 / HTTP)
+- Live model catalog fetched from Kiro (context window, max output, vision, credit rate), refreshed automatically
+- Dashboard with overview, traffic chart, model catalog and a built-in playground (streaming, reasoning, copy as cURL)
+- Automatic upstream protocol selection (`/v1/responses` or `generateAssistantResponse`) per account
+- Hardened admin access: generated password, login throttling, security headers
 
 ## Quick Start
 
@@ -131,7 +135,17 @@ The setting takes effect immediately without restarting.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONFIG_PATH` | Config file path | `data/config.json` |
-| `ADMIN_PASSWORD` | Admin panel password (overrides config) | - |
+| `ADMIN_PASSWORD` | Admin panel password (overrides config) | generated on first start |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `KIRO_UPSTREAM_PROTOCOL` | `auto`, `responses` or `legacy` (Settings → Endpoint overrides it) | `auto` |
+| `KIRO_SESSION_AFFINITY` | `1` keeps each API key on the account that last served it (better prompt-cache reuse) | off |
+| `KIRO_STREAM_IDLE_TIMEOUT` | Seconds without upstream data before a stream is abandoned | `180` |
+| `KIRO_MAX_BODY_MB` | Maximum client request body size | `64` |
+| `KIRO_MAX_STORED_RESPONSES` / `KIRO_MAX_STORED_RESPONSES_MB` | Limits for stored `/v1/responses` objects | `20000` / `2048` |
+| `KIRO_KEEP_STRUCTURED_TOOL_HISTORY` | `1` keeps tool calls in history as structured data instead of text | off |
+| `KIRO_GO_RTK` | `false` disables compression of large tool results | on |
+
+> **Security:** the server listens on `0.0.0.0` by default. Turn on **API key verification** (Settings → API Settings) before exposing it; otherwise anyone who can reach the port can use your accounts. The dashboard shows a warning while it is off.
 
 ## Contributing
 
