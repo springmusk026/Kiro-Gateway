@@ -141,7 +141,7 @@ The schema also allows `tool_choice`, `max_output_tokens`, `temperature`, `top_p
 | `instructions` | never set. The system prompt is injected as a fake user/assistant pair `"I will follow these instructions."` (`translator.go:341,1611`) | only with AB flag; otherwise the system prompt is the first human message [unverified exact shape] | partial |
 | History tool calls | flattened to text unless `KIRO_KEEP_STRUCTURED_TOOL_HISTORY=1` (`translator.go:1983`) | always structured `function_call`/`function_call_output` | **divergent** |
 | Reasoning replay | not captured or replayed | `{"type":"reasoning","encrypted_content"}` replayed | missing |
-| Documents (`input_file`) | not supported (files are reduced to text or images) | supported (pdf/csv/doc/docx/xls/xlsx/html/txt/md) | missing |
+| Documents (`input_file`) | `input_file` parts and GAR `documents[]` (`proxy/documents.go`) | supported (pdf/csv/doc/docx/xls/xlsx/html/txt/md) | matches |
 | `reasoning.summary` | only from `reasoning.summary` | from `thinking.display` | partial |
 | Headers | adds `Accept: text/event-stream`, `x-amz-user-agent`, **`x-amzn-kiro-agent-mode: vibe`**, `Accept-Encoding: gzip` (Go default) (`kiro_responses.go:373-377`, `kiro_headers.go`) | none of these | **divergent** |
 | `x-amzn-kiro-fallback` | not sent | `0;max=0` on every main turn | **missing** |
@@ -331,7 +331,7 @@ Token file / refresh correctness notes from KAS ([JS] `FileAuthProvider`, `s4e`)
 | Token refresh | per §1.8, single-flight, symlink-safe | matches intent; UA + IdC token-type gaps | partial |
 | Native effort / thinking | `reasoning.effort` + `thinking.type` from model schema | `reasoning.effort` only (`thinking_request.go`), `thinking.type` parsed but never emitted | partial |
 | Prompt caching | model-declared `promptCaching`, `cachePoint` blocks | capability stored, never used | missing |
-| Documents | pdf/docx/csv/… as `input_file` | not supported | missing |
+| Documents | pdf/docx/csv/… as `input_file` | `input_file` / `documents[]` | matches |
 | Images | per-family size/edge limits (§4) | generic base64 passthrough | partial |
 | User-Agent | `KiroCLI/3.5.0 KAS/<ver> os/… md/appVersion-3.5.0 app/AmazonQ-For-CLI` (raw) + SDK UA on smithy calls | `aws-sdk-js/… KiroIDE-<ver>-<machineId>` everywhere | **divergent** |
 
