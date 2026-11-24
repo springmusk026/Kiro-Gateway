@@ -557,7 +557,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   // playground
   'playground.model': '模型',
   'playground.thinking': '扩展思考',
-  'playground.thinkingHint': '使用“{suffix}”变体，让模型在回答前先进行推理。',
+  'playground.thinkingHint': '通过请求本身开启推理（Anthropic thinking / OpenAI reasoning_effort），与真实客户端一致。',
   'playground.format': 'API 格式',
   'playground.system': '系统提示词',
   'playground.systemPlaceholder': '给模型的可选指令…',
@@ -755,7 +755,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'settings.secRouting': '路由与上游',
   'settings.secRoutingDesc': '请求如何到达 Kiro，以及何时使用账号。',
   'settings.secModels': '模型与思考',
-  'settings.secModelsDesc': 'Thinking 变体以及客户端可使用的模型名称。',
+  'settings.secModelsDesc': '请求如何开启思考，以及客户端可使用的模型名称。',
   'settings.secFilter': '提示词过滤',
   'settings.secFilterDesc': '在发送到上游之前清理系统提示词。',
   'settings.secNetwork': '网络',
@@ -817,7 +817,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
     '开启后，账号用量达到上限后仍参与轮换（可能产生超额费用）。关闭后，这些账号将被跳过，直到额度重置。',
 
   'settings.thinking': 'Thinking 模式',
-  'settings.thinkingDesc': '客户端在模型名后添加后缀即可启用扩展思考。',
+  'settings.thinkingDesc': '思考由每个请求决定：Anthropic thinking / output_config.effort、OpenAI reasoning_effort 与 Responses reasoning。模型后缀仍可作为快捷方式。',
   'settings.thinkingSuffix': '模型后缀',
   'settings.suffixWhitespace': '后缀不能包含空格。',
   'settings.openaiFormat': 'OpenAI 输出格式',
@@ -826,7 +826,7 @@ export const zh: Partial<Record<MessageKey, string>> = {
   'settings.fmt.thinking': 'thinking 块',
   'settings.fmt.think': '文本中的 <think> 标签',
   'settings.example': '示例',
-  'settings.exampleResult': '以开启思考的方式运行 {model}',
+  'settings.exampleResult': '以开启思考的方式运行 {model}（旧版快捷方式）',
   'settings.exampleFormats': 'OpenAI 客户端以 {openai} 形式接收思考内容；Anthropic 客户端以 {claude} 形式接收。',
 
   'settings.mappings': '模型映射',

@@ -121,7 +121,10 @@ export interface ThinkingConfig {
   suffix: string
   openaiFormat: ThinkingFormat
   claudeFormat: ThinkingFormat
+  mode: ThinkingMode
+  budget: number
 }
+export type ThinkingMode = 'auto' | 'always' | 'never'
 
 export interface EndpointConfig {
   preferredEndpoint: 'auto' | 'kiro' | 'codewhisperer' | 'amazonq'
@@ -164,6 +167,11 @@ export interface CatalogModel {
   vision: boolean
   enabled: boolean
   accounts: number
+  promptCaching?: boolean
+  cacheMinTokens?: number
+  effortLevels?: string[]
+  defaultEffort?: string
+  thinkingToggle?: boolean
 }
 export interface ModelsCatalog {
   models: CatalogModel[]

@@ -557,7 +557,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   // playground
   'playground.model': 'Mô hình',
   'playground.thinking': 'Suy nghĩ mở rộng',
-  'playground.thinkingHint': 'Dùng biến thể “{suffix}” để mô hình suy luận trước khi trả lời.',
+  'playground.thinkingHint': 'Yêu cầu suy luận qua chính request (Anthropic thinking / OpenAI reasoning_effort), giống các ứng dụng thật.',
   'playground.format': 'Định dạng API',
   'playground.system': 'System prompt',
   'playground.systemPlaceholder': 'Chỉ dẫn tùy chọn cho mô hình…',
@@ -755,7 +755,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   'settings.secRouting': 'Định tuyến & upstream',
   'settings.secRoutingDesc': 'Cách yêu cầu đến Kiro và khi nào tài khoản được dùng.',
   'settings.secModels': 'Mô hình & thinking',
-  'settings.secModelsDesc': 'Biến thể thinking và tên mô hình ứng dụng khách có thể dùng.',
+  'settings.secModelsDesc': 'Cách yêu cầu bật thinking và tên mô hình ứng dụng khách có thể dùng.',
   'settings.secFilter': 'Bộ lọc prompt',
   'settings.secFilterDesc': 'Dọn dẹp system prompt trước khi gửi lên upstream.',
   'settings.secNetwork': 'Mạng',
@@ -817,7 +817,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
     'Khi bật, tài khoản vẫn được luân phiên sau khi mức dùng chạm giới hạn (có thể bị tính phí vượt hạn). Khi tắt, chúng bị bỏ qua cho đến khi đặt lại.',
 
   'settings.thinking': 'Chế độ Thinking',
-  'settings.thinkingDesc': 'Ứng dụng khách bật suy nghĩ mở rộng bằng cách thêm hậu tố vào tên mô hình.',
+  'settings.thinkingDesc': 'Thinking theo từng yêu cầu: Anthropic thinking / output_config.effort, OpenAI reasoning_effort và Responses reasoning. Hậu tố mô hình vẫn dùng được như lối tắt.',
   'settings.thinkingSuffix': 'Hậu tố mô hình',
   'settings.suffixWhitespace': 'Hậu tố không được chứa dấu cách.',
   'settings.openaiFormat': 'Định dạng đầu ra OpenAI',
@@ -826,7 +826,7 @@ export const vi: Partial<Record<MessageKey, string>> = {
   'settings.fmt.thinking': 'khối thinking',
   'settings.fmt.think': 'thẻ <think> trong văn bản',
   'settings.example': 'Ví dụ',
-  'settings.exampleResult': 'chạy {model} với thinking bật',
+  'settings.exampleResult': 'chạy {model} với thinking bật (lối tắt cũ)',
   'settings.exampleFormats': 'Ứng dụng khách OpenAI nhận thinking dưới dạng {openai}; ứng dụng khách Anthropic dưới dạng {claude}.',
 
   'settings.mappings': 'Ánh xạ mô hình',

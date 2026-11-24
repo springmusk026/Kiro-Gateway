@@ -945,7 +945,8 @@ func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 
 	thinkingCfg := config.GetThinkingConfig()
-	actualModel, thinking := resolveClaudeThinkingMode(req.Model, req.Thinking, thinkingCfg.Suffix)
+	actualModel, thinkingSpec := resolveClaudeThinking(&req, thinkingCfg)
+	thinking := thinkingSpec.Enabled
 	req.Model = actualModel
 	effectiveReq := cloneClaudeRequestForThinking(&req, thinking)
 
@@ -989,7 +990,8 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()
-	actualModel, thinking := resolveClaudeThinkingMode(req.Model, req.Thinking, thinkingCfg.Suffix)
+	actualModel, thinkingSpec := resolveClaudeThinking(&req, thinkingCfg)
+	thinking := thinkingSpec.Enabled
 	req.Model = actualModel
 	if msg := disabledModelMessage(actualModel); msg != "" {
 		h.sendClaudeError(w, 400, "invalid_request_error", msg)
@@ -1026,6 +1028,7 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 
 	// 转换请求
 	kiroPayload := ClaudeToKiro(&req, thinking)
+	applyThinkingSpec(kiroPayload, actualModel, thinkingSpec)
 
 	// Stream or non-stream
 	if req.Stream {
@@ -1865,7 +1868,10 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()
-	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
+	actualModel, suffixThinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
+	thinkingSpec := resolveThinking(openAIThinkingAsk(&req, suffixThinking), thinkingCfg)
+	thinking := thinkingSpec.Enabled
+	req.thinkingBudget = thinkingSpec.Budget
 	req.Model = actualModel
 	if msg := disabledModelMessage(actualModel); msg != "" {
 		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
@@ -1875,6 +1881,7 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	cacheProfile := h.promptCache.BuildOpenAIProfile(&req, estimatedInputTokens)
 
 	kiroPayload := OpenAIToKiro(&req, thinking)
+	applyThinkingSpec(kiroPayload, actualModel, thinkingSpec)
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
 	if req.Stream {
@@ -4644,6 +4651,8 @@ func (h *Handler) apiGetThinkingConfig(w http.ResponseWriter, r *http.Request) {
 		"suffix":       cfg.Suffix,
 		"openaiFormat": cfg.OpenAIFormat,
 		"claudeFormat": cfg.ClaudeFormat,
+		"mode":         cfg.Mode,
+		"budget":       cfg.Budget,
 	})
 }
 
@@ -4653,6 +4662,8 @@ func (h *Handler) apiUpdateThinkingConfig(w http.ResponseWriter, r *http.Request
 		Suffix       string `json:"suffix"`
 		OpenAIFormat string `json:"openaiFormat"`
 		ClaudeFormat string `json:"claudeFormat"`
+		Mode         string `json:"mode"`
+		Budget       *int   `json:"budget"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(400)
@@ -4673,10 +4684,39 @@ func (h *Handler) apiUpdateThinkingConfig(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if req.Mode != "" && req.Mode != "auto" && req.Mode != "always" && req.Mode != "never" {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid mode, must be: auto, always, or never"})
+		return
+	}
+	if req.Budget != nil && *req.Budget != 0 && (*req.Budget < minThinkingBudget || *req.Budget > maxThinkingBudget) {
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("budget must be between %d and %d tokens (0 = default)", minThinkingBudget, maxThinkingBudget)})
+		return
+	}
+
 	if err := config.UpdateThinkingConfig(req.Suffix, req.OpenAIFormat, req.ClaudeFormat); err != nil {
 		w.WriteHeader(500)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
+	}
+	if req.Mode != "" || req.Budget != nil {
+		cur := config.GetThinkingConfig()
+		mode, budget := cur.Mode, cur.Budget
+		if budget == config.DefaultThinkingBudget {
+			budget = 0
+		}
+		if req.Mode != "" {
+			mode = req.Mode
+		}
+		if req.Budget != nil {
+			budget = *req.Budget
+		}
+		if err := config.UpdateThinkingPolicy(mode, budget); err != nil {
+			w.WriteHeader(500)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})

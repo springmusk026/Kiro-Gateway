@@ -2,7 +2,9 @@
 export const playgroundEn = {
   'playground.model': 'Model',
   'playground.thinking': 'Extended thinking',
-  'playground.thinkingHint': 'Uses the “{suffix}” variant so the model reasons before answering.',
+  'playground.thinkingHint': 'Asks for reasoning through the request (Anthropic thinking / OpenAI reasoning_effort), the way real clients do.',
+  'playground.effort': 'Effort',
+  'playground.effortAuto': 'Auto',
   'playground.format': 'API format',
   'playground.system': 'System prompt',
   'playground.systemPlaceholder': 'Optional instructions for the model…',

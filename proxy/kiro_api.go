@@ -906,4 +906,8 @@ type ModelInfo struct {
 		MinimumTokensPerCacheCheckpoint   int  `json:"minimumTokensPerCacheCheckpoint"`
 		MaximumCacheCheckpointsPerRequest int  `json:"maximumCacheCheckpointsPerRequest"`
 	} `json:"promptCaching,omitempty"`
+	// AdditionalFieldsSchema is the JSON schema of the per-model request
+	// controls (thinking type, output_config.effort or reasoning.effort) the
+	// model accepts in additionalModelRequestFields.
+	AdditionalFieldsSchema json.RawMessage `json:"additionalModelRequestFieldsSchema,omitempty"`
 }

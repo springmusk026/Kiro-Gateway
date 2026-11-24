@@ -18,6 +18,10 @@ export interface ChatParams {
   maxTokens: number
   stream: boolean
   messages: ChatMessage[]
+  /** Ask for reasoning through the request itself (no model suffix). */
+  thinking?: boolean
+  /** Reasoning effort; "auto" leaves it to the model. */
+  effort?: string
 }
 
 export function buildRequest(p: ChatParams) {
@@ -30,14 +34,16 @@ export function buildRequest(p: ChatParams) {
       messages: p.messages,
     }
     if (p.system) body.system = p.system
+    if (p.thinking) {
+      body.thinking = { type: 'adaptive' }
+      if (p.effort && p.effort !== 'auto') body.output_config = { effort: p.effort }
+    }
     return { adminPath: '/playground/messages', publicPath: '/v1/messages', body }
   }
   const messages = p.system ? [{ role: 'system', content: p.system }, ...p.messages] : p.messages
-  return {
-    adminPath: '/playground/chat/completions',
-    publicPath: '/v1/chat/completions',
-    body: { model: p.model, temperature: p.temperature, max_tokens: p.maxTokens, stream: p.stream, messages },
-  }
+  const body: Record<string, unknown> = { model: p.model, temperature: p.temperature, max_tokens: p.maxTokens, stream: p.stream, messages }
+  if (p.thinking) body.reasoning_effort = p.effort && p.effort !== 'auto' ? p.effort : 'medium'
+  return { adminPath: '/playground/chat/completions', publicPath: '/v1/chat/completions', body }
 }
 
 function errorFrom(body: unknown, status: number): Error {

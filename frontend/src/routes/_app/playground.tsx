@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { copyToClipboard } from '@/lib/format'
@@ -45,6 +46,7 @@ function loadPrefs() {
 interface Prefs {
   model: string
   thinking: boolean
+  effort: string
   protocol: Protocol
   system: string
   temperature: number
@@ -57,11 +59,11 @@ function PlaygroundPage() {
   const search = Route.useSearch()
   const { data: catalog } = useModels()
   const models = useMemo(() => (catalog?.models ?? []).filter((m) => m.enabled).map((m) => m.id), [catalog])
-  const suffix = catalog?.thinkingSuffix || '-thinking'
 
   const [prefs, setPrefs] = useState<Prefs>(() => ({
     model: '',
     thinking: false,
+    effort: 'auto',
     protocol: 'anthropic',
     system: '',
     temperature: 0.7,
@@ -88,7 +90,7 @@ function PlaygroundPage() {
   const ctrl = useRef<AbortController | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const busy = turns.some((x) => x.pending)
-  const effectiveModel = prefs.thinking ? prefs.model + suffix : prefs.model
+  const effortLevels = catalog?.models.find((m) => m.id === prefs.model)?.effortLevels
 
   useEffect(() => {
     const el = scroller.current
@@ -113,7 +115,9 @@ function PlaygroundPage() {
       await runChat(
         {
           protocol: prefs.protocol,
-          model: effectiveModel,
+          model: prefs.model,
+          thinking: prefs.thinking,
+          effort: prefs.effort,
           system: prefs.system,
           temperature: prefs.temperature,
           maxTokens: prefs.maxTokens,
@@ -159,7 +163,9 @@ function PlaygroundPage() {
     const msgs = turns.filter((x) => x.content && !x.error).map(({ role, content }) => ({ role, content }))
     const req = buildRequest({
       protocol: prefs.protocol,
-      model: effectiveModel,
+      model: prefs.model,
+      thinking: prefs.thinking,
+      effort: prefs.effort,
       system: prefs.system,
       temperature: prefs.temperature,
       maxTokens: prefs.maxTokens,
@@ -176,7 +182,7 @@ function PlaygroundPage() {
   }
 
   const settings = (
-    <SettingsPanel prefs={prefs} set={set} models={models} suffix={suffix} onCurl={copyCurl} />
+    <SettingsPanel prefs={prefs} set={set} models={models} effortLevels={effortLevels} onCurl={copyCurl} />
   )
 
   return (
@@ -184,7 +190,13 @@ function PlaygroundPage() {
       <Card className="relative flex min-h-0 flex-col gap-0 overflow-hidden py-0">
         <div className="flex items-center gap-2 border-b px-4 py-2.5">
           <Sparkles className="size-4 text-primary" />
-          <span className="truncate font-mono text-sm">{effectiveModel || '—'}</span>
+          <span className="truncate font-mono text-sm">{prefs.model || '—'}</span>
+          {prefs.thinking && (
+            <Badge variant="secondary" className="gap-1 font-normal">
+              <Brain className="size-3" />
+              {prefs.effort === 'auto' ? t('playground.thinking') : prefs.effort}
+            </Badge>
+          )}
           <Badge variant="secondary" className="font-normal">{prefs.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI'}</Badge>
           <div className="ml-auto flex items-center gap-1">
             <Tooltip>
@@ -287,16 +299,17 @@ function SettingsPanel({
   prefs,
   set,
   models,
-  suffix,
+  effortLevels,
   onCurl,
 }: {
   prefs: Prefs
   set: <K extends keyof Prefs>(k: K, v: Prefs[K]) => void
   models: string[]
-  suffix: string
+  effortLevels?: string[]
   onCurl: () => void
 }) {
   const { t } = useI18n()
+  const levels = ['auto', ...(effortLevels?.length ? effortLevels : ['low', 'medium', 'high'])]
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -314,14 +327,35 @@ function SettingsPanel({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex items-start justify-between gap-3 rounded-xl border bg-muted/30 p-3">
-        <div>
-          <Label className="flex items-center gap-1.5">
-            <Brain className="size-4 text-primary" /> {t('playground.thinking')}
-          </Label>
-          <p className="mt-1 text-xs text-muted-foreground">{t('playground.thinkingHint', { suffix })}</p>
+      <div className="space-y-3 rounded-xl border bg-muted/30 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <Label className="flex items-center gap-1.5">
+              <Brain className="size-4 text-primary" /> {t('playground.thinking')}
+            </Label>
+            <p className="mt-1 text-xs text-muted-foreground">{t('playground.thinkingHint')}</p>
+          </div>
+          <Switch checked={prefs.thinking} onCheckedChange={(v) => set('thinking', v)} />
         </div>
-        <Switch checked={prefs.thinking} onCheckedChange={(v) => set('thinking', v)} />
+        {prefs.thinking && (
+          <div className="space-y-1.5 animate-rise">
+            <Label className="text-xs text-muted-foreground">{t('playground.effort')}</Label>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              value={levels.includes(prefs.effort) ? prefs.effort : 'auto'}
+              onValueChange={(v) => v && set('effort', v)}
+            >
+              {levels.map((l) => (
+                <ToggleGroupItem key={l} value={l} className="flex-1 px-1 text-xs capitalize">
+                  {l === 'auto' ? t('playground.effortAuto') : l}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <Label>{t('playground.format')}</Label>

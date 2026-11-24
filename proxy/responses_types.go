@@ -7,6 +7,7 @@ type ResponsesRequest struct {
 	Input              json.RawMessage   `json:"input"`
 	Instructions       string            `json:"instructions,omitempty"`
 	Stream             bool              `json:"stream,omitempty"`
+	Reasoning          *OpenAIReasoning  `json:"reasoning,omitempty"`
 	Tools              []OpenAITool      `json:"tools,omitempty"`
 	ToolChoice         json.RawMessage   `json:"tool_choice,omitempty"`
 	PreviousResponseID string            `json:"previous_response_id,omitempty"`

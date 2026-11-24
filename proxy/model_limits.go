@@ -26,6 +26,7 @@ var modelInputTokenLimits sync.Map
 // recordModelTokenLimits stores the input-token window for every model in the
 // list that reports one. Safe to call from any model-refresh path.
 func recordModelTokenLimits(models []ModelInfo) {
+	recordModelReasoningControls(models)
 	for _, m := range models {
 		if m.TokenLimits == nil || m.TokenLimits.MaxInputTokens <= 0 {
 			continue

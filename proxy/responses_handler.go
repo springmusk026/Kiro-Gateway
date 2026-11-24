@@ -48,7 +48,9 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	// name still carrying the thinking suffix matches no known model, so the
 	// window lookup would miss and fall back to the smallest tier.
 	thinkingCfg := config.GetThinkingConfig()
-	actualModel, thinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
+	actualModel, suffixThinking := ParseModelAndThinking(req.Model, thinkingCfg.Suffix)
+	thinkingSpec := resolveThinking(responsesThinkingAsk(&req, suffixThinking), thinkingCfg)
+	thinking := thinkingSpec.Enabled
 	if msg := disabledModelMessage(actualModel); msg != "" {
 		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
 		return
@@ -138,7 +140,9 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	openaiReq.Model = actualModel
 
 	estimatedInputTokens := estimateOpenAIRequestInputTokens(openaiReq)
+	openaiReq.thinkingBudget = thinkingSpec.Budget
 	kiroPayload := OpenAIToKiro(openaiReq, thinking)
+	applyThinkingSpec(kiroPayload, actualModel, thinkingSpec)
 	cacheProfile := h.promptCache.BuildOpenAIProfile(openaiReq, estimatedInputTokens)
 
 	apiKeyID := apiKeyIDFromContext(r.Context())

@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowRight, Boxes, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
+import { ArrowRight, Boxes, Brain, DatabaseZap, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/app/copy-button'
@@ -236,7 +236,7 @@ function ModelTable({ models, onToggle, suffix }: { models: CatalogModel[]; onTo
               <td className="px-4 py-3 text-right tabular">{compact(m.contextLength)}</td>
               <td className="hidden px-4 py-3 text-right tabular md:table-cell">{compact(m.maxOutputTokens)}</td>
               <td className="hidden px-4 py-3 md:table-cell">
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
                   <Badge variant="secondary" className="gap-1 font-normal">
                     <Type className="size-3" />
                     {t('models.text')}
@@ -246,6 +246,30 @@ function ModelTable({ models, onToggle, suffix }: { models: CatalogModel[]; onTo
                       <Eye className="size-3" />
                       {t('models.vision')}
                     </Badge>
+                  )}
+                  {!!m.effortLevels?.length && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary" className="gap-1 font-normal">
+                          <Brain className="size-3" />
+                          {m.effortLevels.length}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {t('models.effortHint')} {t('models.effort', { levels: m.effortLevels.join(' · ') })}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  {m.promptCaching && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary" className="gap-1 font-normal">
+                          <DatabaseZap className="size-3" />
+                          {t('models.caching')}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('models.cachingHint', { n: compact(m.cacheMinTokens ?? 0) })}</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               </td>

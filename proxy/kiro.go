@@ -199,7 +199,9 @@ type KiroPayload struct {
 
 	// AdditionalModelRequestFields carries per-model reasoning controls such as
 	// {"output_config":{"effort":"low"}}. Shape comes from ListAvailableModels.
-	AdditionalModelRequestFields map[string]interface{} `json:"additionalModelRequestFields,omitempty"`
+	// Only the /v1/responses transport sends it (as its `reasoning` block);
+	// it is never serialized into the generateAssistantResponse body.
+	AdditionalModelRequestFields map[string]interface{} `json:"-"`
 
 	// ToolNameMap maps sanitized tool names (sent to Kiro) back to the
 	// original names supplied by the client. Used to restore original names

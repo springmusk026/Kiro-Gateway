@@ -187,8 +187,16 @@ type ClaudeRequest struct {
 	Stream      bool                  `json:"stream,omitempty"`
 	System      interface{}           `json:"system,omitempty"` // string or []SystemBlock
 	Thinking    *ClaudeThinkingConfig `json:"thinking,omitempty"`
-	Tools       []ClaudeTool          `json:"tools,omitempty"`
-	ToolChoice  interface{}           `json:"tool_choice,omitempty"`
+	// OutputConfig carries Anthropic's effort control ({"effort":"high"}).
+	OutputConfig *ClaudeOutputConfig `json:"output_config,omitempty"`
+	// thinkingBudget is the resolved <max_thinking_length> (0 = default).
+	thinkingBudget int
+	Tools          []ClaudeTool `json:"tools,omitempty"`
+	ToolChoice     interface{}  `json:"tool_choice,omitempty"`
+}
+
+type ClaudeOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type ClaudeThinkingConfig struct {
@@ -265,7 +273,7 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 	origin := "AI_EDITOR"
 
 	// 提取系统提示
-	systemPrompt := buildClaudeSystemPrompt(req.System, thinking)
+	systemPrompt := buildClaudeSystemPrompt(req.System, thinking, req.thinkingBudget)
 
 	// 构建历史消息
 	history := make([]KiroHistoryMessage, 0)
@@ -516,16 +524,16 @@ func appendBackendDirective(content, directive string) string {
 	return content + "\n\n" + directive
 }
 
-func buildClaudeSystemPrompt(system interface{}, thinking bool) string {
+func buildClaudeSystemPrompt(system interface{}, thinking bool, budget int) string {
 	systemPrompt := extractSystemPrompt(system)
 	systemPrompt = applyPromptFilters(systemPrompt)
 	if !thinking {
 		return systemPrompt
 	}
 	if systemPrompt == "" {
-		return ThinkingModePrompt
+		return thinkingModePrompt(budget)
 	}
-	return ThinkingModePrompt + "\n\n" + systemPrompt
+	return thinkingModePrompt(budget) + "\n\n" + systemPrompt
 }
 
 // applyPromptFilters applies all enabled prompt filter rules to the system prompt.
@@ -704,13 +712,13 @@ func cloneClaudeRequestForThinking(req *ClaudeRequest, thinking bool) *ClaudeReq
 
 	cloned := *req
 	if thinking {
-		cloned.System = prependThinkingSystem(req.System)
+		cloned.System = prependThinkingSystem(req.System, req.thinkingBudget)
 	}
 	return &cloned
 }
 
-func prependThinkingSystem(system interface{}) interface{} {
-	thinkingText := ThinkingModePrompt
+func prependThinkingSystem(system interface{}, budget int) interface{} {
+	thinkingText := thinkingModePrompt(budget)
 	if hasClaudeSystemContent(system) {
 		thinkingText += "\n"
 	}
@@ -1283,8 +1291,25 @@ type OpenAIRequest struct {
 	Temperature float64         `json:"temperature,omitempty"`
 	TopP        float64         `json:"top_p,omitempty"`
 	Stream      bool            `json:"stream,omitempty"`
-	Tools       []OpenAITool    `json:"tools,omitempty"`
-	ToolChoice  interface{}     `json:"tool_choice,omitempty"`
+	// Reasoning controls: OpenAI reasoning_effort, an OpenRouter-style
+	// reasoning object, or Anthropic-style thinking sent to this endpoint.
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	Reasoning       *OpenAIReasoning      `json:"reasoning,omitempty"`
+	Thinking        *ClaudeThinkingConfig `json:"thinking,omitempty"`
+	// thinkingBudget is the resolved <max_thinking_length> (0 = default).
+	thinkingBudget int
+	Tools          []OpenAITool `json:"tools,omitempty"`
+	ToolChoice     interface{}  `json:"tool_choice,omitempty"`
+}
+
+// OpenAIReasoning is the reasoning object accepted on Chat Completions
+// (OpenRouter style) and Responses ({effort, summary}).
+type OpenAIReasoning struct {
+	Effort    string `json:"effort,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
+	Exclude   *bool  `json:"exclude,omitempty"`
 }
 
 type OpenAIMessage struct {
@@ -1446,7 +1471,7 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 
 	// 如果启用 thinking 模式，注入 thinking 提示
 	if thinking {
-		systemPrompt = ThinkingModePrompt + "\n\n" + systemPrompt
+		systemPrompt = thinkingModePrompt(req.thinkingBudget) + "\n\n" + systemPrompt
 	}
 
 	// 构建历史消息

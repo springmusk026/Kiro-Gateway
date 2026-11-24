@@ -200,6 +200,14 @@ type Config struct {
 	ThinkingSuffix       string `json:"thinkingSuffix,omitempty"`       // Model suffix to trigger thinking mode (default: "-thinking")
 	OpenAIThinkingFormat string `json:"openaiThinkingFormat,omitempty"` // OpenAI output format: "reasoning_content", "thinking", or "think"
 	ClaudeThinkingFormat string `json:"claudeThinkingFormat,omitempty"` // Claude output format: "reasoning_content", "thinking", or "think"
+	// ThinkingMode decides when thinking is on: "auto" (default) follows the
+	// request (Anthropic thinking / output_config.effort, OpenAI
+	// reasoning_effort, Responses reasoning) and the legacy model suffix;
+	// "always" forces it on; "never" forces it off.
+	ThinkingMode string `json:"thinkingMode,omitempty"`
+	// ThinkingBudget is the default thinking length (tokens) when a request
+	// enables thinking without a budget or effort. 0 means 200000.
+	ThinkingBudget int `json:"thinkingBudget,omitempty"`
 
 	// ModelMappings exposes client-friendly model IDs while keeping upstream IDs internal.
 	ModelMappings []ModelMapping `json:"modelMappings,omitempty"`
@@ -1291,6 +1299,23 @@ type ThinkingConfig struct {
 	Suffix       string `json:"suffix"`       // Model name suffix that triggers thinking mode
 	OpenAIFormat string `json:"openaiFormat"` // Output format for OpenAI-compatible responses
 	ClaudeFormat string `json:"claudeFormat"` // Output format for Claude-compatible responses
+	Mode         string `json:"mode"`         // auto | always | never
+	Budget       int    `json:"budget"`       // default thinking length in tokens
+}
+
+// DefaultThinkingBudget is the thinking length used when nothing narrower is
+// requested; it matches the value Kiro's own clients advertise.
+const DefaultThinkingBudget = 200000
+
+// NormalizeThinkingMode maps an arbitrary setting to auto, always or never.
+func NormalizeThinkingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "always", "on":
+		return "always"
+	case "never", "off":
+		return "never"
+	}
+	return "auto"
 }
 
 // GetThinkingConfig 获取 thinking 配置
@@ -1311,10 +1336,17 @@ func GetThinkingConfig() ThinkingConfig {
 		claudeFormat = "thinking"
 	}
 
+	budget := cfg.ThinkingBudget
+	if budget <= 0 {
+		budget = DefaultThinkingBudget
+	}
+
 	return ThinkingConfig{
 		Suffix:       suffix,
 		OpenAIFormat: openaiFormat,
 		ClaudeFormat: claudeFormat,
+		Mode:         NormalizeThinkingMode(cfg.ThinkingMode),
+		Budget:       budget,
 	}
 }
 
@@ -1325,6 +1357,21 @@ func UpdateThinkingConfig(suffix, openaiFormat, claudeFormat string) error {
 	cfg.ThinkingSuffix = suffix
 	cfg.OpenAIThinkingFormat = openaiFormat
 	cfg.ClaudeThinkingFormat = claudeFormat
+	return Save()
+}
+
+// UpdateThinkingPolicy stores when thinking is enabled and its default length.
+func UpdateThinkingPolicy(mode string, budget int) error {
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	cfg.ThinkingMode = NormalizeThinkingMode(mode)
+	if cfg.ThinkingMode == "auto" {
+		cfg.ThinkingMode = ""
+	}
+	if budget < 0 {
+		budget = 0
+	}
+	cfg.ThinkingBudget = budget
 	return Save()
 }
 

@@ -35,5 +35,9 @@ export const modelsEn = {
   'models.noAliases': 'No aliases configured.',
   'models.manageAliases': 'Manage in Settings',
   'models.thinking': 'Thinking variant: add “{suffix}”',
+  'models.effort': 'Effort: {levels}',
+  'models.effortHint': 'Reasoning effort levels this model accepts natively.',
+  'models.caching': 'Cache',
+  'models.cachingHint': 'Kiro caches long prompts for this model server-side (minimum {n} tokens per checkpoint).',
   'models.noAccounts': 'No account has reported this model yet',
 } as const

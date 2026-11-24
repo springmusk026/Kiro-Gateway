@@ -76,6 +76,12 @@ func modelMetadata(entry map[string]interface{}, m ModelInfo) map[string]interfa
 	if m.RateMultiplier > 0 {
 		entry["rate_multiplier"] = m.RateMultiplier
 	}
+	if rc, ok := parseReasoningControls(m.AdditionalFieldsSchema); ok && len(rc.Levels) > 0 {
+		entry["supported_reasoning_efforts"] = rc.Levels
+		if rc.DefaultLevel != "" {
+			entry["default_reasoning_effort"] = rc.DefaultLevel
+		}
+	}
 	return entry
 }
 
@@ -91,8 +97,11 @@ type adminModelEntry struct {
 	Vision         bool     `json:"vision"`
 	Enabled        bool     `json:"enabled"`
 	// Prompt caching as reported by Kiro (nil when not reported).
-	PromptCaching *bool `json:"promptCaching,omitempty"`
-	CacheMinTokens int  `json:"cacheMinTokens,omitempty"`
+	PromptCaching  *bool    `json:"promptCaching,omitempty"`
+	CacheMinTokens int      `json:"cacheMinTokens,omitempty"`
+	EffortLevels   []string `json:"effortLevels,omitempty"`
+	DefaultEffort  string   `json:"defaultEffort,omitempty"`
+	ThinkingToggle bool     `json:"thinkingToggle,omitempty"`
 	Accounts       int      `json:"accounts"`
 }
 
@@ -139,6 +148,9 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 			e.PromptCaching = &v
 			e.CacheMinTokens = m.PromptCaching.MinimumTokensPerCacheCheckpoint
 		}
+		if rc, ok := parseReasoningControls(m.AdditionalFieldsSchema); ok {
+			e.EffortLevels, e.DefaultEffort, e.ThinkingToggle = rc.Levels, rc.DefaultLevel, rc.Toggle
+		}
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -148,6 +160,7 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 		"cachedAt":       cachedAt,
 		"ttlSeconds":     int(modelsCacheTTL.Seconds()),
 		"thinkingSuffix": config.GetThinkingConfig().Suffix,
+		"thinkingMode":   config.GetThinkingConfig().Mode,
 		"mappings":       config.GetModelMappings(),
 		"disabledModels": config.GetDisabledModels(),
 	})

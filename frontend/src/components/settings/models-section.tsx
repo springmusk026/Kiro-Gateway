@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useI18n } from '@/lib/i18n'
 import { useModels } from '@/lib/queries'
 import { useModelMappings, useSaveModelMappings, useSaveThinking, useThinking } from '@/lib/queries.settings'
-import type { ModelMapping, ThinkingConfig, ThinkingFormat } from '@/lib/types'
+import type { ModelMapping, ThinkingConfig, ThinkingFormat, ThinkingMode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SectionCard, runSave, useDraft } from './section-card'
 
 const FORMATS: ThinkingFormat[] = ['reasoning_content', 'thinking', 'think']
 const DEFAULT_SUFFIX = '-thinking'
+const MODES: ThinkingMode[] = ['auto', 'always', 'never']
+const DEFAULT_BUDGET = 200000
 
 function FormatSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: ThinkingFormat) => void }) {
   const { t } = useI18n()
@@ -46,6 +48,9 @@ export function ThinkingCard() {
   const example = models.data?.models.find((m) => m.enabled && m.id.startsWith('claude'))?.id ?? 'claude-sonnet-4.5'
   const suffix = draft?.suffix || DEFAULT_SUFFIX
   const suffixInvalid = !!draft?.suffix && /\s/.test(draft.suffix)
+  const budget = draft?.budget ?? 0
+  const budgetInvalid = budget !== 0 && (budget < 1024 || budget > DEFAULT_BUDGET)
+  const mode: ThinkingMode = draft?.mode || 'auto'
 
   return (
     <SectionCard
@@ -55,7 +60,7 @@ export function ThinkingCard() {
       loading={!draft}
       dirty={dirty}
       saving={save.isPending}
-      saveDisabled={suffixInvalid}
+      saveDisabled={suffixInvalid || budgetInvalid}
       onReset={reset}
       onSave={async () => {
         if (draft && (await runSave(() => save.mutateAsync(draft), t('settings.saved')))) commit()
@@ -63,6 +68,43 @@ export function ThinkingCard() {
     >
       {draft && (
         <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="th-mode">{t('settings.thinkingMode')}</Label>
+              <Select value={mode} onValueChange={(v) => setDraft((d) => ({ ...d, mode: v as ThinkingMode }))}>
+                <SelectTrigger id="th-mode" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {t(`settings.mode.${m}` as const)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t(`settings.mode.${mode}Hint` as const)}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="th-budget">{t('settings.thinkingBudget')}</Label>
+              <Input
+                id="th-budget"
+                type="number"
+                inputMode="numeric"
+                min={1024}
+                max={DEFAULT_BUDGET}
+                step={1024}
+                className="tabular"
+                placeholder={DEFAULT_BUDGET.toLocaleString()}
+                value={budget && budget !== DEFAULT_BUDGET ? budget : ''}
+                aria-invalid={budgetInvalid}
+                onChange={(e) => setDraft((d) => ({ ...d, budget: e.target.value ? Math.round(Number(e.target.value)) : 0 }))}
+              />
+              <p className={cn('text-xs', budgetInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+                {t(budgetInvalid ? 'settings.thinkingBudgetInvalid' : 'settings.thinkingBudgetHint')}
+              </p>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="th-suffix">{t('settings.thinkingSuffix')}</Label>
@@ -95,7 +137,8 @@ export function ThinkingCard() {
               <ArrowRight className="size-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">{t('settings.exampleResult', { model: example })}</span>
             </p>
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 text-xs text-muted-foreground">{t('settings.effortNote')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               {t('settings.exampleFormats', { openai: draft.openaiFormat || 'reasoning_content', claude: draft.claudeFormat || 'thinking' })}
             </p>
           </div>

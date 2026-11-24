@@ -15,7 +15,7 @@ export const settingsEn = {
   'settings.secRouting': 'Routing & upstream',
   'settings.secRoutingDesc': 'How requests reach Kiro and when accounts are used.',
   'settings.secModels': 'Models & thinking',
-  'settings.secModelsDesc': 'Thinking variants and the model names clients can use.',
+  'settings.secModelsDesc': 'How requests turn on thinking, and the model names clients can use.',
   'settings.secFilter': 'Prompt filter',
   'settings.secFilterDesc': 'Clean up system prompts before they are sent upstream.',
   'settings.secNetwork': 'Network',
@@ -80,8 +80,20 @@ export const settingsEn = {
 
   // Thinking
   'settings.thinking': 'Thinking mode',
-  'settings.thinkingDesc': 'Clients enable extended thinking by adding a suffix to the model name.',
-  'settings.thinkingSuffix': 'Model suffix',
+  'settings.thinkingDesc':
+    'Thinking follows each request: Anthropic thinking / output_config.effort, OpenAI reasoning_effort and Responses reasoning. The model suffix still works as a shortcut.',
+  'settings.thinkingMode': 'When to think',
+  'settings.mode.auto': 'Follow the request',
+  'settings.mode.autoHint': 'On when the request asks for it (or the model name has the suffix).',
+  'settings.mode.always': 'Always',
+  'settings.mode.alwaysHint': 'Every request thinks, whatever the client sends.',
+  'settings.mode.never': 'Never',
+  'settings.mode.neverHint': 'Thinking is off for every request, even with the suffix.',
+  'settings.thinkingBudget': 'Default thinking length',
+  'settings.thinkingBudgetHint': 'Tokens, used when a request enables thinking without a budget or effort. Leave empty for 200,000.',
+  'settings.thinkingBudgetInvalid': 'Use a value between 1,024 and 200,000.',
+  'settings.effortNote': 'Effort is also sent natively to models that declare effort levels (shown on the Models page).',
+  'settings.thinkingSuffix': 'Model suffix (optional)',
   'settings.suffixWhitespace': 'The suffix cannot contain spaces.',
   'settings.openaiFormat': 'OpenAI output format',
   'settings.claudeFormat': 'Anthropic output format',
@@ -89,7 +101,7 @@ export const settingsEn = {
   'settings.fmt.thinking': 'thinking block',
   'settings.fmt.think': '<think> tags in text',
   'settings.example': 'Example',
-  'settings.exampleResult': 'runs {model} with thinking on',
+  'settings.exampleResult': 'runs {model} with thinking on (legacy shortcut)',
   'settings.exampleFormats': 'OpenAI clients receive thinking as {openai}; Anthropic clients as {claude}.',
 
   // Mappings
