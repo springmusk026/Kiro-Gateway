@@ -206,8 +206,12 @@ func (w *tracingWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // beginTrace instruments an API request. It returns the wrapped writer and
 // request plus a finish function to call after the handler returns.
 func (h *Handler) beginTrace(w http.ResponseWriter, r *http.Request, endpoint string) (http.ResponseWriter, *http.Request, func()) {
-	if h.sink == nil {
+	countMetrics := metricsEnabled()
+	if h.sink == nil && !countMetrics {
 		return w, r, func() {}
+	}
+	if countMetrics {
+		metrics.inFlight.Add(1)
 	}
 	id := w.Header().Get("X-Request-Id")
 	if id == "" {
@@ -224,7 +228,7 @@ func (h *Handler) beginTrace(w http.ResponseWriter, r *http.Request, endpoint st
 		stream:   strings.Contains(r.Header.Get("Accept"), "text/event-stream"),
 	}
 	tw := &tracingWriter{ResponseWriter: w}
-	if limit := bodyCaptureLimit(); limit > 0 && (endpoint == "claude" || endpoint == "openai" || endpoint == "responses") {
+	if limit := bodyCaptureLimit(); h.sink != nil && limit > 0 && (endpoint == "claude" || endpoint == "openai" || endpoint == "responses") {
 		t.reqBody = &cappedBuffer{n: limit}
 		t.respBody = &cappedBuffer{n: limit}
 		tw.tee = t.respBody
@@ -238,10 +242,15 @@ func (h *Handler) beginTrace(w http.ResponseWriter, r *http.Request, endpoint st
 	}
 	w.Header().Set("X-Request-Id", t.id)
 	r = r.WithContext(context.WithValue(r.Context(), traceKey{}, t))
-	return tw, r, func() { h.finishTrace(t, tw, r) }
+	return tw, r, func() {
+		if countMetrics {
+			metrics.inFlight.Add(-1)
+		}
+		h.finishTrace(t, tw, r, countMetrics)
+	}
 }
 
-func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Request) {
+func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Request, countMetrics bool) {
 	end := time.Now()
 	t.mu.Lock()
 	rec := &telemetry.RequestRecord{
@@ -286,6 +295,12 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 		}
 	}
 	rec.Attempts = attemptsUsed(r.Context())
+	if countMetrics {
+		metrics.observe(rec)
+	}
+	if h.sink == nil {
+		return
+	}
 	if rec.AccountID != "" && h.pool != nil {
 		if acc := h.pool.GetByID(rec.AccountID); acc != nil {
 			rec.AccountEmail = acc.Email

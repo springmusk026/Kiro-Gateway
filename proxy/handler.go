@@ -538,6 +538,9 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 	case strings.HasPrefix(path, "/admin/"):
 		h.serveStaticFile(w, r)
 
+	case path == "/metrics":
+		h.handleMetrics(w, r)
+
 	// 健康检查
 	case path == "/health" || path == "/":
 		h.handleHealth(w, r)
