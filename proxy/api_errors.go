@@ -241,3 +241,46 @@ func (h *Handler) sendOpenAINoAccounts(w http.ResponseWriter) {
 	setRetryAfterHeader(w, h.noAccountsRetryAfter())
 	h.sendOpenAIErrorWithCode(w, http.StatusServiceUnavailable, "server_error", "server_overloaded", noAvailableAccountsMessage)
 }
+
+// wantsAnthropicErrors picks the error shape for requests that reach no
+// handler: Anthropic clients always send anthropic-version.
+func wantsAnthropicErrors(r *http.Request) bool {
+	if r.Header.Get("anthropic-version") != "" {
+		return true
+	}
+	return strings.Contains(r.URL.Path, "/messages")
+}
+
+// sendAPIError writes an error in the shape the calling client expects.
+func (h *Handler) sendAPIError(w http.ResponseWriter, r *http.Request, status int, anthropicType, openAIType, code, message string) {
+	if wantsAnthropicErrors(r) {
+		h.sendClaudeError(w, status, anthropicType, message)
+		return
+	}
+	h.sendOpenAIErrorWithCode(w, status, openAIType, code, message)
+}
+
+func (h *Handler) sendAPINotFound(w http.ResponseWriter, r *http.Request) {
+	h.sendAPIError(w, r, http.StatusNotFound, "not_found_error", "invalid_request_error", "not_found",
+		fmt.Sprintf("Unknown request URL: %s %s", r.Method, r.URL.Path))
+}
+
+func (h *Handler) sendAPIMethodNotAllowed(w http.ResponseWriter, r *http.Request, allow string) {
+	if allow != "" {
+		w.Header().Set("Allow", allow)
+	}
+	h.sendAPIError(w, r, http.StatusMethodNotAllowed, "invalid_request_error", "invalid_request_error", "method_not_allowed",
+		fmt.Sprintf("Method %s is not allowed for %s", r.Method, r.URL.Path))
+}
+
+// sendBodyReadError reports a failed request body read; a body over the size
+// limit is a 413 like the official APIs return.
+func (h *Handler) sendBodyReadError(w http.ResponseWriter, r *http.Request, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		h.sendAPIError(w, r, http.StatusRequestEntityTooLarge, "request_too_large", "invalid_request_error", "request_too_large",
+			fmt.Sprintf("Request body exceeds the maximum size of %d bytes", tooLarge.Limit))
+		return
+	}
+	h.sendAPIError(w, r, http.StatusBadRequest, "invalid_request_error", "invalid_request_error", "", "Failed to read request body")
+}

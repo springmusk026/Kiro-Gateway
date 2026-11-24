@@ -27,9 +27,10 @@ func newAuthError(status int, code, message string) *authError {
 
 // extractProvidedKey reads the API key from Authorization (Bearer ...) or X-Api-Key header.
 func extractProvidedKey(r *http.Request) string {
-	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer ")
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	// The auth scheme is case-insensitive (RFC 7235).
+	if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+		return strings.TrimSpace(authHeader[7:])
 	}
 	if v := r.Header.Get("X-Api-Key"); v != "" {
 		return v

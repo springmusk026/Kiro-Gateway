@@ -427,11 +427,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		h.setAPICORSHeaders(w)
+		h.setAPICORSHeaders(w, r)
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
 			return
 		}
+		// Every API response carries a request id under both header names
+		// clients look for (Anthropic SDKs read request-id, OpenAI SDKs
+		// x-request-id). The trace reuses the same id.
+		reqID := newRequestID()
+		w.Header().Set("request-id", reqID)
+		w.Header().Set("X-Request-Id", reqID)
 	}
 	if r.Body != nil && r.Method != http.MethodGet {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes())
@@ -455,11 +461,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // setAPICORSHeaders allows browser clients to call the public /v1 API.
-func (h *Handler) setAPICORSHeaders(w http.ResponseWriter) {
+func (h *Handler) setAPICORSHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, anthropic-version, anthropic-beta, x-api-key, x-stainless-os, x-stainless-lang, x-stainless-package-version, x-stainless-runtime, x-stainless-runtime-version, x-stainless-arch")
-	w.Header().Set("Access-Control-Expose-Headers", "x-request-id, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
+	allowHeaders := "Content-Type, Authorization, X-Api-Key, anthropic-version, anthropic-beta, anthropic-dangerous-direct-browser-access, x-api-key, x-stainless-os, x-stainless-lang, x-stainless-package-version, x-stainless-runtime, x-stainless-runtime-version, x-stainless-arch, x-stainless-retry-count, x-stainless-timeout, openai-organization, openai-project, openai-beta"
+	// Echo whatever the preflight asks for, so new SDK headers do not break
+	// browser clients.
+	if r != nil {
+		if requested := strings.TrimSpace(r.Header.Get("Access-Control-Request-Headers")); requested != "" {
+			allowHeaders = requested
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Access-Control-Expose-Headers", "request-id, x-request-id, retry-after, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
 }
 
 func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
@@ -519,8 +534,20 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 		h.handleStats(w, r)
 
 	default:
+		if isAPIPath(path) {
+			h.sendAPINotFound(w, r)
+			return
+		}
 		http.Error(w, "Not Found", 404)
 	}
+}
+
+// isAPIPath reports paths under the public API surface, which answer with JSON
+// errors rather than plain-text ones.
+func isAPIPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/") || strings.HasPrefix(path, "/anthropic/") ||
+		strings.HasPrefix(path, "/chat/") || strings.HasPrefix(path, "/responses/") ||
+		strings.HasPrefix(path, "/messages/") || strings.HasPrefix(path, "/models/")
 }
 
 // handleHealth 健康检查（不暴露统计数据）
@@ -923,13 +950,13 @@ func mergeStringLists(base []string, extra []string) []string {
 // handleCountTokens Token 计数（Claude Code 会调用）
 func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendClaudeError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -965,14 +992,14 @@ func (h *Handler) handleClaudeMessages(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	// 读取请求
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendClaudeError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -1860,13 +1887,13 @@ func (h *Handler) sendClaudeError(w http.ResponseWriter, status int, errType, me
 // handleOpenAIChat OpenAI API 处理
 func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendOpenAIError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)

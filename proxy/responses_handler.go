@@ -15,13 +15,13 @@ const defaultResponsesModel = "claude-sonnet-4.5"
 
 func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendOpenAIError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
