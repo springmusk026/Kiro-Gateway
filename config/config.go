@@ -217,6 +217,12 @@ type Config struct {
 	// solely because usageCurrent >= usageLimit.
 	AllowOverUsage bool `json:"allowOverUsage,omitempty"`
 
+	// SessionAffinity pins each API key to the account that last served it, so
+	// consecutive turns hit the same account and reuse its prompt cache. Off by
+	// default because with a single shared key it concentrates all traffic on
+	// one account. KIRO_SESSION_AFFINITY=1 also enables it.
+	SessionAffinity bool `json:"sessionAffinity,omitempty"`
+
 	// Proxy configuration: optional outbound proxy for Kiro API requests
 	// Format: "socks5://host:port", "socks5://user:pass@host:port",
 	//         "http://host:port",  "http://user:pass@host:port"
@@ -1315,6 +1321,16 @@ func UpdateProxySettings(proxyURL string) error {
 }
 
 // GetAllowOverUsage returns whether over-usage is allowed when account quota is exhausted.
+// GetSessionAffinity reports whether API-key → account affinity is enabled.
+func GetSessionAffinity() bool {
+	if v := strings.TrimSpace(os.Getenv("KIRO_SESSION_AFFINITY")); v != "" {
+		return v == "1" || strings.EqualFold(v, "true")
+	}
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	return cfg != nil && cfg.SessionAffinity
+}
+
 func GetAllowOverUsage() bool {
 	cfgLock.RLock()
 	defer cfgLock.RUnlock()

@@ -161,7 +161,7 @@ func (h *Handler) handleResponsesNonStream(
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -169,6 +169,7 @@ func (h *Handler) handleResponsesNonStream(
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 
@@ -227,6 +228,7 @@ func (h *Handler) handleResponsesNonStream(
 			// Integrity failures are upstream hiccups, not account faults.
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			}
 			continue
 		}
@@ -417,7 +419,7 @@ func (h *Handler) handleResponsesStream(
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -425,6 +427,7 @@ func (h *Handler) handleResponsesStream(
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 
@@ -589,6 +592,7 @@ func (h *Handler) handleResponsesStream(
 				// Integrity failures are upstream hiccups, not account faults.
 				if !isStreamIntegrityError(err) {
 					h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 				}
 				continue
 			}

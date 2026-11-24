@@ -89,6 +89,8 @@ type Handler struct {
 	microsoftFlowMu       sync.Mutex
 	microsoftCanceled     map[string]time.Time
 	microsoftDiscoveries  map[string]*microsoftProfileDiscovery
+	// sessionAffinity maps apiKeyID → accountID (see pickAccount).
+	sessionAffinity sync.Map
 }
 
 type microsoftProfileSelection struct {
@@ -1023,7 +1025,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -1031,6 +1033,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
@@ -1392,6 +1395,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			excluded[account.ID] = true
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
+				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !messageStarted {
 				continue
@@ -1617,7 +1621,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -1625,6 +1629,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
@@ -1689,6 +1694,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 			excluded[account.ID] = true
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
+				h.dropAffinity(apiKeyID, account.ID)
 			}
 			continue
 		}
@@ -1832,7 +1838,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -1840,6 +1846,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 
@@ -2178,6 +2185,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			// Integrity failures are upstream hiccups, not account faults.
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
+				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !responseStarted {
 				continue
@@ -2253,7 +2261,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 	reqStart := time.Now()
 
 	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pool.GetNextForModelExcluding(model, excluded)
+		account := h.pickAccount(apiKeyID, model, excluded)
 		if account == nil {
 			break
 		}
@@ -2261,6 +2269,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 			lastErr = err
 			excluded[account.ID] = true
 			h.handleAccountFailure(account, err)
+			h.dropAffinity(apiKeyID, account.ID)
 			continue
 		}
 
@@ -2320,6 +2329,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 			// Integrity failures are upstream hiccups, not account faults.
 			if !isStreamIntegrityError(err) {
 				h.handleAccountFailure(account, err)
+				h.dropAffinity(apiKeyID, account.ID)
 			}
 			continue
 		}

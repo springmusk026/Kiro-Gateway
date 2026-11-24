@@ -255,6 +255,35 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 	return best
 }
 
+// GetPreferredForModel returns the account with the given ID when it is
+// currently eligible for model under the same rules round-robin uses
+// (not excluded, supports the model, not cooling down, not quota blocked).
+// It returns nil otherwise, so callers can fall back to round-robin.
+func (p *AccountPool) GetPreferredForModel(id, model string, excluded map[string]bool) *config.Account {
+	if id == "" || (excluded != nil && excluded[id]) {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for i := range p.accounts {
+		acc := &p.accounts[i]
+		if acc.ID != id {
+			continue
+		}
+		if !p.accountHasModel(acc.ID, model) {
+			return nil
+		}
+		if cooldown, ok := p.cooldowns[acc.ID]; ok && time.Now().Before(cooldown) {
+			return nil
+		}
+		if isQuotaBlocked(*acc, config.GetAllowOverUsage()) {
+			return nil
+		}
+		return acc
+	}
+	return nil
+}
+
 // GetByID 根据 ID 获取账号
 func (p *AccountPool) GetByID(id string) *config.Account {
 	p.mu.RLock()
@@ -527,4 +556,22 @@ func effectiveWeight(weight int) int {
 		return 1
 	}
 	return weight
+}
+
+// NewTestPool builds a standalone pool over the given accounts. Intended for
+// tests in other packages; production code uses GetPool.
+func NewTestPool(accounts []config.Account) *AccountPool {
+	return &AccountPool{
+		accounts:    accounts,
+		cooldowns:   make(map[string]time.Time),
+		errorCounts: make(map[string]int),
+		modelLists:  make(map[string]map[string]bool),
+	}
+}
+
+// SetCooldownForTest puts an account into cooldown for d. Test helper.
+func (p *AccountPool) SetCooldownForTest(id string, d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cooldowns[id] = time.Now().Add(d)
 }
