@@ -47,6 +47,7 @@ type ResponseOutputItem struct {
 	Content   []ResponseContentPart `json:"content,omitempty"`
 	CallID    string                `json:"call_id,omitempty"`
 	Name      string                `json:"name,omitempty"`
+	Namespace string                `json:"namespace,omitempty"`
 	Arguments string                `json:"arguments,omitempty"`
 	// Input carries the raw payload of a custom_tool_call output item, which
 	// Codex reads instead of arguments for freeform tools.

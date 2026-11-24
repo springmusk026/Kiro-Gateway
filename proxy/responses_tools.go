@@ -12,9 +12,16 @@ type responsesToolCallShape struct {
 	Type      string
 	Arguments string // JSON object, for function_call
 	Input     string // raw payload, for custom_tool_call
+	Namespace string // Codex namespace the tool was declared in, if any
 }
 
-func shapeResponsesToolCall(tu KiroToolUse, customTools map[string]bool) responsesToolCallShape {
+func shapeResponsesToolCall(tu KiroToolUse, customTools map[string]bool, namespaces ...map[string]string) responsesToolCallShape {
+	ns := ""
+	for _, m := range namespaces {
+		if v := m[tu.Name]; v != "" {
+			ns = v
+		}
+	}
 	if customTools[tu.Name] {
 		return responsesToolCallShape{
 			Type:  responsesCustomToolCallType,
@@ -30,7 +37,7 @@ func shapeResponsesToolCall(tu KiroToolUse, customTools map[string]bool) respons
 			args = encoded
 		}
 	}
-	return responsesToolCallShape{Type: "function_call", Arguments: string(args)}
+	return responsesToolCallShape{Type: "function_call", Arguments: string(args), Namespace: ns}
 }
 
 // outputItem renders the shape as an output item for the SSE stream. withPayload
@@ -43,6 +50,9 @@ func (s responsesToolCallShape) outputItem(id string, tu KiroToolUse, status str
 		"status":  status,
 		"call_id": tu.ToolUseID,
 		"name":    tu.Name,
+	}
+	if s.Namespace != "" {
+		item["namespace"] = s.Namespace
 	}
 	key, payload := "arguments", s.Arguments
 	if s.Type == responsesCustomToolCallType {

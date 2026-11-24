@@ -135,6 +135,15 @@ func convertResponsesInputItems(items []json.RawMessage) ([]OpenAIMessage, error
 				messages = append(messages, *msg)
 			}
 
+		case typ == "agent_message":
+			// Codex multi-agent v2 delivers a spawned sub-agent's task (and
+			// later inter-agent messages) as this item type. Dropping it
+			// leaves the sub-agent running with no task at all.
+			flushPendingUser()
+			if text := extractAgentMessageText(obj); text != "" {
+				messages = append(messages, OpenAIMessage{Role: "user", Content: text})
+			}
+
 		case typ == "function_call_output" || typ == "tool_result" || typ == "custom_tool_call_output":
 			flushPendingUser()
 			callID, _ := obj["call_id"].(string)
@@ -296,4 +305,30 @@ func stringField(obj map[string]interface{}, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// extractAgentMessageText joins the text parts of a Codex "agent_message" item.
+// Codex tags these parts "encrypted_content", but the payload is only real
+// ciphertext against its own backend; against any other provider it is the
+// plain task text, so both part kinds are read as text.
+func extractAgentMessageText(obj map[string]interface{}) string {
+	content, _ := obj["content"].([]interface{})
+	var parts []string
+	for _, c := range content {
+		part, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch part["type"] {
+		case "input_text", "text":
+			if text, ok := part["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		case "encrypted_content":
+			if text, ok := part["encrypted_content"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
 }

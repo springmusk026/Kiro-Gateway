@@ -945,6 +945,10 @@ func cloneSchemaValue(v interface{}) interface{} {
 // cleanSchema 递归清理会导致 Kiro 400 的 schema 字段。
 func cleanSchema(m map[string]interface{}) {
 	delete(m, "additionalProperties")
+	// "encrypted" is a non-standard keyword Codex puts on its multi-agent tool
+	// schemas (spawn_agent/send_message "message") for its own transport.
+	// Kiro does not understand it.
+	delete(m, "encrypted")
 
 	// required 必须是非空数组，否则 Kiro 会报 Improperly formed request。
 	if req, exists := m["required"]; exists {
@@ -1195,6 +1199,13 @@ type OpenAITool struct {
 	//
 	//	{"type":"custom","name":"apply_patch","format":{"type":"grammar",...}}
 	Format map[string]interface{} `json:"format,omitempty"`
+	// Namespace is set programmatically (never parsed from JSON) when a tool is
+	// flattened out of a Codex namespace wrapper such as "collaboration".
+	// Codex's function_call wire format carries the namespace as a sibling
+	// "namespace" field next to the bare name, and its tool router matches on
+	// both, so a call returned without it fails locally with
+	// "unsupported call: spawn_agent".
+	Namespace string `json:"-"`
 }
 
 // UnmarshalJSON accepts both the Chat Completions tool shape, where the tool
@@ -2290,7 +2301,12 @@ func flattenOpenAITools(tools []OpenAITool, depth int) []OpenAITool {
 			if depth >= maxToolNamespaceDepth {
 				continue
 			}
-			flat = append(flat, flattenOpenAITools(tool.Tools, depth+1)...)
+			for _, child := range flattenOpenAITools(tool.Tools, depth+1) {
+				if child.Namespace == "" {
+					child.Namespace = tool.Function.Name
+				}
+				flat = append(flat, child)
+			}
 			continue
 		}
 		flat = append(flat, tool)
@@ -2526,4 +2542,24 @@ func KiroToOpenAIResponseWithReasoning(content, reasoningContent string, toolUse
 		}},
 		"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, includeCache),
 	}
+}
+
+// collectToolNamespaces maps each flattened tool name to the Codex namespace it
+// was declared in, so the Responses path can echo it on function_call items.
+func collectToolNamespaces(tools []OpenAITool) map[string]string {
+	var out map[string]string
+	for _, tool := range flattenOpenAITools(tools, 0) {
+		if tool.Namespace == "" {
+			continue
+		}
+		name := shortenToolName(tool.Function.Name)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
+		out[name] = tool.Namespace
+	}
+	return out
 }
