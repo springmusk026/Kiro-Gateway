@@ -6,7 +6,6 @@ import (
 	"kiro-go/config"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +23,9 @@ type AccountPool struct {
 	modelLists    map[string]map[string]bool // accountID → set of modelIDs (from ListAvailableModels)
 	// throttleStreak counts consecutive rate limits per account (backoff).
 	throttleStreak map[string]int
+	// usageLocal estimates credits spent per account since its last usage
+	// refresh (usage-aware routing, see usage_routing.go).
+	usageLocal map[string]usageEstimate
 }
 
 var (
@@ -82,44 +84,11 @@ func (p *AccountPool) GetNextExcluding(excluded map[string]bool) *config.Account
 		return nil
 	}
 
-	allowOverUsage := config.GetAllowOverUsage()
-	now := time.Now()
-	n := len(p.accounts)
-	seen := make(map[string]bool)
-
-	// 加权轮询查找可用账号
-	for i := 0; i < n; i++ {
-		idx := atomic.AddUint64(&p.currentIndex, 1) % uint64(n)
-		acc := &p.accounts[idx]
-
-		if excluded != nil && excluded[acc.ID] {
-			seen[acc.ID] = true
-			continue
-		}
-		if seen[acc.ID] {
-			continue
-		}
-
-		// 跳过冷却中的账号
-		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
-			seen[acc.ID] = true
-			continue
-		}
-
-		// 跳过即将过期的 Token
-		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
-			seen[acc.ID] = true
-			continue
-		}
-
-		// Skip accounts whose quota is exhausted, unless overrides apply.
-		if isQuotaBlocked(*acc, allowOverUsage) {
-			seen[acc.ID] = true
-			continue
-		}
-
+	// Weighted round-robin over eligible accounts, preferring headroom.
+	if acc := p.selectLocked("", false, excluded); acc != nil {
 		return acc
 	}
+	allowOverUsage := config.GetAllowOverUsage()
 
 	// 无可用账号，返回冷却时间最短的（排除额度用尽的，除非允许超额）
 	var best *config.Account
@@ -197,40 +166,10 @@ func (p *AccountPool) GetNextForModelExcluding(model string, excluded map[string
 		return nil
 	}
 
-	allowOverUsage := config.GetAllowOverUsage()
-	now := time.Now()
-	n := len(p.accounts)
-	seen := make(map[string]bool)
-
-	for i := 0; i < n; i++ {
-		idx := atomic.AddUint64(&p.currentIndex, 1) % uint64(n)
-		acc := &p.accounts[idx]
-
-		if excluded != nil && excluded[acc.ID] {
-			seen[acc.ID] = true
-			continue
-		}
-		if seen[acc.ID] {
-			continue
-		}
-		if !p.accountHasModel(acc.ID, model) {
-			seen[acc.ID] = true
-			continue
-		}
-		if cooldown, ok := p.cooldowns[acc.ID]; ok && now.Before(cooldown) {
-			seen[acc.ID] = true
-			continue
-		}
-		if acc.ExpiresAt > 0 && time.Now().Unix() > acc.ExpiresAt-tokenRefreshSkewSeconds {
-			seen[acc.ID] = true
-			continue
-		}
-		if isQuotaBlocked(*acc, allowOverUsage) {
-			seen[acc.ID] = true
-			continue
-		}
+	if acc := p.selectLocked(model, true, excluded); acc != nil {
 		return acc
 	}
+	allowOverUsage := config.GetAllowOverUsage()
 
 	// fallback：找冷却时间最短且支持该模型的账号
 	var best *config.Account
@@ -280,6 +219,12 @@ func (p *AccountPool) GetPreferredForModel(id, model string, excluded map[string
 			return nil
 		}
 		if isQuotaBlocked(*acc, config.GetAllowOverUsage()) {
+			return nil
+		}
+		// A bound account keeps its traffic until it crosses the usage
+		// threshold while an account with headroom is available.
+		if threshold := config.GetUsageRoutingThreshold(); p.isSaturatedLocked(acc, threshold) &&
+			p.hasUnsaturatedAlternativeLocked(acc.ID, model, excluded, threshold) {
 			return nil
 		}
 		return acc
@@ -574,6 +519,7 @@ func (p *AccountPool) UpdateStats(id string, tokens int, credits float64) {
 				p.accounts[i].TotalTokens += tokens
 				p.accounts[i].TotalCredits += credits
 				p.accounts[i].LastUsed = time.Now().Unix()
+				p.recordUsageLocked(&p.accounts[i], credits)
 
 				requestCount = p.accounts[i].RequestCount
 				errorCount = p.accounts[i].ErrorCount
