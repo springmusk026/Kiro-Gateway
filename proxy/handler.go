@@ -11,6 +11,7 @@ import (
 	"kiro-go/logger"
 	"kiro-go/pool"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -4555,11 +4556,22 @@ func (h *Handler) apiGetAccountModelsCached(w http.ResponseWriter, r *http.Reque
 // ==================== 静态文件服务 ====================
 
 func (h *Handler) serveAdminPage(w http.ResponseWriter, r *http.Request) {
-	serveWebFile(w, r, "index.html")
+	serveAdminShell(w, r)
 }
 
+// serveStaticFile serves built console assets; any other path under /admin is
+// a client-side route and gets the SPA shell.
 func (h *Handler) serveStaticFile(w http.ResponseWriter, r *http.Request) {
-	serveWebFile(w, r, strings.TrimPrefix(r.URL.Path, "/admin/"))
+	rel := strings.TrimPrefix(r.URL.Path, "/admin/")
+	if webFileExists(rel) {
+		serveWebFile(w, r, rel)
+		return
+	}
+	if strings.HasPrefix(rel, "assets/") || strings.Contains(path.Base(rel), ".") {
+		http.NotFound(w, r)
+		return
+	}
+	serveAdminShell(w, r)
 }
 
 // apiGetThinkingConfig 获取 thinking 配置

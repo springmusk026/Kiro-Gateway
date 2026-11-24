@@ -154,3 +154,22 @@ func serveWebFile(w http.ResponseWriter, r *http.Request, rel string) {
 	}
 	http.ServeFile(w, r, full)
 }
+
+// webFileExists reports whether rel is a regular file inside web/.
+func webFileExists(rel string) bool {
+	info, err := os.Stat(filepath.Join("web", filepath.Clean("/"+rel)))
+	return err == nil && !info.IsDir()
+}
+
+// serveAdminShell serves the console's SPA entry document. It must not be
+// cached, so a new build is picked up immediately (assets are hashed).
+func serveAdminShell(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-cache")
+	for _, name := range []string{"_shell.html", "index.html"} {
+		if webFileExists(name) {
+			http.ServeFile(w, r, filepath.Join("web", name))
+			return
+		}
+	}
+	http.Error(w, "admin console not built: run `npm ci && npm run build` in frontend/", http.StatusNotFound)
+}
