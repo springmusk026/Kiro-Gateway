@@ -260,7 +260,7 @@ func responsesItemsForUser(m KiroUserInputMessage) []map[string]interface{} {
 	}
 
 	content := m.Content
-	hasMedia := len(m.Images) > 0
+	hasMedia := len(m.Images) > 0 || len(m.Documents) > 0
 	if !hasMedia {
 		if strings.TrimSpace(content) != "" {
 			items = append(items, map[string]interface{}{"role": "user", "content": content})
@@ -268,8 +268,9 @@ func responsesItemsForUser(m KiroUserInputMessage) []map[string]interface{} {
 		return items
 	}
 
-	// Multimodal turn: text first, then images as data URLs.
-	parts := make([]map[string]interface{}, 0, len(m.Images)+1)
+	// Multimodal turn: text first, then images, then documents, all as data
+	// URLs (the official client's order).
+	parts := make([]map[string]interface{}, 0, len(m.Images)+len(m.Documents)+1)
 	if content != "" {
 		parts = append(parts, map[string]interface{}{"type": "input_text", "text": content})
 	}
@@ -281,6 +282,14 @@ func responsesItemsForUser(m KiroUserInputMessage) []map[string]interface{} {
 		parts = append(parts, map[string]interface{}{
 			"type":      "input_image",
 			"image_url": "data:image/" + format + ";base64," + img.Source.Bytes,
+		})
+	}
+	for _, doc := range m.Documents {
+		filename, dataURL := documentDataURL(doc)
+		parts = append(parts, map[string]interface{}{
+			"type":      "input_file",
+			"filename":  filename,
+			"file_data": dataURL,
 		})
 	}
 	if len(parts) > 0 {

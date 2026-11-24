@@ -166,7 +166,7 @@ func validateClaudeRequestShape(req *ClaudeRequest) string {
 		}
 
 		text, images, toolResults := extractClaudeUserContent(msg.Content)
-		if normalizeUserContent(text, len(images) > 0) != "" || len(toolResults) > 0 {
+		if normalizeUserContent(text, len(images) > 0) != "" || len(toolResults) > 0 || hasMediaParts(msg.Content) {
 			hasUserContext = true
 		}
 	}
@@ -277,7 +277,7 @@ func validateOpenAIRequestShape(req *OpenAIRequest) string {
 			continue
 		}
 		text, images := extractOpenAIUserContent(msg.Content)
-		if normalizeUserContent(text, len(images) > 0) != "" {
+		if normalizeUserContent(text, len(images) > 0) != "" || hasMediaParts(msg.Content) {
 			hasUserContext = true
 		}
 	}
@@ -1100,6 +1100,13 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	req.Model = actualModel
 	if msg := disabledModelMessage(actualModel); msg != "" {
 		h.sendClaudeError(w, 400, "invalid_request_error", msg)
+		return
+	}
+	// Download URL images/documents and validate documents before anything
+	// is sent upstream.
+	if err := prepareClaudeMedia(r.Context(), &req); err != nil {
+		status, errType, msg := mediaErrorStatus(err)
+		h.sendClaudeError(w, status, errType, msg)
 		return
 	}
 	effectiveReq := cloneClaudeRequestForThinking(&req, thinking)
@@ -2062,6 +2069,14 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	req.Model = actualModel
 	if msg := disabledModelMessage(actualModel); msg != "" {
 		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
+		return
+	}
+	if err := prepareOpenAIMedia(r.Context(), req.Messages); err != nil {
+		status, errType, msg := mediaErrorStatus(err)
+		if status == 500 {
+			errType = "server_error"
+		}
+		h.sendOpenAIError(w, status, errType, msg)
 		return
 	}
 	estimatedInputTokens := estimateOpenAIRequestInputTokens(&req)

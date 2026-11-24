@@ -114,6 +114,16 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 		h.sendOpenAIError(w, 400, "invalid_request_error", "input must contain at least one user message")
 		return
 	}
+	// input_image URLs and input_file items are downloaded / validated here,
+	// replayed history included (document limits are per request).
+	if err := prepareOpenAIMedia(r.Context(), finalMessages); err != nil {
+		status, errType, msg := mediaErrorStatus(err)
+		if status == 500 {
+			errType = "server_error"
+		}
+		h.sendOpenAIError(w, status, errType, msg)
+		return
+	}
 
 	openaiReq := &OpenAIRequest{
 		Model:    req.Model,
