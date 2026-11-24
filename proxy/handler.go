@@ -428,6 +428,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes())
 	}
 
+	// Cap upstream calls per client request (chat endpoints and playground).
+	if !isAdmin || strings.HasPrefix(path, "/admin/api/playground/") {
+		r = r.WithContext(withUpstreamBudget(r.Context(), maxUpstreamAttempts()))
+	}
+
 	// 路由
 	h.route(w, r, path)
 }

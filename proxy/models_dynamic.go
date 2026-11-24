@@ -13,7 +13,9 @@ import (
 // modelsCacheTTL is how long the aggregated upstream model list is served
 // before a background refresh is started. Requests never wait on a refresh
 // unless the cache is completely empty.
-const modelsCacheTTL = 10 * time.Minute
+// It matches the 30-minute background refresh, so clients polling /v1/models
+// do not add extra ListAvailableModels calls per account.
+const modelsCacheTTL = 30 * time.Minute
 
 // ensureModelsFresh makes sure the aggregated model cache is populated and
 // schedules a background refresh once it is older than modelsCacheTTL.

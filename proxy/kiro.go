@@ -499,6 +499,9 @@ endpointLoop:
 			req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", streamAttempt, maxStreamAttemptsPerEndpoint))
 			req.Header.Set("Amz-Sdk-Invocation-Id", invocationID)
 
+			if budgetErr := takeUpstreamAttempt(ctx); budgetErr != nil {
+				return budgetErr
+			}
 			resp, err := GetClientForProxy(ResolveAccountProxyURL(account)).Do(req)
 			if err != nil {
 				lastErr = err
@@ -602,7 +605,7 @@ func accountEmailForLog(account *config.Account) string {
 }
 
 func waitForStreamRetry(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
+	timer := time.NewTimer(jitter(delay))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

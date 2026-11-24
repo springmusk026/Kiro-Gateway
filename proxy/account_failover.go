@@ -257,6 +257,10 @@ func (h *Handler) handleAccountFailure(account *config.Account, err error) {
 		return
 	}
 
+	if errors.Is(err, errUpstreamBudgetExhausted) {
+		// Our own retry cap, not an account problem.
+		return
+	}
 	errMsg := err.Error()
 	switch {
 	case isOverageErrorMessage(errMsg):

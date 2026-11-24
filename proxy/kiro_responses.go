@@ -366,6 +366,9 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 		req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
 		req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", attempt, maxStreamAttemptsPerEndpoint))
 
+		if budgetErr := takeUpstreamAttempt(ctx); budgetErr != nil {
+			return budgetErr
+		}
 		resp, doErr := client.Do(req)
 		if doErr != nil {
 			lastErr = doErr
