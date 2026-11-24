@@ -1090,6 +1090,8 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 		h.sendClaudeError(w, 400, "invalid_request_error", msg)
 		return
 	}
+	// Responses echo the client's model name; routing uses the resolved id.
+	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()
@@ -1111,7 +1113,7 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	// request. Answering it locally saves an upstream request (and its
 	// credits) on every client launch.
 	if !req.Stream && isClaudeQuotaProbe(&req) {
-		writeClaudeProbeResponse(w, req.Model)
+		writeClaudeProbeResponse(w, echoModel(r.Context(), req.Model))
 		return
 	}
 
@@ -1179,7 +1181,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				"type":          "message",
 				"role":          "assistant",
 				"content":       []interface{}{},
-				"model":         model,
+				"model":         echoModel(ctx, model),
 				"stop_reason":   nil,
 				"stop_sequence": nil,
 				"usage":         buildClaudeUsageMap(startInputTokens, 0, messageStartUsage, cacheProfile != nil),
@@ -1985,7 +1987,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 			}
 		}
 
-		resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, model, upstreamStopReason)
+		resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, echoModel(ctx, model), upstreamStopReason)
 		if matchedStop != "" {
 			resp.StopReason = "stop_sequence"
 			resp.StopSequence = &matchedStop
@@ -2048,6 +2050,8 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		h.sendOpenAIError(w, 400, "invalid_request_error", msg)
 		return
 	}
+	// Responses echo the client's model name; routing uses the resolved id.
+	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()
@@ -2108,7 +2112,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				"id":      chatID,
 				"object":  "chat.completion.chunk",
 				"created": created,
-				"model":   model,
+				"model":   echoModel(ctx, model),
 				"choices": []map[string]interface{}{{
 					"index":         0,
 					"delta":         map[string]interface{}{"role": "assistant", "content": ""},
@@ -2200,7 +2204,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
 						"created": created,
-						"model":   model,
+						"model":   echoModel(ctx, model),
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
@@ -2225,7 +2229,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
 						"created": created,
-						"model":   model,
+						"model":   echoModel(ctx, model),
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
@@ -2241,7 +2245,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
 						"created": created,
-						"model":   model,
+						"model":   echoModel(ctx, model),
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"reasoning_content": content},
@@ -2264,7 +2268,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
 					"created": created,
-					"model":   model,
+					"model":   echoModel(ctx, model),
 					"choices": []map[string]interface{}{{
 						"index":         0,
 						"delta":         map[string]string{"content": content},
@@ -2425,7 +2429,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
 					"created": created,
-					"model":   model,
+					"model":   echoModel(ctx, model),
 					"choices": []map[string]interface{}{{
 						"index": 0,
 						"delta": map[string]interface{}{
@@ -2557,7 +2561,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			"id":      chatID,
 			"object":  "chat.completion.chunk",
 			"created": created,
-			"model":   model,
+			"model":   echoModel(ctx, model),
 			"choices": []map[string]interface{}{{
 				"index":         0,
 				"delta":         map[string]interface{}{},
@@ -2579,7 +2583,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				"id":      chatID,
 				"object":  "chat.completion.chunk",
 				"created": created,
-				"model":   model,
+				"model":   echoModel(ctx, model),
 				"choices": []interface{}{},
 				"usage":   usage,
 			})
@@ -2741,7 +2745,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		thinkingFormat := config.GetThinkingConfig().OpenAIFormat
-		resp := KiroToOpenAIResponseWithReasoning(finalContent, reasoningContent, toolUses, inputTokens, outputTokens, model, thinkingFormat, upstreamStopReason, cacheUsage, cacheProfile != nil)
+		resp := KiroToOpenAIResponseWithReasoning(finalContent, reasoningContent, toolUses, inputTokens, outputTokens, echoModel(ctx, model), thinkingFormat, upstreamStopReason, cacheUsage, cacheProfile != nil)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		json.NewEncoder(w).Encode(resp)
 		return

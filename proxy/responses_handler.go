@@ -42,6 +42,9 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	if strings.TrimSpace(req.Model) == "" {
 		req.Model = defaultResponsesModel
 	}
+	// Responses (and stored responses) echo the client's model name; routing
+	// and request logs use the resolved id.
+	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
 
 	storedInputCopy := append(json.RawMessage(nil), req.Input...)
 
@@ -273,7 +276,7 @@ func (h *Handler) handleResponsesNonStream(
 		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
-		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
 		respObj.StoredInput = storedInput
 		respObj.Instructions = req.Instructions
 
@@ -438,7 +441,7 @@ func (h *Handler) handleResponsesStream(
 		Object:             "response",
 		CreatedAt:          createdAt,
 		Status:             "in_progress",
-		Model:              model,
+		Model:              echoModel(ctx, model),
 		Output:             []ResponseOutputItem{},
 		Usage:              ResponsesUsage{},
 		PreviousResponseID: req.PreviousResponseID,
@@ -722,7 +725,7 @@ func (h *Handler) handleResponsesStream(
 		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
-		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
 		respObj.CreatedAt = createdAt
 		respObj.StoredInput = storedInput
 		respObj.Instructions = req.Instructions
