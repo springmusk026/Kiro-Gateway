@@ -30,40 +30,51 @@ CORS headers that echo the browser's requested headers (so the Anthropic and Ope
 
 ## Anthropic Messages
 
-Supported: text, images (base64), tools and `tool_choice` (`auto`, `any`, `tool`, `none`), `tool_result`
+Supported: text, images (base64, or `url` sources fetched by the gateway — see [Images and documents](#images-and-documents)),
+`document` blocks (base64 PDF and other formats, `text` and `content` sources, `url` sources; also inside
+`tool_result`), tools and `tool_choice` (`auto`, `any`, `tool`, `none`), `tool_result`
 including `is_error`, `system` as string or blocks, `stop_sequences`, `temperature`, `top_p`, `max_tokens`,
 streaming with the official event order (`message_start` → content blocks → `message_delta` →
 `message_stop`) plus `ping` heartbeats, `thinking` and `output_config.effort` (see [Thinking](#thinking)),
 and the `web_search` server tool (relayed through Kiro's MCP endpoint).
 
 Usage reports `input_tokens`, `output_tokens` and, when Kiro reports them, `cache_read_input_tokens` /
-`cache_creation_input_tokens`.
+`cache_creation_input_tokens`. The response `model` is the model name the request sent (aliases are resolved
+internally; request logs show the resolved Kiro id).
+
+Thinking blocks carry a `signature`: streams send `content_block_start` with `"signature": ""` and a
+`signature_delta` right before the block's `content_block_stop`; non-streaming blocks include the field. Kiro
+does not provide a signature, so the value is an **opaque constant marker that cannot be verified**. Replayed
+`thinking` and `redacted_thinking` blocks in history are accepted and not forwarded.
 
 Not supported or approximated:
 - Assistant prefill (a final `assistant` message) is rejected with 400, as current Claude models do.
 - `top_k`, `metadata`, `service_tier`, `container`, `context_management` are accepted and ignored.
-- `document` / PDF blocks and `url` image sources are not forwarded; send base64 images and extracted text.
-- Thinking blocks carry no `signature` (Kiro does not provide one); clients that replay thinking blocks
-  should not need it to be verified.
+- `file` sources (Files API `file_id`) for images and documents are rejected with 400.
+- Citations on documents (`citations`) are not returned.
 
 ## OpenAI Chat Completions
 
-Supported: `messages` (system, developer, user, assistant, tool), images as data URLs, `tools` and
+Supported: `messages` (system, developer, user, assistant, tool), images as data URLs or `http(s)` URLs
+(fetched by the gateway), `file` parts with `file_data` (data URL + `filename`; see
+[Images and documents](#images-and-documents)), `tools` and
 `tool_choice` (`none`, `auto`, `required`, named function), `parallel_tool_calls`, `max_tokens` /
 `max_completion_tokens`, `temperature`, `top_p`, `stop` (string or up to 4), `stream` with
 `stream_options.include_usage`, `reasoning_effort` / `reasoning` (see [Thinking](#thinking)).
 
 Streams start with a `role: "assistant"` chunk, keep one `created` value, and send `: keep-alive` comments
 while waiting. Reasoning is returned as `reasoning_content` by default (configurable to `<think>` tags or a
-`thinking` field). Tool calls and text can appear in the same message.
+`thinking` field) and counted in `usage.completion_tokens_details.reasoning_tokens` (estimated from the
+reasoning text). Tool calls and text can appear in the same message. `model` echoes the requested name.
 
-Not supported: `n > 1` (400), `logprobs` (returned as `null`), audio input/output, non-image `file` parts,
-`http(s)` image URLs.
+Not supported: `n > 1` (400), `logprobs` (returned as `null`), audio input/output, `file` parts that reference
+an uploaded `file_id` (400).
 
 ## OpenAI Responses
 
 Supported: string or item `input` (messages, function calls and outputs, custom/freeform tools, Codex
-`additional_tools` and namespaces), `instructions`, `tools`, `tool_choice`, `parallel_tool_calls`,
+`additional_tools` and namespaces, `input_image` as data URL or `http(s)` URL, `input_file` with `file_data`;
+replayed `reasoning` items are accepted and dropped), `instructions`, `tools`, `tool_choice`, `parallel_tool_calls`,
 `max_output_tokens`, `temperature`, `top_p`, `reasoning.effort`, `previous_response_id`, `store`, `metadata`.
 
 Streaming follows the official sequence (`response.created`, `response.in_progress` once, output item and
@@ -72,10 +83,44 @@ content part events with their `.done` counterparts, `response.completed` / `res
 a full response object with `error.code` (`context_length_exceeded`, `rate_limit_exceeded`,
 `insufficient_quota`, `server_error`), which Codex uses to decide whether to compact or retry.
 
+With thinking on, reasoning is returned as a `reasoning` output item (`summary: [{type: "summary_text",
+text}]`) before the message, streamed as `response.output_item.added` → `response.reasoning_summary_part.added`
+→ `response.reasoning_summary_text.delta`… → `response.reasoning_summary_text.done` →
+`response.reasoning_summary_part.done` → `response.output_item.done`. The item is part of the final and the
+stored response, and `usage.output_tokens_details.reasoning_tokens` is estimated from its text. `model` echoes
+the requested name, also on stored responses.
+
 Responses are stored (unless `store: false`) for 30 days for `previous_response_id`, `GET` and `DELETE`.
 
 Not supported: background mode, hosted tools other than function/custom tools (`file_search`,
-`image_generation`, `local_shell` are dropped), `include: ["reasoning.encrypted_content"]`.
+`image_generation`, `local_shell` are dropped), `input_file` / `input_image` by `file_id` (400).
+`include: ["reasoning.encrypted_content"]` is accepted and ignored: reasoning items carry no
+`encrypted_content`.
+
+## Images and documents
+
+**Images** are forwarded as base64 (png, jpeg, gif, webp). `http(s)` image URLs (Anthropic `source.type: "url"`,
+OpenAI `image_url.url`, Responses `input_image.image_url`) are downloaded by the gateway:
+
+- `https` only (`KIRO_FETCH_ALLOW_HTTP=1` also allows `http`); at most 3 redirects; 10 s timeout; 5 MB per
+  image; at most 20 URLs per request.
+- The host must resolve to public addresses only — loopback, private, link-local (including cloud metadata),
+  multicast, CGNAT and reserved ranges are refused, on every redirect hop and again when connecting. Through
+  the configured outbound proxy the hostname is checked before the request is handed to the proxy.
+- The `Content-Type` must be `image/png|jpeg|gif|webp` and the bytes must match one of those formats.
+- Nothing is cached. `KIRO_FETCH_IMAGE_URLS=0` disables fetching; such requests get a 400 that says so.
+
+**Documents** — Anthropic `document` blocks, OpenAI Chat `file` parts (`file.file_data` data URL +
+`filename`) and Responses `input_file` items — are sent to Kiro as documents (`input_file` on the
+`/v1/responses` transport, `documents` on `generateAssistantResponse`). Formats: pdf, csv, doc, docx, html, md,
+txt, xls, xlsx (from the media type, or the file extension when the type is generic). Anthropic `text` and
+`content` sources are inlined into the prompt as `<document name="…">…</document>`. Document `url` sources
+(Anthropic) and `file_url` (Responses) are fetched under the same rules as images (PDF or UTF-8 text).
+
+Limits: 5 documents per request (earlier turns included), 4.5 MB per document. Names are reduced to letters,
+digits, spaces, hyphens, parentheses and brackets and made unique. An unsupported format, invalid base64, an
+oversize or surplus document is rejected with `400 invalid_request_error` naming the problem — nothing is
+dropped silently.
 
 ## Thinking
 
