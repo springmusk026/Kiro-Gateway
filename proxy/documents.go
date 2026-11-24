@@ -445,6 +445,7 @@ func finalizePayloadDocuments(payload *KiroPayload) {
 	if payload == nil {
 		return
 	}
+	trimHistoryDocuments(payload)
 	used := map[string]bool{}
 	fix := func(m *KiroUserInputMessage) {
 		if m == nil {
@@ -507,4 +508,41 @@ func documentDataURL(d KiroDocument) (filename, dataURL string) {
 		name = defaultDocumentName
 	}
 	return name + "." + d.Format, "data:" + mt + ";base64," + d.Source.Bytes
+}
+
+// trimHistoryDocuments keeps at most maxDocumentsPerRequest documents in the
+// whole payload: the current message's first, then the newest history turns.
+// Older documents are removed from history and the turn gets a short note, so
+// long conversations with many attachments keep working instead of failing
+// on the backend's document count limit.
+func trimHistoryDocuments(payload *KiroPayload) {
+	remaining := maxDocumentsPerRequest - len(payload.ConversationState.CurrentMessage.UserInputMessage.Documents)
+	if remaining < 0 {
+		remaining = 0
+	}
+	hist := payload.ConversationState.History
+	for i := len(hist) - 1; i >= 0; i-- {
+		m := hist[i].UserInputMessage
+		if m == nil || len(m.Documents) == 0 {
+			continue
+		}
+		if len(m.Documents) <= remaining {
+			remaining -= len(m.Documents)
+			continue
+		}
+		keep := m.Documents[:remaining]
+		dropped := m.Documents[remaining:]
+		remaining = 0
+		names := make([]string, 0, len(dropped))
+		for _, d := range dropped {
+			names = append(names, fmt.Sprintf("%q", d.Name))
+		}
+		note := fmt.Sprintf("[Earlier attachment(s) %s omitted from this request to stay within the per-request document limit.]", strings.Join(names, ", "))
+		if strings.TrimSpace(m.Content) == "" || m.Content == documentOnlyUserContent {
+			m.Content = note
+		} else {
+			m.Content += "\n\n" + note
+		}
+		m.Documents = append([]KiroDocument(nil), keep...)
+	}
 }

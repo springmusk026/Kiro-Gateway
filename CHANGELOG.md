@@ -6,7 +6,8 @@
 - Documents: Anthropic `document` blocks (base64, `text`, `content` and `url` sources, also inside
   `tool_result`), OpenAI Chat `file` parts and Responses `input_file` items are forwarded to Kiro as documents
   (pdf, csv, doc, docx, html, md, txt, xls, xlsx). Unsupported formats, files over 4.5 MB and more than 5
-  documents per request are rejected with a clear 400 instead of being dropped.
+  documents in one message are rejected with a clear 400 instead of being dropped; across a conversation the
+  5 newest documents are sent and older ones are replaced by a note.
 - Image URLs: `http(s)` images (Anthropic `url` sources, OpenAI `image_url`, Responses `input_image`) are
   downloaded by the gateway with SSRF protection (https only, public addresses only on every redirect, 10 s,
   5 MB, image types checked by header and bytes, outbound proxy honoured). `KIRO_FETCH_IMAGE_URLS=0` turns

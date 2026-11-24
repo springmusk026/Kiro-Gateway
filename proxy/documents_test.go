@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -339,5 +340,41 @@ func TestResponsesHandlerForwardsInputFile(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"documents":[{"name":"paper","format":"pdf"`) {
 		t.Fatalf("upstream body has no document: %s", body)
+	}
+}
+
+// A long conversation resends every earlier attachment; it must keep working
+// once the total passes the per-request limit, keeping the newest documents.
+func TestDocumentsAcrossTurnsKeepNewest(t *testing.T) {
+	doc := `{"type":"document","title":"%s","source":{"type":"base64","media_type":"application/pdf","data":"` + testPDF + `"}}`
+	var msgs []string
+	for turn := 1; turn <= 4; turn++ {
+		msgs = append(msgs,
+			fmt.Sprintf(`{"role":"user","content":[`+doc+`,`+doc+`,{"type":"text","text":"turn %d"}]}`, fmt.Sprintf("t%da", turn), fmt.Sprintf("t%db", turn), turn),
+			`{"role":"assistant","content":"ok"}`)
+	}
+	msgs = append(msgs, `{"role":"user","content":"summarize"}`)
+	req := mustClaudeRequest(t, `{"model":"claude-sonnet-4.5","max_tokens":10,"messages":[`+strings.Join(msgs, ",")+`]}`)
+	if err := prepareClaudeMedia(context.Background(), req); err != nil {
+		t.Fatalf("8 documents over 4 turns must be accepted: %v", err)
+	}
+	payload := ClaudeToKiro(req, false)
+	var total int
+	var oldestNote bool
+	for _, h := range payload.ConversationState.History {
+		if m := h.UserInputMessage; m != nil {
+			total += len(m.Documents)
+			if strings.Contains(m.Content, "omitted from this request") {
+				oldestNote = true
+			}
+			for _, d := range m.Documents {
+				if strings.HasPrefix(d.Name, "t1") {
+					t.Errorf("oldest document %q should have been dropped", d.Name)
+				}
+			}
+		}
+	}
+	if total > maxDocumentsPerRequest || total == 0 || !oldestNote {
+		t.Fatalf("documents kept = %d (max %d), note = %v", total, maxDocumentsPerRequest, oldestNote)
 	}
 }

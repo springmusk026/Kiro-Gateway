@@ -117,7 +117,9 @@ txt, xls, xlsx (from the media type, or the file extension when the type is gene
 `content` sources are inlined into the prompt as `<document name="…">…</document>`. Document `url` sources
 (Anthropic) and `file_url` (Responses) are fetched under the same rules as images (PDF or UTF-8 text).
 
-Limits: 5 documents per request (earlier turns included), 4.5 MB per document. Names are reduced to letters,
+Limits: 5 documents per message and 4.5 MB per document. Across a conversation, only the 5 newest documents
+are sent upstream (Kiro's per-request limit); older ones are replaced in history by a short note, so long
+conversations with many attachments keep working. Names are reduced to letters,
 digits, spaces, hyphens, parentheses and brackets and made unique. An unsupported format, invalid base64, an
 oversize or surplus document is rejected with `400 invalid_request_error` naming the problem — nothing is
 dropped silently.

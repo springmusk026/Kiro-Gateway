@@ -51,19 +51,27 @@ func mediaErrorStatus(err error) (int, string, string) {
 }
 
 // mediaBudget tracks per-request limits while walking the messages.
+//
+// The document limit applies per message. Clients resend the whole history on
+// every turn, so a request-wide cap would make a conversation fail forever once
+// it had accumulated more documents; instead finalizePayloadDocuments keeps the
+// newest documents and replaces older ones in history with a note.
 type mediaBudget struct {
 	ctx       context.Context
-	documents int
+	documents int // documents in the message being walked
 	fetches   int
 }
 
 func (b *mediaBudget) countDocument() error {
 	b.documents++
 	if b.documents > maxDocumentsPerRequest {
-		return newMediaError("too many documents: at most %d documents are supported per request (including earlier turns)", maxDocumentsPerRequest)
+		return newMediaError("too many documents: at most %d documents are supported per message", maxDocumentsPerRequest)
 	}
 	return nil
 }
+
+// nextMessage resets the per-message document count.
+func (b *mediaBudget) nextMessage() { b.documents = 0 }
 
 func (b *mediaBudget) fetch(rawURL string, kind remoteMediaKind, maxBytes int64) (*fetchedMedia, error) {
 	b.fetches++
@@ -87,6 +95,7 @@ func prepareClaudeMedia(ctx context.Context, req *ClaudeRequest) error {
 			// handled (dropped) by the assistant extractor.
 			continue
 		}
+		b.nextMessage()
 		if err := b.prepareClaudeBlocks(req.Messages[i].Content); err != nil {
 			return err
 		}
@@ -192,6 +201,7 @@ func prepareOpenAIMedia(ctx context.Context, messages []OpenAIMessage) error {
 		if role != "user" && role != "tool" {
 			continue
 		}
+		b.nextMessage()
 		if err := b.prepareOpenAIContent(messages[i].Content); err != nil {
 			return err
 		}
