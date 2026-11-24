@@ -314,3 +314,16 @@ func TestAccountAllowOverageMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestRetiredKiroVersionIsIgnored(t *testing.T) {
+	for _, v := range []string{"0.11.107", "v0.12.200", "0.1"} {
+		if !isRetiredKiroVersion(v) {
+			t.Fatalf("%s should be retired", v)
+		}
+	}
+	for _, v := range []string{"1.4.154", "1.0.0", "2.0"} {
+		if isRetiredKiroVersion(v) {
+			t.Fatalf("%s should be honored", v)
+		}
+	}
+}

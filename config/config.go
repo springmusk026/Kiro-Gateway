@@ -1366,6 +1366,23 @@ func UpdateLogLevel(level string) error {
 	return Save()
 }
 
+// DefaultKiroVersion is the Kiro IDE version advertised upstream. Kiro rejects
+// pre-1.0 clients with 403 FEATURE_NOT_SUPPORTED ("This version of Kiro is no
+// longer supported").
+const DefaultKiroVersion = "1.4.154"
+
+// isRetiredKiroVersion reports whether a configured version is a pre-1.0
+// release Kiro no longer serves. Such values were written into many
+// config.json files by older builds, so they are ignored rather than honored.
+func isRetiredKiroVersion(v string) bool {
+	v = strings.TrimSpace(strings.TrimPrefix(v, "v"))
+	major := v
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		major = v[:i]
+	}
+	return major == "0"
+}
+
 type KiroClientConfig struct {
 	KiroVersion   string
 	SystemVersion string
@@ -1376,8 +1393,8 @@ func GetKiroClientConfig() KiroClientConfig {
 	cfgLock.RLock()
 	defer cfgLock.RUnlock()
 
-	kiroVersion := "0.11.107"
-	if cfg != nil && cfg.KiroVersion != "" {
+	kiroVersion := DefaultKiroVersion
+	if cfg != nil && cfg.KiroVersion != "" && !isRetiredKiroVersion(cfg.KiroVersion) {
 		kiroVersion = cfg.KiroVersion
 	}
 

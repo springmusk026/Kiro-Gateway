@@ -212,6 +212,9 @@ func captureClaudeMessagesKiroRequest(t *testing.T, h *Handler, requestBody stri
 		_, _ = w.Write(awsEventStreamFrame(t, "assistantResponseEvent", map[string]interface{}{
 			"content": "request accepted",
 		}))
+		_, _ = w.Write(awsEventStreamFrame(t, "metadataEvent", map[string]interface{}{
+			"stopReason": "end_turn",
+		}))
 	}))
 	defer server.Close()
 	defer swapKiroEndpointsForTest(t, server)()
@@ -247,6 +250,9 @@ func captureOpenAIChatKiroRequest(t *testing.T, h *Handler, requestBody string, 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(awsEventStreamFrame(t, "assistantResponseEvent", map[string]interface{}{
 			"content": "request accepted",
+		}))
+		_, _ = w.Write(awsEventStreamFrame(t, "metadataEvent", map[string]interface{}{
+			"stopReason": "end_turn",
 		}))
 	}))
 	defer server.Close()
