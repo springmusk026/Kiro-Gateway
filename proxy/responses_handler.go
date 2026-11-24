@@ -15,13 +15,13 @@ const defaultResponsesModel = "claude-sonnet-4.5"
 
 func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendOpenAIError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -30,6 +30,13 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	if err := json.Unmarshal(body, &req); err != nil {
 		h.sendOpenAIError(w, 400, "invalid_request_error", "Invalid JSON")
 		return
+	}
+	// Keep the client's tool definitions verbatim for the response echo.
+	var rawEcho struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	if json.Unmarshal(body, &rawEcho) == nil {
+		req.RawTools = rawEcho.Tools
 	}
 
 	if strings.TrimSpace(req.Model) == "" {
@@ -136,6 +143,10 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	if req.MaxOutputTokens != nil {
 		openaiReq.MaxTokens = *req.MaxOutputTokens
 	}
+	if req.TopP != nil {
+		openaiReq.TopP = *req.TopP
+	}
+	openaiReq.ParallelToolCalls = req.ParallelToolCalls
 
 	openaiReq.Model = actualModel
 
@@ -238,6 +249,9 @@ func (h *Handler) handleResponsesNonStream(
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
@@ -275,11 +289,11 @@ func (h *Handler) handleResponsesNonStream(
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
 
 func mapResponsesCompletion(reason string) (status, incompleteReason string) {
@@ -360,7 +374,12 @@ func buildResponsesObject(
 		inputTokensDetails = &ResponsesInputTokensDetails{CachedTokens: cachedTokens}
 	}
 
-	return &ResponsesObject{
+	var echoReq ResponsesRequest
+	if req != nil {
+		echoReq = *req
+	}
+	req = &echoReq
+	obj := &ResponsesObject{
 		ID:        id,
 		Object:    "response",
 		CreatedAt: time.Now().Unix(),
@@ -377,6 +396,8 @@ func buildResponsesObject(
 		Metadata:           req.Metadata,
 		IncompleteDetails:  incompleteDetails,
 	}
+	obj.applyRequestEcho(req, req.RawTools)
+	return obj
 }
 
 func (h *Handler) handleResponsesStream(
@@ -394,8 +415,15 @@ func (h *Handler) handleResponsesStream(
 		h.sendOpenAIError(w, 500, "server_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, sseKeepAliveFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
-	send := func(eventName string, payload interface{}) {
+	// Every event carries a sequence_number, as the official stream does.
+	seq := 0
+	send := func(eventName string, payload map[string]interface{}) {
+		payload["sequence_number"] = seq
+		seq++
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return
@@ -415,11 +443,34 @@ func (h *Handler) handleResponsesStream(
 		Usage:              ResponsesUsage{},
 		PreviousResponseID: req.PreviousResponseID,
 		Metadata:           req.Metadata,
+		Instructions:       req.Instructions,
 	}
+	initial.applyRequestEcho(req, req.RawTools)
 	send("response.created", map[string]interface{}{
 		"type":     "response.created",
 		"response": initial,
 	})
+	// Sent once per response, not once per account attempt.
+	send("response.in_progress", map[string]interface{}{
+		"type":     "response.in_progress",
+		"response": initial,
+	})
+
+	// sendFailed ends the stream with a response.failed event carrying a full
+	// response object, the items already completed and a classified error.
+	sendFailed := func(output []ResponseOutputItem, code, message string) {
+		failed := *initial
+		failed.Status = "failed"
+		failed.Output = output
+		if failed.Output == nil {
+			failed.Output = []ResponseOutputItem{}
+		}
+		failed.Error = &ResponsesError{Code: code, Message: message}
+		send("response.failed", map[string]interface{}{
+			"type":     "response.failed",
+			"response": &failed,
+		})
+	}
 
 	excluded := make(map[string]bool)
 	var lastErr error
@@ -441,15 +492,12 @@ func (h *Handler) handleResponsesStream(
 
 		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
 
-		send("response.in_progress", map[string]interface{}{
-			"type":     "response.in_progress",
-			"response": initial,
-		})
-
 		var (
 			fullText           strings.Builder
+			msgText            strings.Builder
 			reasoningText      strings.Builder
 			toolUses           []KiroToolUse
+			doneItems          []ResponseOutputItem
 			inputTokens        int
 			outputTokens       int
 			credits            float64
@@ -459,6 +507,7 @@ func (h *Handler) handleResponsesStream(
 
 		messageItemID := generateOutputItemID("msg")
 		messageStarted := false
+		messagesClosed := 0
 		outputIndex := 0
 		contentIndex := 0
 
@@ -475,7 +524,7 @@ func (h *Handler) handleResponsesStream(
 					"type":    "message",
 					"role":    "assistant",
 					"status":  "in_progress",
-					"content": []map[string]interface{}{},
+					"content": []interface{}{},
 				},
 			})
 			send("response.content_part.added", map[string]interface{}{
@@ -483,11 +532,51 @@ func (h *Handler) handleResponsesStream(
 				"item_id":       messageItemID,
 				"output_index":  outputIndex,
 				"content_index": contentIndex,
-				"part": map[string]interface{}{
-					"type": "output_text",
-					"text": "",
-				},
+				"part":          ResponseContentPart{Type: "output_text"},
 			})
+		}
+
+		// closeMessage finishes the open message item with the official
+		// done-event sequence: output_text.done, content_part.done,
+		// output_item.done.
+		closeMessage := func(text string) {
+			if !messageStarted {
+				return
+			}
+			part := ResponseContentPart{Type: "output_text", Text: text}
+			send("response.output_text.done", map[string]interface{}{
+				"type":          "response.output_text.done",
+				"item_id":       messageItemID,
+				"output_index":  outputIndex,
+				"content_index": contentIndex,
+				"text":          text,
+				"logprobs":      []interface{}{},
+			})
+			send("response.content_part.done", map[string]interface{}{
+				"type":          "response.content_part.done",
+				"item_id":       messageItemID,
+				"output_index":  outputIndex,
+				"content_index": contentIndex,
+				"part":          part,
+			})
+			item := ResponseOutputItem{
+				ID:      messageItemID,
+				Type:    "message",
+				Role:    "assistant",
+				Status:  "completed",
+				Content: []ResponseContentPart{part},
+			}
+			send("response.output_item.done", map[string]interface{}{
+				"type":         "response.output_item.done",
+				"output_index": outputIndex,
+				"item":         item,
+			})
+			doneItems = append(doneItems, item)
+			messageStarted = false
+			messagesClosed++
+			msgText.Reset()
+			messageItemID = generateOutputItemID("msg")
+			outputIndex++
 		}
 
 		callback := &KiroStreamCallback{
@@ -500,6 +589,7 @@ func (h *Handler) handleResponsesStream(
 					return
 				}
 				fullText.WriteString(text)
+				msgText.WriteString(text)
 				ensureMessageStarted()
 				send("response.output_text.delta", map[string]interface{}{
 					"type":          "response.output_text.delta",
@@ -507,38 +597,12 @@ func (h *Handler) handleResponsesStream(
 					"output_index":  outputIndex,
 					"content_index": contentIndex,
 					"delta":         text,
+					"logprobs":      []interface{}{},
 				})
 				responseStarted = true
 			},
 			OnToolUse: func(tu KiroToolUse) {
-				if messageStarted {
-					send("response.content_part.done", map[string]interface{}{
-						"type":          "response.content_part.done",
-						"item_id":       messageItemID,
-						"output_index":  outputIndex,
-						"content_index": contentIndex,
-						"part": map[string]interface{}{
-							"type": "output_text",
-							"text": fullText.String(),
-						},
-					})
-					send("response.output_item.done", map[string]interface{}{
-						"type":         "response.output_item.done",
-						"output_index": outputIndex,
-						"item": map[string]interface{}{
-							"id":     messageItemID,
-							"type":   "message",
-							"role":   "assistant",
-							"status": "completed",
-							"content": []map[string]interface{}{{
-								"type": "output_text",
-								"text": fullText.String(),
-							}},
-						},
-					})
-					messageStarted = false
-					outputIndex++
-				}
+				closeMessage(msgText.String())
 
 				toolUses = append(toolUses, tu)
 				shape := shapeResponsesToolCall(tu, customTools, toolNamespaces)
@@ -549,6 +613,7 @@ func (h *Handler) handleResponsesStream(
 					"item":         shape.outputItem(fcID, tu, "in_progress", false),
 				})
 				send(shape.deltaEvent(), shape.deltaPayload(fcID, outputIndex))
+				send(shape.doneEvent(), shape.donePayload(fcID, outputIndex, tu.Name))
 				// Codex reads tool calls only from output_item.done, ignoring the
 				// delta events above, so this event must carry the complete call.
 				send("response.output_item.done", map[string]interface{}{
@@ -556,6 +621,20 @@ func (h *Handler) handleResponsesStream(
 					"output_index": outputIndex,
 					"item":         shape.outputItem(fcID, tu, "completed", true),
 				})
+				doneItem := ResponseOutputItem{
+					ID:        fcID,
+					Type:      shape.Type,
+					Status:    "completed",
+					CallID:    tu.ToolUseID,
+					Name:      tu.Name,
+					Namespace: shape.Namespace,
+				}
+				if shape.Type == responsesCustomToolCallType {
+					doneItem.Input = shape.Input
+				} else {
+					doneItem.Arguments = shape.Arguments
+				}
+				doneItems = append(doneItems, doneItem)
 				outputIndex++
 				responseStarted = true
 			},
@@ -579,8 +658,10 @@ func (h *Handler) handleResponsesStream(
 		// clearing.
 		reset := func() {
 			fullText.Reset()
+			msgText.Reset()
 			reasoningText.Reset()
 			toolUses = nil
+			doneItems = nil
 			inputTokens = 0
 			outputTokens = 0
 			credits = 0
@@ -602,19 +683,13 @@ func (h *Handler) handleResponsesStream(
 					h.handleAccountFailure(account, err)
 					h.dropAffinity(apiKeyID, account.ID)
 				}
+				if isTerminalUpstreamError(err) {
+					break
+				}
 				continue
 			}
-			send("response.failed", map[string]interface{}{
-				"type": "response.failed",
-				"response": map[string]interface{}{
-					"id":     respID,
-					"status": "failed",
-					"error": map[string]string{
-						"type":    "server_error",
-						"message": err.Error(),
-					},
-				},
-			})
+			info := classifyUpstreamError(err)
+			sendFailed(doneItems, info.Code, info.Message)
 			h.recordFailureWithDetails(ctx, "responses", model, account.ID, err)
 			return
 		}
@@ -626,30 +701,12 @@ func (h *Handler) handleResponsesStream(
 		}
 
 		if messageStarted {
-			send("response.content_part.done", map[string]interface{}{
-				"type":          "response.content_part.done",
-				"item_id":       messageItemID,
-				"output_index":  outputIndex,
-				"content_index": contentIndex,
-				"part": map[string]interface{}{
-					"type": "output_text",
-					"text": finalContent,
-				},
-			})
-			send("response.output_item.done", map[string]interface{}{
-				"type":         "response.output_item.done",
-				"output_index": outputIndex,
-				"item": map[string]interface{}{
-					"id":     messageItemID,
-					"type":   "message",
-					"role":   "assistant",
-					"status": "completed",
-					"content": []map[string]interface{}{{
-						"type": "output_text",
-						"text": finalContent,
-					}},
-				},
-			})
+			text := msgText.String()
+			if messagesClosed == 0 {
+				// A single message: report the same text as response.completed.
+				text = finalContent
+			}
+			closeMessage(text)
 		}
 
 		if realInputTokens > 0 {
@@ -676,39 +733,85 @@ func (h *Handler) handleResponsesStream(
 			}
 		}
 
+		// The official stream ends with response.completed; there is no
+		// trailing "data: [DONE]".
 		send("response.completed", map[string]interface{}{
 			"type":     "response.completed",
 			"response": respObj,
 		})
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		flusher.Flush()
 		return
 	}
 
 	if lastErr == nil {
-		send("response.failed", map[string]interface{}{
-			"type": "response.failed",
-			"response": map[string]interface{}{
-				"id":     respID,
-				"status": "failed",
-				"error": map[string]string{
-					"type":    "server_error",
-					"message": "No available accounts",
-				},
-			},
-		})
+		sendFailed(nil, "server_overloaded", noAvailableAccountsMessage)
 		return
 	}
 	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
-	send("response.failed", map[string]interface{}{
-		"type": "response.failed",
-		"response": map[string]interface{}{
-			"id":     respID,
-			"status": "failed",
-			"error": map[string]string{
-				"type":    "server_error",
-				"message": lastErr.Error(),
-			},
-		},
-	})
+	info := classifyUpstreamError(lastErr)
+	sendFailed(nil, info.Code, info.Message)
+}
+
+// handleResponseByID serves GET and DELETE /v1/responses/{id} from the
+// response store. Responses here never run in background mode, so cancel is
+// always rejected as the official API rejects it for non-background ones.
+func (h *Handler) handleResponseByID(w http.ResponseWriter, r *http.Request, rest string) {
+	rest = strings.Trim(rest, "/")
+	id, action, _ := strings.Cut(rest, "/")
+	if id == "" {
+		h.sendAPINotFound(w, r)
+		return
+	}
+	notFound := func() {
+		h.sendOpenAIErrorWithCode(w, http.StatusNotFound, "invalid_request_error", "",
+			fmt.Sprintf("No response found with id '%s'.", id))
+	}
+
+	switch action {
+	case "cancel":
+		if r.Method != http.MethodPost {
+			h.sendAPIMethodNotAllowed(w, r, "POST")
+			return
+		}
+		if _, err := loadResponse(id); err != nil {
+			notFound()
+			return
+		}
+		h.sendOpenAIErrorWithCode(w, http.StatusBadRequest, "invalid_request_error", "",
+			"Only responses created with background=true can be cancelled.")
+		return
+	case "":
+	default:
+		h.sendAPINotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		resp, err := loadResponse(id)
+		if err != nil {
+			notFound()
+			return
+		}
+		resp.fillWireDefaults()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodDelete:
+		deleted, err := deleteResponse(id)
+		if err != nil {
+			h.sendOpenAIError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+		if !deleted {
+			notFound()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      id,
+			"object":  "response",
+			"deleted": true,
+		})
+	default:
+		h.sendAPIMethodNotAllowed(w, r, "GET, DELETE")
+	}
 }

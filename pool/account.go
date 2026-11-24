@@ -541,6 +541,25 @@ func (p *AccountPool) AvailableCount() int {
 	return count
 }
 
+// EarliestCooldown returns how long until the first cooling-down account in
+// the pool becomes available again (0 when none is cooling down).
+func (p *AccountPool) EarliestCooldown() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	now := time.Now()
+	var best time.Duration
+	for _, acc := range p.accounts {
+		until, ok := p.cooldowns[acc.ID]
+		if !ok || !now.Before(until) {
+			continue
+		}
+		if d := until.Sub(now); best == 0 || d < best {
+			best = d
+		}
+	}
+	return best
+}
+
 // UpdateStats 更新账号统计
 func (p *AccountPool) UpdateStats(id string, tokens int, credits float64) {
 	p.mu.Lock()

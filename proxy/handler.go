@@ -253,6 +253,12 @@ func validateOpenAIRequestShape(req *OpenAIRequest) string {
 	if len(req.Messages) == 0 {
 		return "messages must not be empty"
 	}
+	if req.N != nil && *req.N > 1 {
+		return "n > 1 is not supported; request one choice at a time"
+	}
+	if seqs := openAIStopSequences(req.Stop); len(seqs) > 4 {
+		return "stop accepts at most 4 sequences"
+	}
 
 	hasNonSystem := false
 	hasUserContext := false
@@ -428,11 +434,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		h.setAPICORSHeaders(w)
+		h.setAPICORSHeaders(w, r)
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
 			return
 		}
+		// Every API response carries a request id under both header names
+		// clients look for (Anthropic SDKs read request-id, OpenAI SDKs
+		// x-request-id). The trace reuses the same id.
+		reqID := newRequestID()
+		w.Header().Set("request-id", reqID)
+		w.Header().Set("X-Request-Id", reqID)
 	}
 	if r.Body != nil && r.Method != http.MethodGet {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes())
@@ -456,11 +468,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // setAPICORSHeaders allows browser clients to call the public /v1 API.
-func (h *Handler) setAPICORSHeaders(w http.ResponseWriter) {
+func (h *Handler) setAPICORSHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, anthropic-version, anthropic-beta, x-api-key, x-stainless-os, x-stainless-lang, x-stainless-package-version, x-stainless-runtime, x-stainless-runtime-version, x-stainless-arch")
-	w.Header().Set("Access-Control-Expose-Headers", "x-request-id, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
+	allowHeaders := "Content-Type, Authorization, X-Api-Key, anthropic-version, anthropic-beta, anthropic-dangerous-direct-browser-access, x-api-key, x-stainless-os, x-stainless-lang, x-stainless-package-version, x-stainless-runtime, x-stainless-runtime-version, x-stainless-arch, x-stainless-retry-count, x-stainless-timeout, openai-organization, openai-project, openai-beta"
+	// Echo whatever the preflight asks for, so new SDK headers do not break
+	// browser clients.
+	if r != nil {
+		if requested := strings.TrimSpace(r.Header.Get("Access-Control-Request-Headers")); requested != "" {
+			allowHeaders = requested
+		}
+	}
+	w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Access-Control-Expose-Headers", "request-id, x-request-id, retry-after, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
 }
 
 func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
@@ -490,8 +511,21 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		h.handleOpenAIResponses(w, ar)
+	case strings.HasPrefix(path, "/v1/responses/") || strings.HasPrefix(path, "/responses/"):
+		ar := h.authenticateForOpenAI(w, r)
+		if ar == nil {
+			return
+		}
+		h.handleResponseByID(w, ar, path[strings.Index(path, "/responses/")+len("/responses/"):])
 	case path == "/v1/models" || path == "/models":
 		h.handleModels(w, r)
+	case strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/models/"):
+		id := path[strings.Index(path, "/models/")+len("/models/"):]
+		if id == "" {
+			h.handleModels(w, r)
+			return
+		}
+		h.handleModel(w, r, id)
 	case path == "/api/event_logging/batch":
 		// Claude Code 遥测端点 - 直接返回 200 OK
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -520,8 +554,20 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 		h.handleStats(w, r)
 
 	default:
+		if isAPIPath(path) {
+			h.sendAPINotFound(w, r)
+			return
+		}
 		http.Error(w, "Not Found", 404)
 	}
+}
+
+// isAPIPath reports paths under the public API surface, which answer with JSON
+// errors rather than plain-text ones.
+func isAPIPath(path string) bool {
+	return strings.HasPrefix(path, "/v1/") || strings.HasPrefix(path, "/anthropic/") ||
+		strings.HasPrefix(path, "/chat/") || strings.HasPrefix(path, "/responses/") ||
+		strings.HasPrefix(path, "/messages/") || strings.HasPrefix(path, "/models/")
 }
 
 // handleHealth 健康检查（不暴露统计数据）
@@ -551,8 +597,54 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// modelsListEpoch is the fixed creation time reported for every model. Kiro
+// does not publish one, and clients only need a stable value.
+const modelsListEpoch int64 = 1700000000
+
 // handleModels 模型列表
 func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		h.sendAPIMethodNotAllowed(w, r, "GET")
+		return
+	}
+	models := h.listModels()
+
+	resp := map[string]interface{}{
+		"object":   "list",
+		"data":     models,
+		"has_more": false,
+		"first_id": nil,
+		"last_id":  nil,
+	}
+	if len(models) > 0 {
+		resp["first_id"] = models[0]["id"]
+		resp["last_id"] = models[len(models)-1]["id"]
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleModel answers GET /v1/models/{id} with one entry of the list.
+func (h *Handler) handleModel(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		h.sendAPIMethodNotAllowed(w, r, "GET")
+		return
+	}
+	for _, m := range h.listModels() {
+		if mid, _ := m["id"].(string); strings.EqualFold(mid, id) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			json.NewEncoder(w).Encode(m)
+			return
+		}
+	}
+	h.sendAPIError(w, r, http.StatusNotFound, "not_found_error", "invalid_request_error", "model_not_found",
+		fmt.Sprintf("model: %s", id))
+}
+
+// listModels builds the model list shared by the OpenAI and Anthropic shapes:
+// every entry carries both the OpenAI fields (object, created, owned_by) and
+// the Anthropic ones (type, display_name, created_at).
+func (h *Handler) listModels() []map[string]interface{} {
 	// Live upstream model list (cached, refreshed in the background once stale).
 	cached := h.ensureModelsFresh()
 
@@ -572,12 +664,22 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 	models = appendConfiguredModelMappings(models, config.GetModelMappings(), thinkingSuffix)
 	models = filterDisabledModels(models, thinkingSuffix, config.GetModelMappings())
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"object": "list",
-		"data":   models,
-	})
-	return
+	createdAt := time.Unix(modelsListEpoch, 0).UTC().Format(time.RFC3339)
+	for _, m := range models {
+		if _, ok := m["created"]; !ok {
+			m["created"] = modelsListEpoch
+		}
+		if _, ok := m["type"]; !ok {
+			m["type"] = "model"
+		}
+		if _, ok := m["created_at"]; !ok {
+			m["created_at"] = createdAt
+		}
+		if _, ok := m["display_name"]; !ok {
+			m["display_name"] = m["id"]
+		}
+	}
+	return models
 }
 
 func buildAnthropicModelsResponse(cached []ModelInfo, thinkingSuffix string) []map[string]interface{} {
@@ -924,13 +1026,13 @@ func mergeStringLists(base []string, extra []string) []string {
 // handleCountTokens Token 计数（Claude Code 会调用）
 func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendClaudeError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -967,14 +1069,14 @@ func (h *Handler) handleClaudeMessages(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	// 读取请求
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendClaudeError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -1032,10 +1134,11 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	applyThinkingSpec(kiroPayload, actualModel, thinkingSpec)
 
 	// Stream or non-stream
+	ctx := withStopSequences(r.Context(), req.StopSequences)
 	if req.Stream {
-		h.handleClaudeStream(r.Context(), w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleClaudeStream(ctx, w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
-		h.handleClaudeNonStream(r.Context(), w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleClaudeNonStream(ctx, w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
 	}
 }
 
@@ -1050,6 +1153,9 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		h.sendClaudeError(w, 500, "api_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, claudePingFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
 	// 获取 thinking 输出格式配置
 	thinkingFormat := thinkingOpts.Format
@@ -1161,8 +1267,22 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		var thinkingStarted bool
 		var eventThinkingOpen bool
 
+		// Stop sequences apply to answer text only. A match cuts the text and
+		// cancels the upstream call; stopBypass lets held-back text out at the
+		// end of a text run.
+		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopBypass := false
+
 		sendText := func(text string, thinkingState int) {
 			if thinkingState == 0 {
+				if stopper != nil && !stopBypass {
+					text = stopper.Push(text)
+					if stopper.Done() {
+						cancelUpstream()
+					}
+				}
 				if text == "" {
 					return
 				}
@@ -1349,9 +1469,17 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 
+		flushStopText := func() {
+			if rest := stopper.Flush(); rest != "" {
+				stopBypass = true
+				sendText(rest, 0)
+				stopBypass = false
+			}
+		}
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
-				if text == "" {
+				if text == "" || stopper.Done() {
 					return
 				}
 				if isThinking {
@@ -1362,7 +1490,14 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				processClaudeText(text, isThinking, false)
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopper.Done() {
+					return
+				}
 				processClaudeText("", false, true)
+				flushStopText()
+				if stopper.Done() {
+					return
+				}
 				rawContentBuilder.WriteString(tu.Name)
 				if b, err := json.Marshal(tu.Input); err == nil {
 					rawContentBuilder.Write(b)
@@ -1441,10 +1576,15 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			thinkingSource = thinkingSourceUnknown
 			thinkingStarted = false
 			eventThinkingOpen = false
+			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset,
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
 			func() bool { return !messageStarted })
+		if err != nil && stopper.Done() {
+			// Upstream was cancelled because a stop sequence matched.
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -1456,17 +1596,18 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !messageStarted {
+				if isTerminalUpstreamError(err) {
+					break
+				}
 				continue
 			}
 			h.recordFailureWithDetails(ctx, "claude", model, account.ID, err)
-			h.sendSSE(w, flusher, "error", map[string]interface{}{
-				"type":  "error",
-				"error": map[string]string{"type": "api_error", "message": err.Error()},
-			})
+			h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, model))
 			return
 		}
 
 		processClaudeText("", false, true)
+		flushStopText()
 		if eventThinkingOpen {
 			sendText("", 3)
 		}
@@ -1494,12 +1635,18 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		stopReason := mapClaudeStopReason(upstreamStopReason, len(toolUses))
+		var stopSequence interface{}
+		if stopper.Done() {
+			stopReason = "stop_sequence"
+			stopSequence = stopper.Matched()
+		}
 
 		ensureMessageStart()
 		h.sendSSE(w, flusher, "message_delta", map[string]interface{}{
 			"type": "message_delta",
 			"delta": map[string]interface{}{
-				"stop_reason": stopReason,
+				"stop_reason":   stopReason,
+				"stop_sequence": stopSequence,
 			},
 			"usage": buildClaudeUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
 		})
@@ -1511,12 +1658,24 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	if lastErr == nil {
-		h.sendClaudeError(w, 503, "api_error", "No available accounts")
+		if hb.Committed() {
+			h.sendSSE(w, flusher, "error", map[string]interface{}{
+				"type":  "error",
+				"error": map[string]string{"type": "overloaded_error", "message": noAvailableAccountsMessage},
+			})
+			return
+		}
+		h.sendClaudeNoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
+	if hb.Committed() {
+		// A heartbeat already sent the 200 status line.
+		h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(lastErr, estimatedInputTokens, model))
+		return
+	}
+	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
 }
 
 func (h *Handler) sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
@@ -1709,15 +1868,26 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		var realInputTokens int
 		var upstreamStopReason string
 
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
+				if stopWatch.Hit() {
+					return
+				}
 				if isThinking {
 					thinkingContent += text
 				} else {
 					content += text
+					stopWatch.Observe(content, len(text))
 				}
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopWatch.Hit() {
+					return
+				}
 				toolUses = append(toolUses, tu)
 			},
 			OnComplete: func(inTok, outTok int) {
@@ -1748,11 +1918,15 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 			credits = 0
 			realInputTokens = 0
 			upstreamStopReason = ""
+			stopWatch.Reset()
 		}
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset, nil)
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
+		if err != nil && stopWatch.Hit() {
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -1763,11 +1937,15 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
 		thinkingFormat := thinkingOpts.Format
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
+		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
 		rawThinkingContent := thinkingContent
 		if thinking && rawThinkingContent == "" && extractedReasoning != "" {
 			rawThinkingContent = extractedReasoning
@@ -1808,6 +1986,10 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		}
 
 		resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, model, upstreamStopReason)
+		if matchedStop != "" {
+			resp.StopReason = "stop_sequence"
+			resp.StopSequence = &matchedStop
+		}
 		resp.Usage.InputTokens = billedClaudeInputTokens(inputTokens, cacheUsage)
 		resp.Usage.CacheCreationInputTokens = cacheUsage.CacheCreationInputTokens
 		resp.Usage.CacheReadInputTokens = cacheUsage.CacheReadInputTokens
@@ -1823,12 +2005,12 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 	}
 
 	if lastErr == nil {
-		h.sendClaudeError(w, 503, "api_error", "No available accounts")
+		h.sendClaudeNoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
+	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
 }
 
 func (h *Handler) sendClaudeError(w http.ResponseWriter, status int, errType, message string) {
@@ -1846,13 +2028,13 @@ func (h *Handler) sendClaudeError(w http.ResponseWriter, status int, errType, me
 // handleOpenAIChat OpenAI API 处理
 func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Method Not Allowed", 405)
+		h.sendAPIMethodNotAllowed(w, r, "POST")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.sendOpenAIError(w, 400, "invalid_request_error", "Failed to read request body")
+		h.sendBodyReadError(w, r, err)
 		return
 	}
 	body = maybeCompressRequestBody(body)
@@ -1885,10 +2067,14 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	applyThinkingSpec(kiroPayload, actualModel, thinkingSpec)
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
+	ctx := withStopSequences(r.Context(), openAIStopSequences(req.Stop))
+	if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
+		ctx = context.WithValue(ctx, includeUsageKey{}, true)
+	}
 	if req.Stream {
-		h.handleOpenAIStream(r.Context(), w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleOpenAIStream(ctx, w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
-		h.handleOpenAINonStream(r.Context(), w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleOpenAINonStream(ctx, w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
 	}
 }
 
@@ -1903,11 +2089,39 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		h.sendOpenAIError(w, 500, "server_error", "Streaming not supported")
 		return
 	}
+	hb := startSSEHeartbeat(ctx, w, flusher, sseKeepAliveFrame)
+	defer hb.Stop()
+	w, flusher = hb, hb
 
 	// 获取 thinking 输出格式配置
 	thinkingFormat := config.GetThinkingConfig().OpenAIFormat
 
 	chatID := "chatcmpl-" + uuid.New().String()
+	created := time.Now().Unix()
+	roleSent := false
+	// writeChunk emits one chunk. The first chunk of a stream announces the
+	// assistant role, as the official API does.
+	writeChunk := func(chunk map[string]interface{}) {
+		if !roleSent {
+			roleSent = true
+			roleData, _ := json.Marshal(map[string]interface{}{
+				"id":      chatID,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []map[string]interface{}{{
+					"index":         0,
+					"delta":         map[string]interface{}{"role": "assistant", "content": ""},
+					"logprobs":      nil,
+					"finish_reason": nil,
+				}},
+			})
+			fmt.Fprintf(w, "data: %s\n\n", roleData)
+		}
+		data, _ := json.Marshal(chunk)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
 	excluded := make(map[string]bool)
 	var lastErr error
 	reqStart := time.Now()
@@ -1943,12 +2157,15 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		var eventThinkingOpen bool
 		responseStarted := false
 
+		// Stop sequences: see handleClaudeStream.
+		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopBypass := false
+
 		sendStreamError := func(err error) {
 			data, _ := json.Marshal(map[string]interface{}{
-				"error": map[string]string{
-					"message": err.Error(),
-					"type":    "server_error",
-				},
+				"error": openAIStreamErrorObject(err),
 			})
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
@@ -1982,11 +2199,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
@@ -2006,11 +2224,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"content": text},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
@@ -2021,34 +2240,40 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					chunk = map[string]interface{}{
 						"id":      chatID,
 						"object":  "chat.completion.chunk",
-						"created": time.Now().Unix(),
+						"created": created,
 						"model":   model,
 						"choices": []map[string]interface{}{{
 							"index":         0,
 							"delta":         map[string]string{"reasoning_content": content},
+							"logprobs":      nil,
 							"finish_reason": nil,
 						}},
 					}
 				}
 			} else {
+				if stopper != nil && !stopBypass {
+					content = stopper.Push(content)
+					if stopper.Done() {
+						cancelUpstream()
+					}
+				}
 				if content == "" {
 					return
 				}
 				chunk = map[string]interface{}{
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
-					"created": time.Now().Unix(),
+					"created": created,
 					"model":   model,
 					"choices": []map[string]interface{}{{
 						"index":         0,
 						"delta":         map[string]string{"content": content},
+						"logprobs":      nil,
 						"finish_reason": nil,
 					}},
 				}
 			}
-			data, _ := json.Marshal(chunk)
-			fmt.Fprintf(w, "data: %s\n\n", string(data))
-			flusher.Flush()
+			writeChunk(chunk)
 			responseStarted = true
 		}
 
@@ -2158,9 +2383,17 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 
+		flushStopText := func() {
+			if rest := stopper.Flush(); rest != "" {
+				stopBypass = true
+				sendChunk(rest, 0)
+				stopBypass = false
+			}
+		}
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
-				if text == "" {
+				if text == "" || stopper.Done() {
 					return
 				}
 				if isThinking {
@@ -2171,7 +2404,14 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				processText(text, isThinking, false)
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopper.Done() {
+					return
+				}
 				processText("", false, true)
+				flushStopText()
+				if stopper.Done() {
+					return
+				}
 
 				args, _ := json.Marshal(tu.Input)
 				rawContentBuilder.WriteString(tu.Name)
@@ -2184,7 +2424,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				chunk := map[string]interface{}{
 					"id":      chatID,
 					"object":  "chat.completion.chunk",
-					"created": time.Now().Unix(),
+					"created": created,
 					"model":   model,
 					"choices": []map[string]interface{}{{
 						"index": 0,
@@ -2199,13 +2439,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 								},
 							}},
 						},
+						"logprobs":      nil,
 						"finish_reason": nil,
 					}},
 				}
 				toolCallIndex++
-				data, _ := json.Marshal(chunk)
-				fmt.Fprintf(w, "data: %s\n\n", string(data))
-				flusher.Flush()
+				writeChunk(chunk)
 				responseStarted = true
 			},
 			OnStopReason: func(reason string) {
@@ -2247,10 +2486,15 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			thinkingSource = thinkingSourceUnknown
 			thinkingStarted = false
 			eventThinkingOpen = false
+			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset,
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
 			func() bool { return !responseStarted })
+		if err != nil && stopper.Done() {
+			// Upstream was cancelled because a stop sequence matched.
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -2263,6 +2507,9 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !responseStarted {
+				if isTerminalUpstreamError(err) {
+					break
+				}
 				continue
 			}
 			h.recordFailureWithDetails(ctx, "openai", model, account.ID, err)
@@ -2271,6 +2518,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		}
 
 		processText("", false, true)
+		flushStopText()
 		if eventThinkingOpen {
 			sendChunk("", 3)
 		}
@@ -2300,34 +2548,74 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		h.promptCache.Update(account.ID, cacheProfile)
 		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		finishReason := mapOpenAIFinishReason(upstreamStopReason, len(toolCalls))
+		if stopper.Done() {
+			finishReason = "stop"
+		}
 
+		usage := buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil)
 		chunk := map[string]interface{}{
 			"id":      chatID,
 			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
+			"created": created,
 			"model":   model,
 			"choices": []map[string]interface{}{{
 				"index":         0,
 				"delta":         map[string]interface{}{},
+				"logprobs":      nil,
 				"finish_reason": finishReason,
 			}},
-			"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
 		}
-		data, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\n", string(data))
+		includeUsage, _ := ctx.Value(includeUsageKey{}).(bool)
+		if !includeUsage {
+			// Not official without stream_options.include_usage, but clients
+			// that never ask for it still read usage from the finish chunk.
+			chunk["usage"] = usage
+		}
+		writeChunk(chunk)
+		if includeUsage {
+			// Official shape: usage arrives in its own final chunk with an
+			// empty choices array.
+			writeChunk(map[string]interface{}{
+				"id":      chatID,
+				"object":  "chat.completion.chunk",
+				"created": created,
+				"model":   model,
+				"choices": []interface{}{},
+				"usage":   usage,
+			})
+		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 		flusher.Flush()
 		return
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		if hb.Committed() {
+			data, _ := json.Marshal(map[string]interface{}{
+				"error": openAIErrorObject("server_error", "server_overloaded", noAvailableAccountsMessage),
+			})
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+			return
+		}
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	if hb.Committed() {
+		// A heartbeat already sent the 200 status line.
+		data, _ := json.Marshal(map[string]interface{}{"error": openAIStreamErrorObject(lastErr)})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+		return
+	}
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
+
+// includeUsageKey marks a chat stream whose client set
+// stream_options.include_usage.
+type includeUsageKey struct{}
 
 // handleOpenAINonStream OpenAI 非流式响应
 func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWriter, payload *KiroPayload, model string, thinking bool, estimatedInputTokens int, cacheProfile *promptCacheProfile, apiKeyID string) {
@@ -2358,15 +2646,27 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		var realInputTokens int
 		var upstreamStopReason string
 
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
+				if stopWatch.Hit() {
+					return
+				}
 				if isThinking {
 					reasoningContent += text
 				} else {
 					content += text
+					stopWatch.Observe(content, len(text))
 				}
 			},
-			OnToolUse:  func(tu KiroToolUse) { toolUses = append(toolUses, tu) },
+			OnToolUse: func(tu KiroToolUse) {
+				if !stopWatch.Hit() {
+					toolUses = append(toolUses, tu)
+				}
+			},
 			OnComplete: func(inTok, outTok int) { inputTokens = inTok; outputTokens = outTok },
 			OnCredits:  func(c float64) { credits = c },
 			OnContextUsage: func(pct float64) {
@@ -2390,11 +2690,15 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 			credits = 0
 			realInputTokens = 0
 			upstreamStopReason = ""
+			stopWatch.Reset()
 		}
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset, nil)
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
+		if err != nil && stopWatch.Hit() {
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -2406,10 +2710,17 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
+		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
+		if matchedStop != "" {
+			upstreamStopReason = "end_turn"
+		}
 		if thinking && reasoningContent == "" && extractedReasoning != "" {
 			reasoningContent = extractedReasoning
 		} else if !thinking {
@@ -2437,23 +2748,16 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
 
 func (h *Handler) sendOpenAIError(w http.ResponseWriter, status int, errType, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]interface{}{
-			"type":    errType,
-			"message": message,
-		},
-	})
+	h.sendOpenAIErrorWithCode(w, status, errType, "", message)
 }
 
 // refreshAccountToken serializes the complete refresh-token rotation lifecycle:

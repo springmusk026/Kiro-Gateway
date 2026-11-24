@@ -31,6 +31,15 @@ func (s *ResponseStore) LoadResponse(ctx context.Context, id string) ([]byte, ti
 	return doc, at, err
 }
 
+// DeleteResponse removes one stored object and reports whether it existed.
+func (s *ResponseStore) DeleteResponse(ctx context.Context, id string) (bool, error) {
+	tag, err := s.db.Pool.Exec(ctx, `DELETE FROM kiro_responses WHERE id = $1`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // PurgeResponses deletes expired objects and keeps at most keepMax newest.
 func (s *ResponseStore) PurgeResponses(ctx context.Context, olderThan time.Time, keepMax int) (int, error) {
 	tag, err := s.db.Pool.Exec(ctx, `DELETE FROM kiro_responses WHERE stored_at < $1`, olderThan)

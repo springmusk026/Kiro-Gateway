@@ -325,6 +325,7 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 	if payload == nil {
 		return fmt.Errorf("nil kiro payload")
 	}
+	callback = withToolNameRestore(payload, callback)
 
 	originalProfileArn := payload.ProfileArn
 	defer func() { payload.ProfileArn = originalProfileArn }()

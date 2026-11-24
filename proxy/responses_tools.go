@@ -89,6 +89,29 @@ func (s responsesToolCallShape) deltaPayload(itemID string, outputIndex int) map
 	}
 }
 
+// doneEvent names the event that closes this call's payload stream.
+func (s responsesToolCallShape) doneEvent() string {
+	if s.Type == responsesCustomToolCallType {
+		return "response.custom_tool_call_input.done"
+	}
+	return "response.function_call_arguments.done"
+}
+
+func (s responsesToolCallShape) donePayload(itemID string, outputIndex int, name string) map[string]interface{} {
+	out := map[string]interface{}{
+		"type":         s.doneEvent(),
+		"item_id":      itemID,
+		"output_index": outputIndex,
+	}
+	if s.Type == responsesCustomToolCallType {
+		out["input"] = s.Input
+	} else {
+		out["arguments"] = s.Arguments
+		out["name"] = name
+	}
+	return out
+}
+
 // extractCustomToolInput recovers the raw freeform payload the model emitted.
 // convertOpenAITools advertises freeform tools as a single string argument, so
 // the payload normally arrives under that key; the fallbacks keep a model that

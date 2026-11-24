@@ -209,8 +209,12 @@ func (h *Handler) beginTrace(w http.ResponseWriter, r *http.Request, endpoint st
 	if h.sink == nil {
 		return w, r, func() {}
 	}
+	id := w.Header().Get("X-Request-Id")
+	if id == "" {
+		id = newRequestID()
+	}
 	t := &requestTrace{
-		id:       newRequestID(),
+		id:       id,
 		start:    time.Now(),
 		method:   r.Method,
 		path:     r.URL.Path,
