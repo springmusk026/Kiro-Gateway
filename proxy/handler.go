@@ -506,6 +506,13 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 		h.handleOpenAIResponses(w, ar)
 	case path == "/v1/models" || path == "/models":
 		h.handleModels(w, r)
+	case strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/models/"):
+		id := path[strings.Index(path, "/models/")+len("/models/"):]
+		if id == "" {
+			h.handleModels(w, r)
+			return
+		}
+		h.handleModel(w, r, id)
 	case path == "/api/event_logging/batch":
 		// Claude Code 遥测端点 - 直接返回 200 OK
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -577,8 +584,54 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// modelsListEpoch is the fixed creation time reported for every model. Kiro
+// does not publish one, and clients only need a stable value.
+const modelsListEpoch int64 = 1700000000
+
 // handleModels 模型列表
 func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		h.sendAPIMethodNotAllowed(w, r, "GET")
+		return
+	}
+	models := h.listModels()
+
+	resp := map[string]interface{}{
+		"object":   "list",
+		"data":     models,
+		"has_more": false,
+		"first_id": nil,
+		"last_id":  nil,
+	}
+	if len(models) > 0 {
+		resp["first_id"] = models[0]["id"]
+		resp["last_id"] = models[len(models)-1]["id"]
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleModel answers GET /v1/models/{id} with one entry of the list.
+func (h *Handler) handleModel(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		h.sendAPIMethodNotAllowed(w, r, "GET")
+		return
+	}
+	for _, m := range h.listModels() {
+		if mid, _ := m["id"].(string); strings.EqualFold(mid, id) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			json.NewEncoder(w).Encode(m)
+			return
+		}
+	}
+	h.sendAPIError(w, r, http.StatusNotFound, "not_found_error", "invalid_request_error", "model_not_found",
+		fmt.Sprintf("model: %s", id))
+}
+
+// listModels builds the model list shared by the OpenAI and Anthropic shapes:
+// every entry carries both the OpenAI fields (object, created, owned_by) and
+// the Anthropic ones (type, display_name, created_at).
+func (h *Handler) listModels() []map[string]interface{} {
 	// Live upstream model list (cached, refreshed in the background once stale).
 	cached := h.ensureModelsFresh()
 
@@ -598,12 +651,22 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 	models = appendConfiguredModelMappings(models, config.GetModelMappings(), thinkingSuffix)
 	models = filterDisabledModels(models, thinkingSuffix, config.GetModelMappings())
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"object": "list",
-		"data":   models,
-	})
-	return
+	createdAt := time.Unix(modelsListEpoch, 0).UTC().Format(time.RFC3339)
+	for _, m := range models {
+		if _, ok := m["created"]; !ok {
+			m["created"] = modelsListEpoch
+		}
+		if _, ok := m["type"]; !ok {
+			m["type"] = "model"
+		}
+		if _, ok := m["created_at"]; !ok {
+			m["created_at"] = createdAt
+		}
+		if _, ok := m["display_name"]; !ok {
+			m["display_name"] = m["id"]
+		}
+	}
+	return models
 }
 
 func buildAnthropicModelsResponse(cached []ModelInfo, thinkingSuffix string) []map[string]interface{} {
