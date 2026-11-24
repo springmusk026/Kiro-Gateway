@@ -50,6 +50,14 @@ func main() {
 	if envPassword := os.Getenv("ADMIN_PASSWORD"); envPassword != "" {
 		config.SetPassword(envPassword)
 	}
+	// Never run with the shipped default password: replace it with a random
+	// one, persist it, and print it once.
+	if generated, changed, err := config.EnsureAdminPassword(); err != nil {
+		logger.Fatalf("Failed to set admin password: %v", err)
+	} else if changed {
+		logger.Warnf("Admin password was unset or the insecure default; generated a new one: %s", generated)
+		logger.Warnf("It is saved in %s. Set ADMIN_PASSWORD or change it in the admin panel.", configPath)
+	}
 
 	// 初始化账号池
 	pool.GetPool()

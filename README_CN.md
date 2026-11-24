@@ -77,7 +77,7 @@ zeabur deploy
 
 部署完成后访问 `https://<你的域名>/admin` 登录管理面板。
 
-首次运行会在 `data/config.json` 自动生成配置，挂载 `/app/data` 以持久化。默认管理密码为 `changeme`，生产环境请务必通过 `ADMIN_PASSWORD` 环境变量或在管理面板中修改。
+首次运行会在 `data/config.json` 自动生成配置，挂载 `/app/data` 以持久化。首次启动（或密码仍为旧默认值 `changeme`）时会随机生成管理密码，保存到 `data/config.json` 并在日志中打印一次。可通过 `ADMIN_PASSWORD` 环境变量或管理面板设置自己的密码。
 
 ## 使用方法
 

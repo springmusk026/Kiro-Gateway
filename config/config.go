@@ -13,6 +13,7 @@ package config
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -307,7 +308,7 @@ func Load() error {
 			// Create default configuration.
 			// Binds to 0.0.0.0 by default for Docker/container compatibility.
 			cfg = &Config{
-				Password:      "changeme",
+				Password:      LegacyDefaultPassword,
 				Port:          8080,
 				Host:          "0.0.0.0",
 				RequireApiKey: false,
@@ -427,6 +428,32 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 // SetPassword updates the admin password.
 // Primarily used for environment variable override in containerized deployments.
+// LegacyDefaultPassword is the well-known admin password older builds shipped
+// with. It is never kept: EnsureAdminPassword replaces it on startup.
+const LegacyDefaultPassword = "changeme"
+
+// EnsureAdminPassword replaces an empty or well-known default admin password
+// with a random one and persists it. It returns the generated password and
+// true when it did so, so the caller can show it once. Deployments exposed
+// with the shipped default were taken over through the admin API (#150, #162).
+func EnsureAdminPassword() (string, bool, error) {
+	cfgLock.Lock()
+	defer cfgLock.Unlock()
+	if cfg == nil {
+		return "", false, ErrConfigUnavailable
+	}
+	if p := strings.TrimSpace(cfg.Password); p != "" && p != LegacyDefaultPassword {
+		return "", false, nil
+	}
+	buf := make([]byte, 15)
+	if _, err := rand.Read(buf); err != nil {
+		return "", false, err
+	}
+	generated := base64.RawURLEncoding.EncodeToString(buf)
+	cfg.Password = generated
+	return generated, true, saveLocked()
+}
+
 func SetPassword(password string) {
 	cfgLock.Lock()
 	defer cfgLock.Unlock()

@@ -77,7 +77,7 @@ zeabur deploy
 
 Once the service is up, open `https://<your-domain>/admin` to log in.
 
-Config is auto-created at `data/config.json`. Mount `/app/data` for persistence. The default admin password is `changeme` — override it via the `ADMIN_PASSWORD` env var or change it in the admin panel before going to production.
+Config is auto-created at `data/config.json`. Mount `/app/data` for persistence. On first start (or if the password is still the old `changeme` default) a random admin password is generated, saved to `data/config.json` and printed once in the log. Set your own with the `ADMIN_PASSWORD` env var or in the admin panel.
 
 ## Usage
 

@@ -327,3 +327,21 @@ func TestRetiredKiroVersionIsIgnored(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureAdminPasswordReplacesDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Init(path); err != nil {
+		t.Fatal(err)
+	}
+	pw, changed, err := EnsureAdminPassword()
+	if err != nil || !changed || pw == "" || pw == LegacyDefaultPassword || GetPassword() != pw {
+		t.Fatalf("default password not replaced: pw=%q changed=%v err=%v", pw, changed, err)
+	}
+	if err := Load(); err != nil || GetPassword() != pw {
+		t.Fatalf("generated password not persisted: %v", err)
+	}
+	SetPassword("custom-secret")
+	if _, changed, _ := EnsureAdminPassword(); changed || GetPassword() != "custom-secret" {
+		t.Fatal("a user-chosen password must be kept")
+	}
+}
