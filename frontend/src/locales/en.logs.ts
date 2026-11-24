@@ -121,6 +121,8 @@ export const logsEn = {
   'logs.h.reqBody': 'Request',
   'logs.h.respBody': 'Response',
   'logs.h.rawText': 'Text',
+  'logs.h.showMore': 'Show all ({n} chars)',
+  'logs.h.showLess': 'Show less',
   'logs.h.noBodies': 'No body was recorded for this request.',
   'logs.h.bodiesOff': 'Body capture is off, so prompts and responses are not stored.',
   'logs.h.bodiesOffAction': 'Turn it on in Settings →',

@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { FileX2 } from 'lucide-react'
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { CopyButton } from '@/components/app/copy-button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -18,15 +18,38 @@ import type { useRecordLabels } from './requests-tab'
 
 type Labels = ReturnType<typeof useRecordLabels>
 
+const LONG_VALUE = 160
+
+/** Long single values (paths, user agents, IDs) collapse to a few lines. */
+function LongValue({ value }: { value: string }) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="block">
+      <span className={cn('block', !open && 'line-clamp-3')} title={open ? undefined : value}>
+        {value}
+      </span>
+      <span className="mt-0.5 flex items-center gap-1 font-sans">
+        <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setOpen((o) => !o)}>
+          {open ? t('logs.h.showLess') : t('logs.h.showMore', { n: value.length.toLocaleString() })}
+        </button>
+        <CopyButton value={value} className="size-6" />
+      </span>
+    </span>
+  )
+}
+
 function Group({ title, rows }: { title: string; rows: [string, ReactNode][] }) {
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="min-w-0 rounded-xl border bg-card p-4">
       <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
-      <dl className="grid grid-cols-[minmax(110px,auto)_1fr] gap-x-4 gap-y-1.5 text-sm">
+      <dl className="grid grid-cols-[minmax(96px,auto)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
         {rows.map(([k, v]) => (
           <Fragment key={k}>
             <dt className="text-muted-foreground">{k}</dt>
-            <dd className="min-w-0 break-all font-mono text-[12.5px]">{v}</dd>
+            <dd className="min-w-0 break-all [overflow-wrap:anywhere] font-mono text-[12.5px]">
+              {typeof v === 'string' && v.length > LONG_VALUE ? <LongValue value={v} /> : v}
+            </dd>
           </Fragment>
         ))}
       </dl>
@@ -45,7 +68,7 @@ function Body({ text }: { text: string }) {
         </span>
         <CopyButton value={pretty.text} label={t('common.copy')} />
       </div>
-      <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+      <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
         {pretty.text}
       </pre>
     </div>
@@ -107,13 +130,13 @@ export function RequestDetailSheet({
                       </div>
                       {r.error && <CopyButton value={r.error} label={t('common.copy')} />}
                     </div>
-                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-destructive">
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-[12px] leading-relaxed text-destructive">
                       {r.error || t('logs.noErrorText')}
                     </pre>
                   </section>
                 )}
 
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
                   <Group
                     title={t('logs.h.grpRequest')}
                     rows={[
@@ -158,7 +181,7 @@ export function RequestDetailSheet({
                   ]}
                 />
 
-                <section className="rounded-xl border bg-card p-4">
+                <section className="min-w-0 rounded-xl border bg-card p-4">
                   <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('logs.h.bodies')}</h3>
                   {full.isLoading ? (
                     <Skeleton className="h-32 w-full" />
