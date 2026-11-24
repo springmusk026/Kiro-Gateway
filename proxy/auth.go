@@ -6,6 +6,7 @@ import (
 	"kiro-go/config"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // apiKeyContextKey is an unexported type used as the context key for the matched ApiKeyEntry
@@ -17,6 +18,11 @@ type authError struct {
 	status  int
 	code    string
 	message string
+	// OpenAI-shaped responses: error type (defaults to code) and error code.
+	openAIType string
+	openAICode string
+	// retryAfter, when set, is sent as the retry-after header.
+	retryAfter time.Duration
 }
 
 func (e *authError) Error() string { return e.message }
@@ -71,6 +77,9 @@ func (h *Handler) authenticate(r *http.Request) (*config.ApiKeyEntry, error) {
 		}
 		if !entry.Enabled {
 			return nil, newAuthError(http.StatusUnauthorized, "authentication_error", "API key disabled")
+		}
+		if config.ApiKeyExpired(*entry, time.Now()) {
+			return nil, newAuthError(http.StatusUnauthorized, "authentication_error", "API key expired")
 		}
 		if overToken, overCredit := config.ApiKeyOverLimit(*entry); overToken || overCredit {
 			if overToken {

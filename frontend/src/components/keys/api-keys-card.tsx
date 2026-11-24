@@ -23,6 +23,7 @@ import { useApiKeys, useDeleteApiKey, useResetApiKeyUsage, useSettings, useUpdat
 import type { ApiKeyView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { KeyDialog, RevealDialog } from './key-dialogs'
+import { RestrictionBadges } from './key-restriction-badges'
 
 function UsageMeter({ label, used, limit, format }: { label: string; used: number; limit?: number; format: (n: number) => string }) {
   const { t } = useI18n()
@@ -104,6 +105,7 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
                 {t('keys.limitReached')}
               </Badge>
             )}
+            <RestrictionBadges k={k} />
           </div>
           <code className="mt-0.5 block truncate font-mono text-[12.5px] text-muted-foreground">{k.keyMasked}</code>
           <p className="mt-1 text-xs text-muted-foreground">

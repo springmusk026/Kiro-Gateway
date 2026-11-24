@@ -225,6 +225,11 @@ export interface ApiKeyView {
   tokensUsed: number
   creditsUsed: number
   requestsCount: number
+  // Access restrictions
+  allowedModels?: string[]
+  rpmLimit?: number
+  expiresAt?: number
+  expired?: boolean
 }
 
 export interface RequestLog {

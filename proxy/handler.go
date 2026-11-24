@@ -389,33 +389,32 @@ func (h *Handler) validateApiKey(r *http.Request) bool {
 	return err == nil
 }
 
-// authenticateForClaude runs authenticate and writes a Claude-style error on failure.
-// Returns the request with the matched API key injected into context, or nil if auth failed.
+// authenticateForClaude runs authenticate and the key's restrictions and
+// writes a Claude-style error on failure. Returns the request with the matched
+// API key injected into context, or nil if auth failed.
 func (h *Handler) authenticateForClaude(w http.ResponseWriter, r *http.Request) *http.Request {
-	entry, err := h.authenticate(r)
-	if err != nil {
-		ae, _ := err.(*authError)
-		if ae == nil {
-			ae = newAuthError(http.StatusUnauthorized, "authentication_error", err.Error())
-		}
+	ar, ae := h.authenticateAndRestrict(r)
+	if ae != nil {
+		setRetryAfterHeader(w, ae.retryAfter)
 		h.sendClaudeError(w, ae.status, ae.code, ae.message)
 		return nil
 	}
-	return withApiKeyContext(r, entry)
+	return ar
 }
 
-// authenticateForOpenAI runs authenticate and writes an OpenAI-style error on failure.
+// authenticateForOpenAI is authenticateForClaude with OpenAI-style errors.
 func (h *Handler) authenticateForOpenAI(w http.ResponseWriter, r *http.Request) *http.Request {
-	entry, err := h.authenticate(r)
-	if err != nil {
-		ae, _ := err.(*authError)
-		if ae == nil {
-			ae = newAuthError(http.StatusUnauthorized, "authentication_error", err.Error())
+	ar, ae := h.authenticateAndRestrict(r)
+	if ae != nil {
+		setRetryAfterHeader(w, ae.retryAfter)
+		typ := ae.openAIType
+		if typ == "" {
+			typ = ae.code
 		}
-		h.sendOpenAIError(w, ae.status, ae.code, ae.message)
+		h.sendOpenAIErrorWithCode(w, ae.status, typ, ae.openAICode, ae.message)
 		return nil
 	}
-	return withApiKeyContext(r, entry)
+	return ar
 }
 
 // ServeHTTP 路由分发
@@ -607,7 +606,7 @@ func (h *Handler) handleModels(w http.ResponseWriter, r *http.Request) {
 		h.sendAPIMethodNotAllowed(w, r, "GET")
 		return
 	}
-	models := h.listModels()
+	models := filterModelsForKey(r, h.listModels())
 
 	resp := map[string]interface{}{
 		"object":   "list",
@@ -630,7 +629,7 @@ func (h *Handler) handleModel(w http.ResponseWriter, r *http.Request, id string)
 		h.sendAPIMethodNotAllowed(w, r, "GET")
 		return
 	}
-	for _, m := range h.listModels() {
+	for _, m := range filterModelsForKey(r, h.listModels()) {
 		if mid, _ := m["id"].(string); strings.EqualFold(mid, id) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			json.NewEncoder(w).Encode(m)

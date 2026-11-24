@@ -11,6 +11,7 @@ import { copyToClipboard } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { useCreateApiKey, useUpdateApiKey, type ApiKeyInput } from '@/lib/queries.settings'
 import type { ApiKeyView } from '@/lib/types'
+import { KeyRestrictionsFields, blankRestrictions, restrictionsBody, restrictionsError, restrictionsFromKey, type RestrictionsForm } from './key-restrictions'
 
 type Form = { name: string; key: string; enabled: boolean; tokenLimit: string; creditLimit: string }
 const blank: Form = { name: '', key: '', enabled: true, tokenLimit: '', creditLimit: '' }
@@ -32,6 +33,12 @@ export function KeyDialog({
   const update = useUpdateApiKey()
   const [f, setF] = useState<Form>(blank)
   const [error, setError] = useState<string | null>(null)
+  // Access restrictions (allowed models, RPM, expiry) — kept in their own state block.
+  const [restrict, setRestrict] = useState<RestrictionsForm>(blankRestrictions)
+  useEffect(() => {
+    if (open) setRestrict(restrictionsFromKey(editing))
+  }, [open, editing])
+  const restrictErr = restrictionsError(restrict, t)
   useEffect(() => {
     if (!open) return
     setError(null)
@@ -53,7 +60,7 @@ export function KeyDialog({
     f.creditLimit !== '' && (!/^\d*\.?\d+$/.test(f.creditLimit.trim()) || Number.isNaN(+f.creditLimit)) ? t('keys.limitNumError') : null
   const keyErr = f.key !== '' && /\s/.test(f.key) ? t('keys.keyWhitespace') : f.key !== '' && f.key.length < 8 ? t('keys.keyShort') : null
   const pending = create.isPending || update.isPending
-  const invalid = !!(tokErr || credErr || keyErr)
+  const invalid = !!(tokErr || credErr || keyErr || restrictErr)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,6 +71,7 @@ export function KeyDialog({
       enabled: f.enabled,
       tokenLimit: f.tokenLimit ? parseInt(f.tokenLimit, 10) : 0,
       creditLimit: f.creditLimit ? parseFloat(f.creditLimit) : 0,
+      ...restrictionsBody(restrict),
     }
     try {
       if (editing) {
@@ -150,6 +158,8 @@ export function KeyDialog({
             </div>
             <p className="col-span-2 -mt-1 text-xs text-muted-foreground">{t('keys.limitHint')}</p>
           </div>
+          {/* Access restrictions */}
+          <KeyRestrictionsFields value={restrict} onChange={setRestrict} />
           <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
             <Label htmlFor="k-enabled">{t('common.enabled')}</Label>
             <Switch id="k-enabled" checked={f.enabled} onCheckedChange={(v) => setF({ ...f, enabled: v })} />

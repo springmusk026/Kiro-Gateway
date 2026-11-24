@@ -102,6 +102,10 @@ export interface ApiKeyInput {
   enabled?: boolean
   tokenLimit?: number
   creditLimit?: number
+  // Access restrictions
+  allowedModels?: string[]
+  rpmLimit?: number
+  expiresAt?: number
 }
 
 export function useApiKeys() {
