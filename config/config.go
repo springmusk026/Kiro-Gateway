@@ -180,6 +180,14 @@ type ApiKeyEntry struct {
 	TokensUsed    int64   `json:"tokensUsed,omitempty"`
 	CreditsUsed   float64 `json:"creditsUsed,omitempty"`
 	RequestsCount int64   `json:"requestsCount,omitempty"`
+
+	// Access restrictions (see apikey_restrictions.go). AllowedModels empty =
+	// every model; entries match case-insensitively after alias resolution and
+	// may end in "*" for a prefix match. RPMLimit 0 = unlimited. ExpiresAt is
+	// Unix seconds, 0 = never.
+	AllowedModels []string `json:"allowedModels,omitempty"`
+	RPMLimit      int      `json:"rpmLimit,omitempty"`
+	ExpiresAt     int64    `json:"expiresAt,omitempty"`
 }
 
 // Config represents the global application configuration.
@@ -389,7 +397,7 @@ func Load() error {
 			return err
 		}
 	}
-	return nil
+	return resaveEncryptedLocked()
 }
 
 // saveLocked persists cfg to disk. Caller MUST already hold cfgLock.

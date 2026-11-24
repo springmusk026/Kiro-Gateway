@@ -10,6 +10,9 @@ services:
       # Admin console password; set it in .env. Left empty, a password is
       # generated on the first start and printed once in the log.
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Optional: encrypt credentials at rest (openssl rand -base64 32). Keep
+      # it safe; data encrypted with it cannot be read without it.
+      - KIRO_ENCRYPTION_KEY=${KIRO_ENCRYPTION_KEY:-}
       # PostgreSQL storage: configuration, stored responses, request history and
       # audit log. On the first start an existing data/config.json is imported
       # automatically (the file is kept as a backup). Remove this line to keep
@@ -33,4 +36,52 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+
+  # Optional nightly backups: pg_dump -Fc into ./data/backups, keeping the last
+  # BACKUP_KEEP dumps. Not started by a plain `docker compose up -d`; enable it
+  # with `docker compose --profile backup up -d`. Restore: docs/configuration.md#backups.
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      - PGHOST=postgres
+      - PGUSER=kiro
+      - PGPASSWORD=${POSTGRES_PASSWORD:-kiro}
+      - PGDATABASE=kiro
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
+      # Hour of the day (UTC) the dump runs.
+      - BACKUP_HOUR=${BACKUP_HOUR:-3}
+    volumes:
+      - ./data/backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -u
+        umask 077
+        backup() {
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          tmp="/backups/.kiro-$$ts.dump.partial"
+          if pg_dump -Fc -f "$$tmp"; then
+            mv "$$tmp" "/backups/kiro-$$ts.dump"
+            echo "backup: wrote kiro-$$ts.dump"
+            ls -1t /backups/kiro-*.dump 2>/dev/null | tail -n +$$((BACKUP_KEEP + 1)) | while read -r old; do
+              rm -f -- "$$old" && echo "backup: removed $$old"
+            done
+          else
+            rm -f -- "$$tmp"
+            echo "backup: pg_dump failed" >&2
+          fi
+        }
+        while true; do
+          now=$$(date -u +%s)
+          next=$$((now - now % 86400 + BACKUP_HOUR * 3600))
+          if [ "$$next" -le "$$now" ]; then next=$$((next + 86400)); fi
+          echo "backup: next dump in $$((next - now))s"
+          sleep $$((next - now))
+          backup
+        done
     restart: unless-stopped

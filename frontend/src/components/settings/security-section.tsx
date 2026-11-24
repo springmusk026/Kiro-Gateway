@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { setPassword } from '@/lib/api'
+import { withReauth } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { useStatus } from '@/lib/queries'
 import { useApiKeys, useSaveSettings, useSettings } from '@/lib/queries.settings'
@@ -114,19 +114,12 @@ export function PasswordCard() {
   const onSave = async () => {
     setServerError(null)
     try {
-      await save.mutateAsync({ password: pw })
+      // Changing the password ends every session; sign this one in again.
+      await withReauth(pw, () => save.mutateAsync({ password: pw }))
     } catch (e) {
       setServerError(e instanceof Error ? e.message : String(e))
       return
     }
-    // Keep this session signed in with the new password.
-    let remember = false
-    try {
-      remember = localStorage.getItem('kiro_remember') === '1'
-    } catch {
-      /* storage unavailable */
-    }
-    setPassword(pw, remember)
     setPw('')
     setConfirmPw('')
     toast.success(t('settings.pwChanged'))

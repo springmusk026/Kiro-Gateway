@@ -39,6 +39,12 @@ func main() {
 		configPath = envPath
 	}
 
+	// Encryption at rest: an invalid KIRO_ENCRYPTION_KEY is fatal, so nothing
+	// is ever written in plaintext by mistake.
+	if err := config.InitEncryptionFromEnv(); err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Subcommands: `kiro-go migrate` / `kiro-go export` (see cli.go).
 	if len(os.Args) > 1 {
 		os.Exit(runCommand(os.Args[1], os.Args[2:], configPath))
@@ -58,6 +64,9 @@ func main() {
 	// 加载配置
 	if err := config.Init(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	if config.EncryptionEnabled() {
+		logger.Infof("Credentials are encrypted at rest (%s)", config.EncryptionKeyEnv)
 	}
 
 	// Initialize log level: LOG_LEVEL env var takes priority over config, defaulting to "info".
@@ -95,6 +104,11 @@ func main() {
 			return time.Duration(days) * 24 * time.Hour
 		})
 		handler.UseTelemetry(recorder, recorder, storage.NewResponseStore(db))
+		if sessions, err := storage.NewSessionStore(context.Background(), db); err != nil {
+			logger.Warnf("Admin sessions: not persisted (%v); sign-ins last until restart", err)
+		} else {
+			proxy.UseAdminSessionStore(sessions)
+		}
 		handler.UseMigrator(&storage.JSONMigrator{
 			DB:          db,
 			ConfigPath:  configPath,

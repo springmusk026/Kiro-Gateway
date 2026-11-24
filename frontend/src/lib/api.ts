@@ -1,9 +1,14 @@
 /**
- * Admin API client. Every call carries the admin password in the
- * X-Admin-Password header (the only auth the backend accepts).
+ * Admin API client. The console authenticates with an HttpOnly session
+ * cookie (POST /admin/api/session); the password is never stored in the
+ * browser. Every call carries X-Requested-With, which the server requires on
+ * state-changing calls authenticated by cookie (CSRF protection).
  */
-const PW_KEY = 'kiro_admin_password'
-const REMEMBER_KEY = 'kiro_remember'
+
+// Older builds kept the password in web storage; it is exchanged for a
+// session once and then deleted.
+const LEGACY_PW_KEY = 'kiro_admin_password'
+const LEGACY_REMEMBER_KEY = 'kiro_remember'
 
 export class ApiError extends Error {
   status: number
@@ -15,38 +20,19 @@ export class ApiError extends Error {
   }
 }
 
-export function getPassword(): string {
-  try {
-    return sessionStorage.getItem(PW_KEY) || localStorage.getItem(PW_KEY) || ''
-  } catch {
-    return ''
-  }
+export interface SessionInfo {
+  authenticated: boolean
+  via?: 'cookie' | 'header'
+  remember?: boolean
+  createdAt?: number
+  expiresAt?: number
+  idleExpiresAt?: number
 }
 
-export function setPassword(pw: string, remember: boolean) {
-  try {
-    sessionStorage.setItem(PW_KEY, pw)
-    if (remember) {
-      localStorage.setItem(PW_KEY, pw)
-      localStorage.setItem(REMEMBER_KEY, '1')
-    } else {
-      localStorage.removeItem(PW_KEY)
-      localStorage.removeItem(REMEMBER_KEY)
-    }
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-export function clearPassword() {
-  try {
-    sessionStorage.removeItem(PW_KEY)
-    localStorage.removeItem(PW_KEY)
-    localStorage.removeItem(REMEMBER_KEY)
-  } catch {
-    /* storage unavailable */
-  }
-}
+/** Known session state: null = not checked yet. */
+let signedIn: boolean | null = null
+/** While > 0, 401s do not sign the console out (password change in progress). */
+let reauthenticating = 0
 
 function errorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === 'object') {
@@ -61,12 +47,19 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback
 }
 
-export async function apiFetch(path: string, init: RequestInit = {}, password = getPassword()): Promise<Response> {
+function adminHeaders(init: RequestInit): Headers {
   const headers = new Headers(init.headers)
-  headers.set('X-Admin-Password', password)
+  headers.set('X-Requested-With', 'kiro-console')
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  const res = await fetch('/admin/api' + path, { ...init, headers })
-  if (res.status === 401) window.dispatchEvent(new CustomEvent('kiro:unauthorized'))
+  return headers
+}
+
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch('/admin/api' + path, { ...init, headers: adminHeaders(init), credentials: 'same-origin' })
+  if (res.status === 401 && path !== '/session' && reauthenticating === 0) {
+    signedIn = false
+    window.dispatchEvent(new CustomEvent('kiro:unauthorized'))
+  }
   return res
 }
 
@@ -93,3 +86,84 @@ export const get = <T,>(path: string) => api<T>(path)
 export const post = <T,>(path: string, json?: unknown) => api<T>(path, { method: 'POST', json: json ?? {} })
 export const put = <T,>(path: string, json?: unknown) => api<T>(path, { method: 'PUT', json: json ?? {} })
 export const del = <T,>(path: string) => api<T>(path, { method: 'DELETE' })
+
+// ---------- session ----------
+
+/** POST /session. Returns the HTTP status (200 ok, 401 wrong, 429 locked). */
+export async function createSession(password: string, remember: boolean): Promise<number> {
+  const res = await apiFetch('/session', { method: 'POST', body: JSON.stringify({ password, remember }) })
+  if (res.ok) signedIn = true
+  return res.status
+}
+
+/** DELETE /session (sign out). Errors are ignored: the cookie is cleared server-side when reachable. */
+export async function deleteSession(): Promise<void> {
+  signedIn = false
+  try {
+    await apiFetch('/session', { method: 'DELETE' })
+  } catch {
+    /* offline: the session expires on its own */
+  }
+}
+
+export async function getSession(): Promise<SessionInfo | null> {
+  const res = await apiFetch('/session')
+  if (!res.ok) return null
+  return (await res.json()) as SessionInfo
+}
+
+/** Marks the console signed out locally (after a 401). */
+export function markSignedOut() {
+  signedIn = false
+}
+
+function takeLegacyPassword(): { pw: string; remember: boolean } | null {
+  try {
+    const pw = sessionStorage.getItem(LEGACY_PW_KEY) || localStorage.getItem(LEGACY_PW_KEY) || ''
+    const remember = localStorage.getItem(LEGACY_REMEMBER_KEY) === '1'
+    sessionStorage.removeItem(LEGACY_PW_KEY)
+    localStorage.removeItem(LEGACY_PW_KEY)
+    localStorage.removeItem(LEGACY_REMEMBER_KEY)
+    return pw ? { pw, remember } : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolves whether the console has a session, exchanging a password left in
+ * web storage by an older build for a session once (and deleting it).
+ */
+export async function ensureSession(): Promise<boolean> {
+  if (signedIn) return true
+  const legacy = takeLegacyPassword()
+  if (legacy) {
+    try {
+      if ((await createSession(legacy.pw, legacy.remember)) === 200) return true
+    } catch {
+      /* fall through to the session check */
+    }
+  }
+  try {
+    signedIn = (await getSession()) !== null
+  } catch {
+    signedIn = false
+  }
+  return signedIn
+}
+
+/**
+ * Runs fn (which changes the admin password, ending every session) and signs
+ * in again with the new password without bouncing to the login page.
+ */
+export async function withReauth<T>(newPassword: string, fn: () => Promise<T>): Promise<T> {
+  reauthenticating++
+  try {
+    const remember = (await getSession().catch(() => null))?.remember ?? false
+    const out = await fn()
+    await createSession(newPassword, remember)
+    return out
+  } finally {
+    reauthenticating--
+  }
+}

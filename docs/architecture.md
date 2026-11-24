@@ -105,5 +105,6 @@ changes are recorded as audit events the same way. Measured overhead is a few mi
 ## Console
 
 The console is a static single-page app served from `web/` under `/admin` (hashed assets are cached
-immutably, the shell is never cached). It talks to `/admin/api/*` with the admin password header; login
-attempts are rate-limited per client.
+immutably, the shell is never cached). It signs in through `POST /admin/api/session` and then talks to
+`/admin/api/*` with an HttpOnly session cookie (scripts can still send the admin password header); login
+attempts are rate-limited per client. See [configuration.md](configuration.md#security).

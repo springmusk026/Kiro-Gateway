@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"kiro-go/config"
 	"net/http"
+	"time"
 )
 
 // apiKeyView is the response payload for listing/inspecting API keys. The Key field
@@ -21,6 +22,12 @@ type apiKeyView struct {
 	TokensUsed    int64   `json:"tokensUsed"`
 	CreditsUsed   float64 `json:"creditsUsed"`
 	RequestsCount int64   `json:"requestsCount"`
+
+	// Restrictions.
+	AllowedModels []string `json:"allowedModels,omitempty"`
+	RPMLimit      int      `json:"rpmLimit,omitempty"`
+	ExpiresAt     int64    `json:"expiresAt,omitempty"`
+	Expired       bool     `json:"expired,omitempty"`
 }
 
 func toApiKeyView(e config.ApiKeyEntry) apiKeyView {
@@ -37,6 +44,10 @@ func toApiKeyView(e config.ApiKeyEntry) apiKeyView {
 		TokensUsed:    e.TokensUsed,
 		CreditsUsed:   e.CreditsUsed,
 		RequestsCount: e.RequestsCount,
+		AllowedModels: e.AllowedModels,
+		RPMLimit:      e.RPMLimit,
+		ExpiresAt:     e.ExpiresAt,
+		Expired:       config.ApiKeyExpired(e, time.Now()),
 	}
 }
 
@@ -65,6 +76,10 @@ type apiKeyCreateRequest struct {
 	Enabled     *bool   `json:"enabled,omitempty"`
 	TokenLimit  int64   `json:"tokenLimit,omitempty"`
 	CreditLimit float64 `json:"creditLimit,omitempty"`
+
+	AllowedModels []string `json:"allowedModels,omitempty"`
+	RPMLimit      int      `json:"rpmLimit,omitempty"`
+	ExpiresAt     int64    `json:"expiresAt,omitempty"`
 }
 
 func (h *Handler) apiCreateApiKey(w http.ResponseWriter, r *http.Request) {
@@ -85,13 +100,22 @@ func (h *Handler) apiCreateApiKey(w http.ResponseWriter, r *http.Request) {
 		keyValue = config.GenerateApiKeyValue()
 	}
 
-	entry, err := config.AddApiKey(config.ApiKeyEntry{
-		Name:        req.Name,
-		Key:         keyValue,
-		Enabled:     enabled,
-		TokenLimit:  req.TokenLimit,
-		CreditLimit: req.CreditLimit,
-	})
+	newEntry := config.ApiKeyEntry{
+		Name:          req.Name,
+		Key:           keyValue,
+		Enabled:       enabled,
+		TokenLimit:    req.TokenLimit,
+		CreditLimit:   req.CreditLimit,
+		AllowedModels: req.AllowedModels,
+		RPMLimit:      req.RPMLimit,
+		ExpiresAt:     req.ExpiresAt,
+	}
+	if err := config.ValidateApiKeyRestrictions(newEntry); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	entry, err := config.AddApiKey(newEntry)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -113,6 +137,11 @@ type apiKeyUpdateRequest struct {
 	Enabled     *bool    `json:"enabled,omitempty"`
 	TokenLimit  *int64   `json:"tokenLimit,omitempty"`
 	CreditLimit *float64 `json:"creditLimit,omitempty"`
+
+	// Restrictions: omitted = unchanged; [] / 0 clear them.
+	AllowedModels *[]string `json:"allowedModels,omitempty"`
+	RPMLimit      *int      `json:"rpmLimit,omitempty"`
+	ExpiresAt     *int64    `json:"expiresAt,omitempty"`
 }
 
 func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id string) {
@@ -145,6 +174,20 @@ func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id str
 	}
 	if req.CreditLimit != nil {
 		patch.CreditLimit = *req.CreditLimit
+	}
+	if req.AllowedModels != nil {
+		patch.AllowedModels = *req.AllowedModels
+	}
+	if req.RPMLimit != nil {
+		patch.RPMLimit = *req.RPMLimit
+	}
+	if req.ExpiresAt != nil {
+		patch.ExpiresAt = *req.ExpiresAt
+	}
+	if err := config.ValidateApiKeyRestrictions(patch); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
 	}
 
 	if err := config.UpdateApiKey(id, patch); err != nil {

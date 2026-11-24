@@ -15,13 +15,18 @@ work.
 | `GET /v1/responses/{id}` / `DELETE /v1/responses/{id}` | OpenAI Responses | stored responses; `POST …/cancel` answers 400 (no background mode) |
 | `GET /v1/models` / `GET /v1/models/{id}` | both | OpenAI list shape with Anthropic fields added |
 | `GET /v1/stats` | gateway | pool and request counters |
-| `/admin`, `/admin/api/*` | console | admin password header; not a public API |
+| `GET /metrics` | Prometheus | off unless `KIRO_METRICS=1`; see [configuration.md](configuration.md#metrics) |
+| `/admin`, `/admin/api/*` | console | session cookie or admin password header; not a public API |
 
 ### Authentication
 
 Send a Kiro-Go API key as `Authorization: Bearer <key>` or `x-api-key: <key>` (the scheme is
 case-insensitive). Keys are created on the **API & Keys** page and can carry request or token quotas. If no
 keys exist and verification is off, the endpoints are open — the console warns about this.
+
+A key can also be restricted ([configuration.md](configuration.md#api-key-restrictions)): to a list of
+models (then `/v1/models` lists only those when the key is sent), to a number of requests per minute, and
+until an expiry date.
 
 ### Headers on every response
 
@@ -167,6 +172,9 @@ Errors use each API's own envelope — Anthropic `{"type":"error","error":{"type
 | Malformed request, unsupported parameter | 400 | `invalid_request_error` | `invalid_request_error` |
 | Prompt longer than the model's window | 400 | `invalid_request_error` ("prompt is too long: N tokens > M maximum") | `context_length_exceeded` |
 | Missing or wrong API key | 401 | `authentication_error` | `authentication_error` |
+| API key expired | 401 | `authentication_error` ("API key expired") | `authentication_error` |
+| Model not allowed for the API key | 403 | `permission_error` | `invalid_request_error` / `model_not_allowed` |
+| API key over its requests-per-minute limit | 429 + `retry-after` | `rate_limit_error` | `rate_limit_error` / `rate_limit_exceeded` |
 | Unknown or disabled model | 404 / 400 | `not_found_error` | `model_not_found` |
 | Body too large | 413 | `request_too_large` | `invalid_request_error` |
 | Upstream throttling | 429 + `retry-after` | `rate_limit_error` | `rate_limit_exceeded` |

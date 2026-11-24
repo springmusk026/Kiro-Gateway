@@ -121,6 +121,7 @@ func runCommand(cmd string, args []string, configPath string) int {
 		fs := flag.NewFlagSet("export", flag.ExitOnError)
 		from := fs.String("from", databaseURL(), "PostgreSQL URL (default $DATABASE_URL)")
 		out := fs.String("out", "config.export.json", "file to write")
+		decrypt := fs.Bool("decrypt", false, "write credentials in plaintext (needs KIRO_ENCRYPTION_KEY when they are encrypted)")
 		fs.Parse(args)
 		if *from == "" {
 			fmt.Fprintln(os.Stderr, "export: set DATABASE_URL or pass --from postgres://…")
@@ -133,22 +134,31 @@ func runCommand(cmd string, args []string, configPath string) int {
 			return 1
 		}
 		defer db.Close()
-		c, err := storage.ExportJSON(ctx, db, *out)
+		c, err := storage.ExportJSON(ctx, db, *out, *decrypt)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "export:", err)
 			return 1
 		}
-		fmt.Printf("Exported %d accounts and %d API keys to %s (contains secrets — keep it private).\n", len(c.Accounts), len(c.ApiKeys), *out)
+		switch {
+		case *decrypt:
+			fmt.Printf("Exported %d accounts and %d API keys to %s with credentials in PLAINTEXT — keep it private.\n", len(c.Accounts), len(c.ApiKeys), *out)
+		case config.EncryptionEnabled():
+			fmt.Printf("Exported %d accounts and %d API keys to %s (credentials encrypted; loading it needs the same %s).\n", len(c.Accounts), len(c.ApiKeys), *out, config.EncryptionKeyEnv)
+		default:
+			fmt.Printf("Exported %d accounts and %d API keys to %s (contains secrets — keep it private).\n", len(c.Accounts), len(c.ApiKeys), *out)
+		}
 		return 0
 	case "help", "-h", "--help":
 		fmt.Println(`Usage:
   kiro-go                       start the gateway
   kiro-go migrate [--from config.json] [--to postgres://…] [--force]
                                 copy config.json and stored responses into PostgreSQL
-  kiro-go export  [--from postgres://…] [--out file.json]
+  kiro-go export  [--from postgres://…] [--out file.json] [--decrypt]
                                 write the database configuration back to a JSON file
+                                (encrypted credentials stay encrypted unless --decrypt)
 
-Environment: CONFIG_PATH (default data/config.json), DATABASE_URL (enables PostgreSQL).`)
+Environment: CONFIG_PATH (default data/config.json), DATABASE_URL (enables PostgreSQL),
+KIRO_ENCRYPTION_KEY (encrypts credentials at rest).`)
 		return 0
 	}
 	fmt.Fprintf(os.Stderr, "unknown command %q (try: kiro-go help)\n", cmd)
