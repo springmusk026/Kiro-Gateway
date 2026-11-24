@@ -1268,8 +1268,9 @@ func KiroToClaudeResponse(content, thinkingContent string, includeEmptyThinkingB
 
 	if thinkingContent != "" || includeEmptyThinkingBlock {
 		blocks = append(blocks, ClaudeContentBlock{
-			Type:     "thinking",
-			Thinking: thinkingContent,
+			Type:      "thinking",
+			Thinking:  thinkingContent,
+			Signature: thinkingSignature,
 		})
 	}
 
@@ -2901,7 +2902,7 @@ func KiroToOpenAIResponseWithReasoning(content, reasoningContent string, toolUse
 			"message":       message,
 			"finish_reason": finishReason,
 		}},
-		"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, includeCache),
+		"usage": withReasoningTokenDetails(buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, includeCache), reasoningContent),
 	}
 }
 

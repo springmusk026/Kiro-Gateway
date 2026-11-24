@@ -18,6 +18,9 @@ type ResponsesRequest struct {
 	TopP               *float64          `json:"top_p,omitempty"`
 	ParallelToolCalls  *bool             `json:"parallel_tool_calls,omitempty"`
 	Truncation         string            `json:"truncation,omitempty"`
+	// Include is accepted and ignored: "reasoning.encrypted_content" has no
+	// Kiro equivalent (reasoning items carry only their summary).
+	Include []string `json:"include,omitempty"`
 	// RawTools is the request's tools array as sent, echoed on the response.
 	RawTools json.RawMessage `json:"-"`
 }
@@ -110,6 +113,8 @@ type ResponseOutputItem struct {
 	// Input carries the raw payload of a custom_tool_call output item, which
 	// Codex reads instead of arguments for freeform tools.
 	Input string `json:"input,omitempty"`
+	// Summary is the reasoning summary of a "reasoning" output item.
+	Summary []ResponseSummaryPart `json:"summary,omitempty"`
 }
 
 type ResponseContentPart struct {
@@ -136,8 +141,8 @@ type ResponsesUsage struct {
 	InputTokensDetails *ResponsesInputTokensDetails `json:"input_tokens_details,omitempty"`
 	OutputTokens       int                          `json:"output_tokens"`
 	TotalTokens        int                          `json:"total_tokens"`
-	// OutputTokensDetails is always reported; Kiro does not break out
-	// reasoning tokens, so reasoning_tokens stays 0.
+	// OutputTokensDetails is always reported; reasoning_tokens is estimated
+	// from the reasoning text (Kiro does not break it out).
 	OutputTokensDetails *ResponsesOutputTokensDetails `json:"output_tokens_details,omitempty"`
 }
 

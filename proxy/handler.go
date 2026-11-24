@@ -1227,6 +1227,15 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			if activeBlockIndex < 0 {
 				return
 			}
+			if activeBlockType == "thinking" {
+				// Anthropic streams end every thinking block with its
+				// signature (opaque here, see reasoning_output.go).
+				h.sendSSE(w, flusher, "content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": activeBlockIndex,
+					"delta": map[string]string{"type": "signature_delta", "signature": thinkingSignature},
+				})
+			}
 			h.sendSSE(w, flusher, "content_block_stop", map[string]interface{}{
 				"type":  "content_block_stop",
 				"index": activeBlockIndex,
@@ -1250,8 +1259,9 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 					"type":  "content_block_start",
 					"index": idx,
 					"content_block": map[string]string{
-						"type":     "thinking",
-						"thinking": "",
+						"type":      "thinking",
+						"thinking":  "",
+						"signature": "",
 					},
 				})
 			} else {
@@ -2571,7 +2581,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			finishReason = "stop"
 		}
 
-		usage := buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil)
+		usage := withReasoningTokenDetails(buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil), reasoningOutput)
 		chunk := map[string]interface{}{
 			"id":      chatID,
 			"object":  "chat.completion.chunk",
