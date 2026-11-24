@@ -29,7 +29,7 @@ function regexError(src: string): string | null {
     .replace(/\(\?[imsU]*-?[imsU]*:/g, '(?:')
     .replace(/\(\?P</g, '(?<')
   try {
-    new RegExp(js, 'u')
+    new RegExp(js)
   } catch (e) {
     return e instanceof Error ? e.message.replace(/^Invalid regular expression: /, '') : String(e)
   }
