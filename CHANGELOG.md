@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Cost and reliability
+- **Usage-aware routing**: accounts close to their usage limit (default 97 %, `usageRoutingThreshold` /
+  `KIRO_USAGE_THRESHOLD`) are used only when nothing else is available, lower usage is preferred, and a
+  conversation moves off its account once it crosses the threshold. Usage is refreshed per account every
+  10–15 minutes in the background and after quota errors. The Accounts page shows credits left per account
+  and for the pool.
+- **Model fallback**: per-model fallback lists (Models → Aliases). A request whose model is unavailable or
+  overloaded is retried once on the first fallback before anything is streamed, within the attempt budget;
+  reported in `x-kiro-go-fallback-model` and the request log (schema migration 3 adds
+  `kiro_request_logs.fallback_model`).
+- **Budgets**: a global and a per-key daily credit cap, reset at midnight in a configurable time zone;
+  requests over a cap get `429` (`rate_limit_error` / `insufficient_quota`) without reaching Kiro.
+- **Alerts** at 80 % / 100 % of daily caps and key limits and at 90 % of the pool's account limits, shown in
+  the console and posted once per day to an optional webhook (Slack/Discord-compatible `text`).
+- **Prompt-cache points** (experimental, off by default, `KIRO_CACHE_POINTS=1`): cache points on
+  `generateAssistantResponse` requests for models that support prompt caching. Unverified against Kiro.
+
 ## 2.0.0 — independent project
 
 Kiro-Go began as a fork of [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) at version 1.1.5. Since

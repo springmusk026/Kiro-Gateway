@@ -37,6 +37,8 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 | `KIRO_CONVERSATION_AFFINITY` | `0` disables keeping each conversation on the account that served it (prompt-cache reuse). | on |
 | `KIRO_SESSION_AFFINITY` | `1` additionally pins each API key to the account that last served it. | off |
 | `KIRO_LOCAL_PROBES` | `0` forwards Claude Code's start-up quota probe upstream instead of answering it locally. | on |
+| `KIRO_USAGE_THRESHOLD` | Share of an account's usage limit (0–1) from which routing uses it only as a last resort. Overrides the console setting. | `0.97` |
+| `KIRO_CACHE_POINTS` | `1` adds experimental prompt-cache points to `generateAssistantResponse` requests (see [Prompt-cache points](#prompt-cache-points-experimental)). Unverified against Kiro. | off |
 
 ### Requests and payloads
 
@@ -66,7 +68,8 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 | Section | What it controls |
 |---|---|
 | Security | Admin password, API key verification for the public endpoints. |
-| Routing & upstream | Preferred endpoint (Kiro IDE / CodeWhisperer / Amazon Q), endpoint fallback, upstream protocol, whether accounts stay in rotation after reaching their quota (overage may be billed). |
+| Routing & upstream | Preferred endpoint (Kiro IDE / CodeWhisperer / Amazon Q), endpoint fallback, upstream protocol, whether accounts stay in rotation after reaching their quota (overage may be billed), the usage-aware routing threshold (`usageRoutingThreshold`). |
+| Budgets & alerts | Global daily credit cap (`dailyCreditLimit`), the budget time zone (`budgetTimeZone`), the alert webhook (`alertWebhookURL`) and the alerts active right now. |
 | Prompt filter | Removing Claude Code boilerplate, environment noise and custom patterns from system prompts before they are sent. |
 | Network | Outbound HTTP/SOCKS5 proxy (applies immediately). |
 | Logging & storage | Storage backend status, recorder health, body capture size, history retention, the `config.json` migration. |
@@ -77,7 +80,7 @@ The **Models** page holds everything model-related, in three tabs:
 - **Catalog** — the live model list from Kiro; enable or disable models (disabled models disappear from
   `/v1/models` and requests for them are rejected with a clear error), see context window, output limit,
   credit multiplier, effort levels and prompt-cache support.
-- **Aliases** — client-facing model names (below).
+- **Aliases** — client-facing model names and model fallbacks (below).
 - **Thinking** — when to think (follow the request / always / never), the default thinking length, the
   legacy model suffix, and how reasoning is returned to OpenAI and Anthropic clients.
 
@@ -86,6 +89,52 @@ The **Models** page holds everything model-related, in three tabs:
 Aliases (Models → Aliases) expose client-friendly names that resolve to one upstream model, for
 example `kiro-opus` → `claude-opus-4.5`. They apply to all three APIs, appear in `/v1/models`, match
 case-insensitively and cannot chain.
+
+### Model fallbacks
+
+Models → Aliases → **Model fallbacks** lists, per upstream model, the models to try when it is unavailable
+(`modelFallbacks`, admin API `GET`/`POST /admin/api/model-fallbacks`). A request falls back when Kiro
+reports the model as temporarily unavailable or overloaded, when every account in the loop answered with a
+503/529-class error, or when the model id is no longer offered. Client errors, authentication, quota and
+rate limits never fall back. Only the first enabled fallback is tried, once per request, before anything was
+streamed to the client and within the request's upstream attempt budget. The response carries
+`x-kiro-go-fallback-model: <model>` (unless a streaming heartbeat already sent the headers) and the request
+log records the fallback model.
+
+### Usage-aware routing
+
+Accounts report their usage for the current period (refreshed in the background every 10–15 minutes per
+account, and soon after a quota error). Routing prefers accounts with headroom: an account at or above the
+threshold (default 97 % of its limit) is used only when no other account is available, and among the rest
+accounts in a lower usage band (10 points wide) win, with rotation inside a band. A conversation stays on
+its account until that account crosses the threshold. Active trial credits count towards usage and limit.
+The overage settings still decide whether an account past 100 % is used at all. The Accounts page shows
+each account's credits left and the pool's credits remaining this period.
+
+### Budgets and alerts
+
+- **Daily caps**: a global cap (Settings → Budgets & alerts) and a per-key cap (`dailyCreditLimit` on each
+  API key). Both reset at midnight in the budget time zone (UTC by default). Once a cap is reached, chat
+  requests are rejected before reaching Kiro with `429` — Anthropic `rate_limit_error`, OpenAI
+  `insufficient_quota` — and a `Retry-After` until the reset. `count_tokens`, model lists and the
+  playground are not capped. The existing cumulative key limits (`tokenLimit`, `creditLimit`) are unchanged.
+- Daily usage counts the credits Kiro reports per request. It is kept in memory and saved with the rest of
+  the configuration through the debounced writer (at most once per second, never on the request path), so
+  a restart keeps the day's totals. Requests for which Kiro reports no credits do not count.
+- **Alerts** at 80 % and 100 % of the global and per-key daily caps and of the per-key cumulative limits,
+  and at 90 % / 100 % of the pool's total account limits, are shown on the Overview and API & Keys pages
+  (`GET /admin/api/alerts`). With `alertWebhookURL` set, each alert level is posted once per budget day as
+  JSON `{"text", "kind", "level", "value", "limit"}` (`text` works for Slack; `content` repeats it for
+  Discord), from a background loop with a 10 s timeout.
+
+### Prompt-cache points (experimental)
+
+With `KIRO_CACHE_POINTS=1`, requests sent over `generateAssistantResponse` for models whose catalog entry
+reports prompt caching carry `{"type": "default"}` cache points: on the assistant half of the system-prompt
+priming pair and at the end of the tool list, each only when the prefix it closes reaches the model's
+`minimumTokensPerCacheCheckpoint`, never more than `maximumCacheCheckpointsPerRequest`. The shape comes from
+the CodeWhisperer schema bundled with the official agent; the official clients never send it, so whether
+Kiro honours it (or rejects it) is unverified. `/v1/responses` has no such field and is not affected.
 
 ## Storage
 
