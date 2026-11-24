@@ -195,7 +195,8 @@ func buildResponsesRequest(payload *KiroPayload) *responsesRequest {
 	}
 	req.Tools = buildResponsesTools(payload)
 
-	meta := responsesMetadata{"kiro:agent_mode": "vibe"}
+	// The official client sends the mode identifier in vibe mode too.
+	meta := responsesMetadata{"kiro:agent_mode": "vibe", "kiro:mode_identifier": "vibe"}
 	if id := strings.TrimSpace(payload.ConversationState.ConversationID); id != "" {
 		meta["kiro:conversation_id"] = id
 	}
@@ -376,6 +377,7 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 		return fmt.Errorf("nil kiro payload")
 	}
 	callback = withToolNameRestore(payload, callback)
+	ensureAgentContinuationID(payload)
 
 	originalProfileArn := payload.ProfileArn
 	defer func() { payload.ProfileArn = originalProfileArn }()
@@ -431,7 +433,8 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		req.Header.Set("x-amzn-kiro-origin", origin)
-		req.Header.Set("x-amzn-codewhisperer-optout", "true")
+		// Default client settings send "false" (content collection not opted out).
+		req.Header.Set("x-amzn-codewhisperer-optout", "false")
 		if arn := strings.TrimSpace(payload.ProfileArn); arn != "" {
 			req.Header.Set("x-amzn-kiro-profile", arn)
 		}

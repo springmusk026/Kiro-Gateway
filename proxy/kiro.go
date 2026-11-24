@@ -72,12 +72,13 @@ var kiroEndpoints = []kiroEndpoint{
 	},
 }
 
-// kiroCLIEndpoint is the headless / API Key path used by Kiro CLI:
-// POST https://runtime.{region}.kiro.dev/ with AWS JSON 1.0 protocol.
+// kiroCLIEndpoint is the headless / API Key path used by Kiro CLI 3.5.0's
+// default (v3) agent: POST https://runtime.{region}.kiro.dev/ with AWS JSON 1.0
+// and the runtime service's own target (observed on the wire).
 var kiroCLIEndpoint = kiroEndpoint{
 	URL:       "https://runtime.us-east-1.kiro.dev/",
 	Origin:    "KIRO_CLI",
-	AmzTarget: "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
+	AmzTarget: "KiroRuntimeService.GenerateAssistantResponse",
 	Name:      "Kiro CLI",
 }
 
@@ -177,6 +178,14 @@ func InitKiroHttpClient(proxyURL string) {
 	kiroRestHttpStore.Store(restClient)
 }
 
+// ensureAgentContinuationID gives each request the fresh agent continuation
+// id the official client sends with every turn.
+func ensureAgentContinuationID(p *KiroPayload) {
+	if p != nil && strings.TrimSpace(p.ConversationState.AgentContinuationId) == "" {
+		p.ConversationState.AgentContinuationId = uuid.New().String()
+	}
+}
+
 // ==================== Request Structs ====================
 
 // KiroPayload is the top-level request body sent to the Kiro API.
@@ -196,6 +205,8 @@ type KiroPayload struct {
 	} `json:"conversationState"`
 	ProfileArn      string           `json:"profileArn,omitempty"`
 	InferenceConfig *InferenceConfig `json:"inferenceConfig,omitempty"`
+	// AgentMode rides in the body on the runtime service's awsJson call.
+	AgentMode string `json:"agentMode,omitempty"`
 
 	// AdditionalModelRequestFields carries per-model reasoning controls such as
 	// {"output_config":{"effort":"low"}}. Shape comes from ListAvailableModels.
@@ -441,6 +452,11 @@ func callKiroLegacyAPIContext(ctx context.Context, account *config.Account, payl
 	// Build endpoint list ordered by configuration / credential type.
 	endpoints := resolveKiroEndpoints(account)
 	isAPIKey := config.IsAPIKeyAccount(account)
+	ensureAgentContinuationID(payload)
+	if isAPIKey {
+		payload.AgentMode = "vibe"
+		defer func() { payload.AgentMode = "" }()
+	}
 
 	var lastErr error
 endpointLoop:
@@ -498,26 +514,19 @@ endpointLoop:
 				continue endpointLoop
 			}
 			if isAPIKey {
-				req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+				setKiroCLIRuntimeHeaders(req, account, ep.AmzTarget, streamAttempt, invocationID)
 			} else {
 				req.Header.Set("Content-Type", "application/json")
-			}
-			req.Header.Set("Accept", "*/*")
-			if ep.AmzTarget != "" {
-				req.Header.Set("X-Amz-Target", ep.AmzTarget)
-			}
-			applyKiroBaseHeaders(req, account, headerValues)
-			if !isAPIKey {
+				req.Header.Set("Accept", "*/*")
+				if ep.AmzTarget != "" {
+					req.Header.Set("X-Amz-Target", ep.AmzTarget)
+				}
+				applyKiroBaseHeaders(req, account, headerValues)
 				req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-			}
-			// CLI captures use optout=false; IDE path keeps true.
-			if isAPIKey {
-				req.Header.Set("x-amzn-codewhisperer-optout", "false")
-			} else {
 				req.Header.Set("x-amzn-codewhisperer-optout", "true")
+				req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", streamAttempt, maxStreamAttemptsPerEndpoint))
+				req.Header.Set("Amz-Sdk-Invocation-Id", invocationID)
 			}
-			req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", streamAttempt, maxStreamAttemptsPerEndpoint))
-			req.Header.Set("Amz-Sdk-Invocation-Id", invocationID)
 
 			if budgetErr := takeUpstreamAttempt(ctx); budgetErr != nil {
 				return budgetErr

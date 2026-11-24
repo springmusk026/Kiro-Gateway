@@ -593,7 +593,7 @@ func TestCallKiroAPIRetriesAPIKeyEndpointAfterEmptyStream(t *testing.T) {
 	if text != "recovered" || completed != 1 {
 		t.Fatalf("text=%q completed=%d, want recovered and one completion", text, completed)
 	}
-	if got := strings.Join(attempts, ","); got != "attempt=1; max=2,attempt=2; max=2" {
+	if got := strings.Join(attempts, ","); got != "attempt=1; max=3,attempt=2; max=3" { // API-key path advertises the official budget of 3
 		t.Fatalf("attempt headers = %q", got)
 	}
 	if len(invocationIDs) != 2 || invocationIDs[0] == "" || invocationIDs[0] != invocationIDs[1] {
@@ -689,7 +689,7 @@ func TestCallKiroAPISingleEndpointStopsAfterFinalAttempt(t *testing.T) {
 	if completed != 0 {
 		t.Fatalf("failed attempts must not complete, got %d callbacks", completed)
 	}
-	wantAttempts := "attempt=1; max=2,attempt=2; max=2"
+	wantAttempts := "attempt=1; max=3,attempt=2; max=3" // API-key path: official budget
 	if got := strings.Join(attempts, ","); got != wantAttempts {
 		t.Fatalf("attempt headers = %q, want %q", got, wantAttempts)
 	}

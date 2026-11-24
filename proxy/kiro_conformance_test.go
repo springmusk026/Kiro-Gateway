@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestResponsesIdentity(t *testing.T) {
 		t.Fatalf("oauth UA = %q", ua)
 	}
 	key := &config.Account{ID: "k", AuthMethod: "api_key", KiroApiKey: "ksk_x"}
-	if ua := responsesUserAgent(key); !strings.HasPrefix(ua, "KiroCLI/3.5.0 KAS/") || !strings.HasSuffix(ua, "app/AmazonQ-For-CLI") {
+	if ua := responsesUserAgent(key); !strings.HasPrefix(ua, "KiroCLI/3.5.0 KAS/") || !strings.HasSuffix(ua, "app/AmazonQ-For-CLI acp-client/kiro-cli") {
 		t.Fatalf("api key UA = %q", ua)
 	}
 	cases := map[string]string{"social": "", "": "", "idc": "SSO_OIDC", "external_idp": "EXTERNAL_IDP"}
@@ -90,5 +91,45 @@ func TestEventStreamInlineErrorEvents(t *testing.T) {
 		if err == nil || !errors.Is(err, errKiroEventStreamUpstream) || !strings.Contains(err.Error(), et) {
 			t.Fatalf("%s: err = %v", et, err)
 		}
+	}
+}
+
+func TestAPIKeyRuntimeCallMatchesCapturedClient(t *testing.T) {
+	req, _ := http.NewRequest("POST", "https://runtime.us-east-1.kiro.dev/", nil)
+	acct := &config.Account{ID: "k", AuthMethod: "api_key", KiroApiKey: "ksk_x"}
+	setKiroCLIRuntimeHeaders(req, acct, kiroCLIEndpoint.AmzTarget, 1, "inv-1")
+	want := map[string]string{
+		"Content-Type":                   "application/x-amz-json-1.0",
+		"X-Amz-Target":                   "KiroRuntimeService.GenerateAssistantResponse",
+		"Tokentype":                      "API_KEY",
+		"X-Amzn-Kiro-Client-Attribution": "kiro-cli",
+		"X-Amzn-Kiro-Mode-Identifier":    "vibe",
+		"X-Amzn-Kiro-Fallback":           "0;max=0",
+		"X-Amzn-Kiro-Attempt":            "1;max=3",
+		"Amz-Sdk-Request":                "attempt=1; max=3",
+		"Amz-Sdk-Invocation-Id":          "inv-1",
+	}
+	for k, v := range want {
+		if got := req.Header.Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+	for _, absent := range []string{"x-amzn-kiro-origin", "x-amzn-kiro-agent-mode", "x-amzn-codewhisperer-optout", "Accept"} {
+		if req.Header.Get(absent) != "" {
+			t.Errorf("%s must not be sent", absent)
+		}
+	}
+	if ua := req.Header.Get("User-Agent"); !strings.HasPrefix(ua, "aws-sdk-js/1.0.0 ua/2.1 os/") || !strings.Contains(ua, "api/kiroruntime#1.0.0 m/N KiroCLI/3.5.0") {
+		t.Errorf("UA = %q", ua)
+	}
+}
+
+func TestConversationIDShape(t *testing.T) {
+	a := buildConversationID("m", "sys", "hello there")
+	if a != buildConversationID("m", "sys", "hello there") {
+		t.Fatal("conversation id must be stable for the same conversation")
+	}
+	if !strings.HasPrefix(a, "sess_") || len(a) != len("sess_")+36 || a[len("sess_")+14] != '4' {
+		t.Fatalf("id %q is not sess_<uuid v4>", a)
 	}
 }

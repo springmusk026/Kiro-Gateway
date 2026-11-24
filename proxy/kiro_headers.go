@@ -110,7 +110,7 @@ const (
 // CLI feature and present the CLI (origin KIRO_CLI).
 func responsesUserAgent(account *config.Account) string {
 	if config.IsAPIKeyAccount(account) {
-		return fmt.Sprintf("KiroCLI/%s KAS/%s os/linux md/appVersion-%s app/AmazonQ-For-CLI", kiroCLIVersion, kiroKASVersion, kiroCLIVersion)
+		return kiroCLICustomUA()
 	}
 	ua := "KiroIDE-" + config.GetKiroClientConfig().KiroVersion
 	if account != nil && account.MachineId != "" {
@@ -135,4 +135,49 @@ func responsesTokenType(account *config.Account) string {
 		return "SSO_OIDC"
 	}
 	return ""
+}
+
+// kiroCLICustomUA is the Kiro CLI host's custom user agent as observed on the
+// wire (interactive session).
+func kiroCLICustomUA() string {
+	return fmt.Sprintf("KiroCLI/%s KAS/%s os/linux md/appVersion-%s app/AmazonQ-For-CLI acp-client/kiro-cli", kiroCLIVersion, kiroKASVersion, kiroCLIVersion)
+}
+
+// kasNodeVersion is the Node runtime bundled with Kiro CLI 3.5.0.
+const kasNodeVersion = "22.23.4"
+
+// kiroCLISmithyUserAgents returns the User-Agent / x-amz-user-agent pair the
+// CLI's agent sends on its AWS SDK calls to the runtime service.
+func kiroCLISmithyUserAgents() (userAgent, amzUserAgent string) {
+	tail := kiroCLICustomUA()
+	osTok := "linux"
+	if v := strings.TrimSpace(config.GetKiroClientConfig().SystemVersion); strings.HasPrefix(v, "linux#") {
+		osTok = v
+	}
+	return fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/kiroruntime#1.0.0 m/N %s", osTok, kasNodeVersion, tail),
+		"aws-sdk-js/1.0.0 " + tail
+}
+
+// setKiroCLIRuntimeHeaders applies the header set Kiro CLI 3.5.0's agent sends
+// on KiroRuntimeService.GenerateAssistantResponse (observed on the wire): no
+// origin, agent-mode or optout header; mode, attribution, attempt and fallback
+// counters; AWS SDK user agents and invocation id.
+func setKiroCLIRuntimeHeaders(req *http.Request, account *config.Account, target string, attempt int, invocationID string) {
+	ua, amzUA := kiroCLISmithyUserAgents()
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("X-Amz-Target", target)
+	if token := accountBearerToken(account); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if tt := responsesTokenType(account); tt != "" {
+		req.Header.Set("TokenType", tt)
+	}
+	req.Header.Set("x-amzn-kiro-client-attribution", "kiro-cli")
+	req.Header.Set("x-amzn-kiro-mode-identifier", "vibe")
+	req.Header.Set("x-amzn-kiro-fallback", "0;max=0")
+	req.Header.Set("x-amzn-kiro-attempt", fmt.Sprintf("%d;max=%d", attempt, responsesAttemptBudget))
+	req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", attempt, responsesAttemptBudget))
+	req.Header.Set("Amz-Sdk-Invocation-Id", invocationID)
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("x-amz-user-agent", amzUA)
 }

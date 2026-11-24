@@ -876,9 +876,19 @@ func (h *Handler) refreshModelsCache() {
 	}
 }
 
+// modelPrefetchDisabled stops model-list fetches against the real upstream;
+// tests set it so adding fake accounts never reaches Kiro.
+var (
+	modelPrefetchDisabled    bool
+	errModelPrefetchDisabled = errors.New("model prefetch disabled")
+)
+
 // fetchAndCacheAccountModels 为单个账号拉取并写入模型缓存。
 // 同时更新 pool 的路由缓存与全局聚合模型列表。
 func (h *Handler) fetchAndCacheAccountModels(account *config.Account) error {
+	if modelPrefetchDisabled {
+		return errModelPrefetchDisabled
+	}
 	if err := h.ensureValidToken(account); err != nil {
 		return fmt.Errorf("token refresh failed: %w", err)
 	}

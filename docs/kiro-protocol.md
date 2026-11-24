@@ -1,5 +1,10 @@
 # Kiro CLI 3.5.0 / @kiro/agent 0.66.119: network API map, cross-checked against Kiro-Go
 
+> **Correction from the wire capture ([kiro-capture.md](kiro-capture.md)):** the agent's SDK calls are **AWS JSON 1.0**
+> (`POST /` with `x-amz-target: KiroRuntimeService.*` on the runtime host and `KiroControlPlaneBearerService.*` on
+> `management.{region}.kiro.dev`), not the REST paths quoted below. Only `/v1/responses` is a path call. The default
+> chat arm is `KiroRuntimeService.GenerateAssistantResponse`; `/v1/responses` is used when the feature flag enables it.
+>
 > **Status:** research notes from the Kiro CLI 3.5.0 binary, its bundled agent (`@kiro/agent` 0.66.119) and the
 > open-source Amazon Q Developer CLI, cross-checked against Kiro-Go at the time of writing. Items in §6 that are
 > done: `/v1/responses` header set and identity, `response.incomplete`, refusals, in-stream error events,

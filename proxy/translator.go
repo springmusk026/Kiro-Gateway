@@ -2392,10 +2392,15 @@ func firstOpenAIConversationAnchor(messages []OpenAIMessage) string {
 func buildConversationID(modelID, systemPrompt, anchor string) string {
 	anchor = strings.TrimSpace(anchor)
 	if isSyntheticConversationAnchor(anchor) {
-		return uuid.New().String()
+		return "sess_" + uuid.New().String()
 	}
+	// Stable per conversation (so turns share an id and prompt cache), but in
+	// the official client's form: "sess_" + a version-4 UUID.
 	seed := strings.Join([]string{modelID, strings.TrimSpace(systemPrompt), anchor}, "\n")
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+	id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed))
+	id[6] = (id[6] & 0x0f) | 0x40 // version 4
+	id[8] = (id[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return "sess_" + id.String()
 }
 
 func isSyntheticConversationAnchor(anchor string) bool {

@@ -17,5 +17,7 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("KIRO_UPSTREAM_PROTOCOL", responsesProtocolLegacy); err != nil {
 		panic(err)
 	}
+	// Adding fake accounts in tests must never call the real Kiro model API.
+	modelPrefetchDisabled = true
 	os.Exit(m.Run())
 }
