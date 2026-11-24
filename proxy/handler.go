@@ -510,6 +510,12 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 			return
 		}
 		h.handleOpenAIResponses(w, ar)
+	case strings.HasPrefix(path, "/v1/responses/") || strings.HasPrefix(path, "/responses/"):
+		ar := h.authenticateForOpenAI(w, r)
+		if ar == nil {
+			return
+		}
+		h.handleResponseByID(w, ar, path[strings.Index(path, "/responses/")+len("/responses/"):])
 	case path == "/v1/models" || path == "/models":
 		h.handleModels(w, r)
 	case strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/models/"):

@@ -746,3 +746,68 @@ func (h *Handler) handleResponsesStream(
 	info := classifyUpstreamError(lastErr)
 	sendFailed(nil, info.Code, info.Message)
 }
+
+// handleResponseByID serves GET and DELETE /v1/responses/{id} from the
+// response store. Responses here never run in background mode, so cancel is
+// always rejected as the official API rejects it for non-background ones.
+func (h *Handler) handleResponseByID(w http.ResponseWriter, r *http.Request, rest string) {
+	rest = strings.Trim(rest, "/")
+	id, action, _ := strings.Cut(rest, "/")
+	if id == "" {
+		h.sendAPINotFound(w, r)
+		return
+	}
+	notFound := func() {
+		h.sendOpenAIErrorWithCode(w, http.StatusNotFound, "invalid_request_error", "",
+			fmt.Sprintf("No response found with id '%s'.", id))
+	}
+
+	switch action {
+	case "cancel":
+		if r.Method != http.MethodPost {
+			h.sendAPIMethodNotAllowed(w, r, "POST")
+			return
+		}
+		if _, err := loadResponse(id); err != nil {
+			notFound()
+			return
+		}
+		h.sendOpenAIErrorWithCode(w, http.StatusBadRequest, "invalid_request_error", "",
+			"Only responses created with background=true can be cancelled.")
+		return
+	case "":
+	default:
+		h.sendAPINotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		resp, err := loadResponse(id)
+		if err != nil {
+			notFound()
+			return
+		}
+		resp.fillWireDefaults()
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(resp)
+	case http.MethodDelete:
+		deleted, err := deleteResponse(id)
+		if err != nil {
+			h.sendOpenAIError(w, http.StatusInternalServerError, "server_error", err.Error())
+			return
+		}
+		if !deleted {
+			notFound()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      id,
+			"object":  "response",
+			"deleted": true,
+		})
+	default:
+		h.sendAPIMethodNotAllowed(w, r, "GET, DELETE")
+	}
+}
