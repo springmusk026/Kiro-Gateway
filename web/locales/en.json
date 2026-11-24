@@ -608,5 +608,8 @@
   "playground.thinking": "Reasoning",
   "playground.stopped": "Stopped.",
   "playground.ttft": "First token",
-  "playground.total": "Total"
+  "playground.total": "Total",
+  "overview.openTitle": "Your API is open to the network",
+  "overview.openText": "API key verification is off and the server listens on a public address, so anyone who can reach it can use your Kiro accounts.",
+  "overview.openAction": "Secure it"
 }

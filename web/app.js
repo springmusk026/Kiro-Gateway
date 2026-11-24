@@ -709,6 +709,8 @@
     if (avail) avail.textContent = d.available != null ? d.available : (d.accounts || 0);
     const rate = $('ovSuccessRate');
     if (rate) rate.textContent = d.totalRequests ? ((100 * (d.successRequests || 0)) / d.totalRequests).toFixed(1) + '%' : '–';
+    const openNotice = $('ovOpenNotice');
+    if (openNotice) openNotice.classList.toggle('hidden', !d.apiOpen);
     const up = $('ovUptime');
     if (up) up.textContent = formatUptime(d.uptime || 0);
   }

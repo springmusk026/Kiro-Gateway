@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kiro-go/config"
 	"net/http"
 	"sync"
 	"time"
@@ -34,7 +35,7 @@ func StartBuilderIdLogin(region string) (*BuilderIdSession, error) {
 		region = "us-east-1"
 	}
 
-	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", region)
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", config.SafeRegion(region))
 	startUrl := "https://view.awsapps.com/start"
 	scopes := []string{
 		"codewhisperer:completions",
@@ -162,7 +163,7 @@ func PollBuilderIdAuth(sessionID string) (accessToken, refreshToken, clientID, c
 		return "", "", "", "", "", 0, "", fmt.Errorf("authorization expired")
 	}
 
-	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", session.Region)
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", config.SafeRegion(session.Region))
 
 	tokenPayload := map[string]string{
 		"clientId":     session.ClientID,

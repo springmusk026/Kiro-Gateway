@@ -302,7 +302,7 @@ func NewHandler() *Handler {
 	// 启动后台统计保存 (每30秒保存一次)
 	go h.backgroundStatsSaver()
 	// 清理过期的 stored responses（>30 天）
-	go purgeExpiredResponses(responsesDefaultTTL)
+	go responsesStoreJanitor(h.stopRefresh)
 	return h
 }
 
@@ -408,18 +408,38 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Debug-level request trace for fine-grained visibility
 	logger.Debugf("[HTTP] %s %s from %s", r.Method, path, r.RemoteAddr)
 
-	// CORS - 完整的头部支持
+	isAdmin := path == "/admin" || strings.HasPrefix(path, "/admin/")
+	if isAdmin {
+		// The admin UI is same-origin only: no CORS, no framing.
+		setAdminSecurityHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	} else {
+		h.setAPICORSHeaders(w)
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(204)
+			return
+		}
+	}
+	if r.Body != nil && r.Method != http.MethodGet {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes())
+	}
+
+	// 路由
+	h.route(w, r, path)
+}
+
+// setAPICORSHeaders allows browser clients to call the public /v1 API.
+func (h *Handler) setAPICORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, anthropic-version, anthropic-beta, x-api-key, x-stainless-os, x-stainless-lang, x-stainless-package-version, x-stainless-runtime, x-stainless-runtime-version, x-stainless-arch")
 	w.Header().Set("Access-Control-Expose-Headers", "x-request-id, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens")
+}
 
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(204)
-		return
-	}
-
-	// 路由
+func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 	switch {
 	// API 端点（需要验证 API Key）
 	case path == "/v1/messages" || path == "/messages" || path == "/anthropic/v1/messages":
@@ -2487,18 +2507,8 @@ func (h *Handler) ensureValidToken(account *config.Account) error {
 // ==================== 管理 API ====================
 
 func (h *Handler) handleAdminAPI(w http.ResponseWriter, r *http.Request) {
-	// 验证密码
-	password := r.Header.Get("X-Admin-Password")
-	if password == "" {
-		cookie, _ := r.Cookie("admin_password")
-		if cookie != nil {
-			password = cookie.Value
-		}
-	}
-
-	if password != config.GetPassword() {
-		w.WriteHeader(401)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+	// Header-only auth (no cookie: avoids CSRF), constant time, throttled.
+	if !h.checkAdminAuth(w, r) {
 		return
 	}
 
@@ -4077,16 +4087,25 @@ func (h *Handler) apiImportCredentials(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiGetStatus(w http.ResponseWriter, r *http.Request) {
+	// Counters are updated concurrently by request goroutines: read them
+	// atomically (and credits under its lock) to avoid data races.
+	h.creditsMu.RLock()
+	credits := h.totalCredits
+	h.creditsMu.RUnlock()
+	host := strings.TrimSpace(config.GetHost())
+	loopback := host == "127.0.0.1" || host == "localhost" || host == "::1"
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"version":         config.Version,
 		"accounts":        h.pool.Count(),
 		"available":       h.pool.AvailableCount(),
-		"totalRequests":   h.totalRequests,
-		"successRequests": h.successRequests,
-		"failedRequests":  h.failedRequests,
-		"totalTokens":     h.totalTokens,
-		"totalCredits":    h.totalCredits,
+		"totalRequests":   atomic.LoadInt64(&h.totalRequests),
+		"successRequests": atomic.LoadInt64(&h.successRequests),
+		"failedRequests":  atomic.LoadInt64(&h.failedRequests),
+		"totalTokens":     atomic.LoadInt64(&h.totalTokens),
+		"totalCredits":    credits,
 		"uptime":          time.Now().Unix() - h.startTime,
+		// The public API is reachable from the network without any key.
+		"apiOpen": !config.IsApiKeyRequired() && !loopback,
 	})
 }
 
@@ -4157,7 +4176,11 @@ func (h *Handler) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := config.UpdateSettingsPatch(req.ApiKey, req.RequireApiKey, req.Password); err != nil {
-		w.WriteHeader(500)
+		if errors.Is(err, config.ErrWeakPassword) {
+			w.WriteHeader(http.StatusBadRequest)
+		} else {
+			w.WriteHeader(500)
+		}
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
@@ -4512,12 +4535,11 @@ func (h *Handler) apiGetAccountModelsCached(w http.ResponseWriter, r *http.Reque
 // ==================== 静态文件服务 ====================
 
 func (h *Handler) serveAdminPage(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "web/index.html")
+	serveWebFile(w, r, "index.html")
 }
 
 func (h *Handler) serveStaticFile(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/admin/")
-	http.ServeFile(w, r, "web/"+path)
+	serveWebFile(w, r, strings.TrimPrefix(r.URL.Path, "/admin/"))
 }
 
 // apiGetThinkingConfig 获取 thinking 配置

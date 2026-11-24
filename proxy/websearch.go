@@ -264,7 +264,7 @@ func callMcpAPI(account *config.Account, mcpReq *McpRequest) (*McpResponse, erro
 	}
 
 	region := kiroRegionForProfile(account, profileArn)
-	endpoint := fmt.Sprintf("https://q.%s.amazonaws.com/mcp", region)
+	endpoint := fmt.Sprintf("https://q.%s.amazonaws.com/mcp", config.SafeRegion(region))
 
 	reqBody, err := json.Marshal(mcpReq)
 	if err != nil {
@@ -298,7 +298,7 @@ func callMcpAPI(account *config.Account, mcpReq *McpRequest) (*McpResponse, erro
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, err
 	}

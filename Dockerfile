@@ -1,5 +1,5 @@
 # builder 阶段始终运行在构建机原生平台（amd64），用 Go 交叉编译目标平台二进制
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -24,5 +24,7 @@ RUN mkdir -p /app/data
 
 EXPOSE 8080
 VOLUME /app/data
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1
 
 CMD ["./kiro-go"]

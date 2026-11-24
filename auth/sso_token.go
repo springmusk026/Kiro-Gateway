@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kiro-go/config"
 	"net/http"
 	"time"
 
@@ -17,7 +18,7 @@ func ImportFromSsoToken(bearerToken, region string) (accessToken, refreshToken, 
 		region = "us-east-1"
 	}
 
-	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", region)
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", config.SafeRegion(region))
 	portalBase := "https://portal.sso.us-east-1.amazonaws.com"
 	startUrl := "https://view.awsapps.com/start"
 
@@ -87,7 +88,7 @@ func registerDeviceClient(oidcBase, startUrl string) (clientID, clientSecret str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -118,7 +119,7 @@ func startDeviceAuth(oidcBase, clientID, clientSecret, startUrl string) (deviceC
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -165,7 +166,7 @@ func getDeviceSessionToken(portalBase, bearerToken string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -201,7 +202,7 @@ func acceptUserCode(oidcBase, userCode, deviceSessionToken string) (*deviceConte
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -235,7 +236,7 @@ func approveAuth(oidcBase string, deviceContext *deviceContextInfo, deviceSessio
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil

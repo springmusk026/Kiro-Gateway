@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -137,13 +138,16 @@ func FindApiKeyByValue(key string) *ApiKeyEntry {
 	if cfg == nil || key == "" {
 		return nil
 	}
+	// Constant-time per entry and no early exit, so response timing does not
+	// reveal how much of a key matched or which entry it was.
+	var found *ApiKeyEntry
 	for i := range cfg.ApiKeys {
-		if cfg.ApiKeys[i].Key == key {
+		if subtle.ConstantTimeCompare([]byte(cfg.ApiKeys[i].Key), []byte(key)) == 1 && found == nil {
 			cp := cfg.ApiKeys[i]
-			return &cp
+			found = &cp
 		}
 	}
-	return nil
+	return found
 }
 
 // HasApiKeys returns true when at least one API key entry is configured.

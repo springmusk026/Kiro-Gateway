@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"kiro-go/config"
 	"net/http"
 	"net/url"
 	"sync"
@@ -46,7 +47,7 @@ func StartIamSsoLogin(startUrl, region string) (sessionID, authorizeUrl string, 
 		region = "us-east-1"
 	}
 
-	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", region)
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", config.SafeRegion(region))
 	redirectUri := "http://127.0.0.1/oauth/callback"
 
 	// 1. 注册 OIDC 客户端
@@ -135,7 +136,7 @@ func CompleteIamSsoLogin(sessionID, callbackUrl string) (accessToken, refreshTok
 	}
 
 	// 用 code 换取 token
-	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", session.Region)
+	oidcBase := fmt.Sprintf("https://oidc.%s.amazonaws.com", config.SafeRegion(session.Region))
 	accessToken, refreshToken, expiresIn, err = exchangeToken(
 		oidcBase,
 		session.ClientID,
@@ -177,7 +178,7 @@ func registerOIDCClient(oidcBase, startUrl, redirectUri string) (clientID, clien
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -214,7 +215,7 @@ func exchangeToken(oidcBase, clientID, clientSecret, code, codeVerifier, redirec
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 

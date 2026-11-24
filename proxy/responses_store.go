@@ -9,6 +9,8 @@ import (
 	"kiro-go/logger"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -114,6 +116,22 @@ func loadResponse(id string) (*ResponsesObject, error) {
 	}, nil
 }
 
+// Bounds for the on-disk Responses store, so stored conversations cannot
+// fill the data volume (which would also break saving config.json).
+// Override with KIRO_MAX_STORED_RESPONSES / KIRO_MAX_STORED_RESPONSES_MB.
+func storedResponsesLimits() (maxFiles int, maxBytes int64) {
+	maxFiles, maxBytes = 20000, 2<<30
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("KIRO_MAX_STORED_RESPONSES"))); err == nil && v > 0 {
+		maxFiles = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("KIRO_MAX_STORED_RESPONSES_MB"))); err == nil && v > 0 {
+		maxBytes = int64(v) << 20
+	}
+	return
+}
+
+// purgeExpiredResponses removes stored responses older than ttl, then evicts
+// the oldest ones until the store is within the count and size limits.
 func purgeExpiredResponses(ttl time.Duration) {
 	if ttl <= 0 {
 		ttl = responsesDefaultTTL
@@ -123,7 +141,14 @@ func purgeExpiredResponses(ttl time.Duration) {
 	if err != nil {
 		return
 	}
+	type stored struct {
+		path string
+		mod  time.Time
+		size int64
+	}
 	cutoff := time.Now().Add(-ttl)
+	kept := make([]stored, 0, len(entries))
+	var total int64
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -137,6 +162,41 @@ func purgeExpiredResponses(ttl time.Duration) {
 			if err := os.Remove(full); err != nil {
 				logger.Warnf("[Responses] purge %s failed: %v", e.Name(), err)
 			}
+			continue
+		}
+		kept = append(kept, stored{full, info.ModTime(), info.Size()})
+		total += info.Size()
+	}
+	maxFiles, maxBytes := storedResponsesLimits()
+	if len(kept) <= maxFiles && total <= maxBytes {
+		return
+	}
+	sort.Slice(kept, func(i, j int) bool { return kept[i].mod.Before(kept[j].mod) })
+	evicted := 0
+	for _, f := range kept {
+		if len(kept)-evicted <= maxFiles && total <= maxBytes {
+			break
+		}
+		if err := os.Remove(f.path); err == nil {
+			total -= f.size
+			evicted++
+		}
+	}
+	logger.Infof("[Responses] evicted %d oldest stored responses to stay within limits", evicted)
+}
+
+// responsesStoreJanitor applies the store limits periodically, not just at
+// startup, so long-running processes stay bounded.
+func responsesStoreJanitor(stop <-chan struct{}) {
+	purgeExpiredResponses(responsesDefaultTTL)
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			purgeExpiredResponses(responsesDefaultTTL)
+		case <-stop:
+			return
 		}
 	}
 }

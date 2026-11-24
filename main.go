@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,10 @@ func main() {
 		logger.Warnf("It is saved in %s. Set ADMIN_PASSWORD or change it in the admin panel.", configPath)
 	}
 
+	if !config.IsApiKeyRequired() && !isLoopbackHost(config.GetHost()) {
+		logger.Warnf("API key verification is OFF and the server listens on %s: anyone who can reach this port can use your Kiro accounts. Enable it under Settings → API Settings.", config.GetHost())
+	}
+
 	// 初始化账号池
 	pool.GetPool()
 
@@ -86,4 +91,13 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		logger.Fatalf("Server failed: %v", err)
 	}
+}
+
+// isLoopbackHost reports whether the bind address only accepts local clients.
+func isLoopbackHost(host string) bool {
+	switch strings.TrimSpace(host) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }

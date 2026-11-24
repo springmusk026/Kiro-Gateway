@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -976,9 +977,26 @@ func IsApiKeyRequired() bool {
 	return cfg.RequireApiKey
 }
 
+// ErrWeakPassword is returned when a new admin password is too short or is
+// the well-known default.
+var ErrWeakPassword = errors.New("admin password must be at least 8 characters and not the default")
+
+// ValidateAdminPassword enforces a minimal admin password policy.
+func ValidateAdminPassword(p string) error {
+	if len(strings.TrimSpace(p)) < 8 || p == LegacyDefaultPassword {
+		return ErrWeakPassword
+	}
+	return nil
+}
+
 func UpdateSettings(apiKey string, requireApiKey bool, password string) error {
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
+	if password != "" {
+		if err := ValidateAdminPassword(password); err != nil {
+			return err
+		}
+	}
 	cfg.ApiKey = apiKey
 	cfg.RequireApiKey = requireApiKey
 	if password != "" {
@@ -988,6 +1006,11 @@ func UpdateSettings(apiKey string, requireApiKey bool, password string) error {
 }
 
 func UpdateSettingsPatch(apiKey *string, requireApiKey *bool, password string) error {
+	if password != "" {
+		if err := ValidateAdminPassword(password); err != nil {
+			return err
+		}
+	}
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
 	if apiKey != nil {
@@ -1484,4 +1507,18 @@ func defaultSystemVersion() string {
 	default:
 		return "linux#6.6.87"
 	}
+}
+
+var awsRegionPattern = regexp.MustCompile(`^[a-z]{2}(?:-[a-z0-9]+)+-[0-9]+$`)
+
+// SafeRegion returns region when it is a well-formed AWS region name and
+// us-east-1 otherwise. Regions come from imported credential files and are
+// interpolated into hostnames that receive tokens, so a crafted value such
+// as "evil.example/x#" must never reach a URL.
+func SafeRegion(region string) string {
+	region = strings.TrimSpace(region)
+	if awsRegionPattern.MatchString(region) {
+		return region
+	}
+	return "us-east-1"
 }

@@ -165,6 +165,11 @@
       <main class="container">
       <!-- Overview tab -->
       <div id="tabOverview" class="tab-content">
+        <div class="notice notice-warn hidden" id="ovOpenNotice" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <div><strong data-i18n="overview.openTitle"></strong><p data-i18n="overview.openText"></p></div>
+          <button class="btn btn-outline btn-sm" type="button" data-goto="settings" data-i18n="overview.openAction"></button>
+        </div>
         <div class="stats-grid stats-grid--overview">
           <div class="stat-card">
             <div class="stat-card-title" data-i18n="stats.accounts"></div>

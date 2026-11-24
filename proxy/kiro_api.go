@@ -172,7 +172,7 @@ func GetUsageLimits(account *config.Account) (*UsageLimitsResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -203,7 +203,7 @@ func GetUserInfo(account *config.Account) (*UserInfoResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -238,7 +238,7 @@ func ListAvailableModels(account *config.Account) ([]ModelInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

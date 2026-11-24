@@ -322,7 +322,7 @@ func cliRuntimeURL(account *config.Account) string {
 			region = r
 		}
 	}
-	return fmt.Sprintf("https://runtime.%s.kiro.dev/", region)
+	return fmt.Sprintf("https://runtime.%s.kiro.dev/", config.SafeRegion(region))
 }
 
 // getSortedEndpoints returns endpoints ordered by user preference, with optional fallback.
@@ -514,7 +514,7 @@ endpointLoop:
 			}
 
 			if resp.StatusCode != 200 {
-				errBody, _ := io.ReadAll(resp.Body)
+				errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 				resp.Body.Close()
 				lastErr = fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, ep.Name, string(errBody))
 				// A size rejection is only actionable next to the size we sent:

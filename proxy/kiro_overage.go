@@ -73,7 +73,7 @@ func FetchOverageStatus(account *config.Account) (*OverageSnapshot, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func SetOverageStatus(account *config.Account, enabled bool) (*OverageSnapshot, 
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("setUserPreference HTTP %d: %s", resp.StatusCode, string(respBody))
 	}

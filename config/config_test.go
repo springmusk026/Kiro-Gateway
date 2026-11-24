@@ -345,3 +345,19 @@ func TestEnsureAdminPasswordReplacesDefault(t *testing.T) {
 		t.Fatal("a user-chosen password must be kept")
 	}
 }
+
+func TestWeakAdminPasswordRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := Init(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateSettingsPatch(nil, nil, "changeme"); err == nil {
+		t.Fatal("default password must be rejected")
+	}
+	if err := UpdateSettingsPatch(nil, nil, "short"); err == nil {
+		t.Fatal("short password must be rejected")
+	}
+	if err := UpdateSettingsPatch(nil, nil, "long-enough-password"); err != nil {
+		t.Fatalf("valid password rejected: %v", err)
+	}
+}

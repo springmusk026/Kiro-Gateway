@@ -132,7 +132,7 @@ func responsesOrigin(payload *KiroPayload) string {
 // auth/OIDC region for OAuth accounts and can differ from the profile's region
 // (see kiroRegion).
 func responsesEndpointURL(account *config.Account) string {
-	return fmt.Sprintf("https://runtime.%s.kiro.dev/v1/responses", kiroRegion(account))
+	return fmt.Sprintf("https://runtime.%s.kiro.dev/v1/responses", config.SafeRegion(kiroRegion(account)))
 }
 
 // buildResponsesRequest projects the internal payload onto the IDE's wire shape.

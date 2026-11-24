@@ -13,7 +13,7 @@ import (
 
 // oidcTokenURL 构造 idc/builderId 刷新 endpoint。测试可替换以拦截网络调用。
 var oidcTokenURL = func(region string) string {
-	return fmt.Sprintf("https://oidc.%s.amazonaws.com/token", region)
+	return fmt.Sprintf("https://oidc.%s.amazonaws.com/token", config.SafeRegion(region))
 }
 
 // socialTokenURL 构造 social 刷新 endpoint。测试可替换以拦截网络调用。
@@ -79,7 +79,7 @@ func refreshOIDCToken(refreshToken, clientID, clientSecret, region string, clien
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", 0, "", fmt.Errorf("refresh failed: %d %s", resp.StatusCode, string(respBody))
 	}
 
@@ -117,7 +117,7 @@ func refreshSocialToken(refreshToken string, client *http.Client) (string, strin
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		return "", "", 0, "", fmt.Errorf("refresh failed: %d %s", resp.StatusCode, string(respBody))
 	}
 

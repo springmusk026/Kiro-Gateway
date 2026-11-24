@@ -608,5 +608,8 @@
   "playground.thinking": "Suy luận",
   "playground.stopped": "Đã dừng.",
   "playground.ttft": "Token đầu",
-  "playground.total": "Tổng"
+  "playground.total": "Tổng",
+  "overview.openTitle": "API đang mở ra mạng",
+  "overview.openText": "Chưa bật xác thực API key và máy chủ lắng nghe trên địa chỉ công khai, nên bất kỳ ai truy cập được đều có thể dùng tài khoản Kiro của bạn.",
+  "overview.openAction": "Bảo mật ngay"
 }

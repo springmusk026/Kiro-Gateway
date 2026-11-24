@@ -608,5 +608,8 @@
   "playground.thinking": "推理过程",
   "playground.stopped": "已停止。",
   "playground.ttft": "首字",
-  "playground.total": "总耗时"
+  "playground.total": "总耗时",
+  "overview.openTitle": "API 对网络开放",
+  "overview.openText": "未开启 API 密钥验证且服务监听在公网地址，任何能访问该端口的人都可以使用你的 Kiro 账号。",
+  "overview.openAction": "立即加固"
 }
