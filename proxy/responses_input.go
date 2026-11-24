@@ -202,8 +202,15 @@ func convertResponsesInputItems(items []json.RawMessage) ([]OpenAIMessage, error
 				})
 			}
 
-		case typ == "input_image", typ == "image", typ == "image_url":
+		case typ == "input_image", typ == "image", typ == "image_url", typ == "input_file":
 			pendingUserParts = append(pendingUserParts, map[string]interface{}(obj))
+
+		case typ == "reasoning":
+			// Reasoning items replayed from an earlier response (summary and,
+			// with include:["reasoning.encrypted_content"], an opaque blob).
+			// Kiro cannot verify another backend's encrypted reasoning, and the
+			// summary is a paraphrase of what the assistant turn already says,
+			// so the item is accepted and dropped.
 
 		case typ == "output_text":
 			flushPendingUser()
@@ -257,7 +264,7 @@ func buildMessageFromInputItem(obj map[string]interface{}, role string) *OpenAIM
 						textOnly.WriteString(t)
 						parts = append(parts, map[string]interface{}{"type": "input_text", "text": t})
 					}
-				case "input_image", "image", "image_url":
+				case "input_image", "image", "image_url", "input_file", "file":
 					anyNonText = true
 					parts = append(parts, part)
 				default:

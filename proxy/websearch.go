@@ -556,7 +556,7 @@ func (h *Handler) handleWebSearchRequest(ctx context.Context, w http.ResponseWri
 	h.recordSuccessLog(ctx, "claude", req.Model, accountID, inputTokens+outputTokens, 0, time.Since(reqStart).Milliseconds())
 
 	if req.Stream {
-		h.streamWebSearchSSE(w, req.Model, query, toolUseID, results, inputTokens, outputTokens)
+		h.streamWebSearchSSE(w, echoModel(ctx, req.Model), query, toolUseID, results, inputTokens, outputTokens)
 		return
 	}
 
@@ -570,7 +570,7 @@ func (h *Handler) handleWebSearchRequest(ctx context.Context, w http.ResponseWri
 		"id":            messageID,
 		"type":          "message",
 		"role":          "assistant",
-		"model":         req.Model,
+		"model":         echoModel(ctx, req.Model),
 		"content":       content,
 		"stop_reason":   "end_turn",
 		"stop_sequence": nil,

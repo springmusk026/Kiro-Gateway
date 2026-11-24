@@ -42,6 +42,9 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	if strings.TrimSpace(req.Model) == "" {
 		req.Model = defaultResponsesModel
 	}
+	// Responses (and stored responses) echo the client's model name; routing
+	// and request logs use the resolved id.
+	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
 
 	storedInputCopy := append(json.RawMessage(nil), req.Input...)
 
@@ -109,6 +112,16 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	}
 	if !hasUser {
 		h.sendOpenAIError(w, 400, "invalid_request_error", "input must contain at least one user message")
+		return
+	}
+	// input_image URLs and input_file items are downloaded / validated here,
+	// replayed history included (document limits are per request).
+	if err := prepareOpenAIMedia(r.Context(), finalMessages); err != nil {
+		status, errType, msg := mediaErrorStatus(err)
+		if status == 500 {
+			errType = "server_error"
+		}
+		h.sendOpenAIError(w, status, errType, msg)
 		return
 	}
 
@@ -255,7 +268,10 @@ func (h *Handler) handleResponsesNonStream(
 			continue
 		}
 
-		finalContent, _ := extractThinkingFromContent(content)
+		finalContent, tagReasoning := extractThinkingFromContent(content)
+		if reasoningContent == "" {
+			reasoningContent = tagReasoning
+		}
 		if !thinking {
 			reasoningContent = ""
 		}
@@ -273,7 +289,12 @@ func (h *Handler) handleResponsesNonStream(
 		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
-		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		var reasoningItems []ResponseOutputItem
+		if strings.TrimSpace(reasoningContent) != "" {
+			reasoningItems = append(reasoningItems, newReasoningOutputItem(generateOutputItemID("rs"), reasoningContent))
+		}
+		applyReasoningToResponse(respObj, reasoningItems, reasoningContent)
 		respObj.StoredInput = storedInput
 		respObj.Instructions = req.Instructions
 
@@ -438,7 +459,7 @@ func (h *Handler) handleResponsesStream(
 		Object:             "response",
 		CreatedAt:          createdAt,
 		Status:             "in_progress",
-		Model:              model,
+		Model:              echoModel(ctx, model),
 		Output:             []ResponseOutputItem{},
 		Usage:              ResponsesUsage{},
 		PreviousResponseID: req.PreviousResponseID,
@@ -510,6 +531,18 @@ func (h *Handler) handleResponsesStream(
 		messagesClosed := 0
 		outputIndex := 0
 		contentIndex := 0
+
+		// Reasoning (when thinking is on) streams as its own output item ahead
+		// of the message it precedes.
+		reasoningStream := &responsesReasoningStream{send: send}
+		var reasoningItems []ResponseOutputItem
+		closeReasoning := func() {
+			if item, ok := reasoningStream.close(); ok {
+				doneItems = append(doneItems, item)
+				reasoningItems = append(reasoningItems, item)
+				outputIndex++
+			}
+		}
 
 		ensureMessageStarted := func() {
 			if messageStarted {
@@ -586,8 +619,14 @@ func (h *Handler) handleResponsesStream(
 				}
 				if isThinking {
 					reasoningText.WriteString(text)
+					if thinking {
+						closeMessage(msgText.String())
+						reasoningStream.delta(outputIndex, text)
+						responseStarted = true
+					}
 					return
 				}
+				closeReasoning()
 				fullText.WriteString(text)
 				msgText.WriteString(text)
 				ensureMessageStarted()
@@ -602,6 +641,7 @@ func (h *Handler) handleResponsesStream(
 				responseStarted = true
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				closeReasoning()
 				closeMessage(msgText.String())
 
 				toolUses = append(toolUses, tu)
@@ -662,6 +702,7 @@ func (h *Handler) handleResponsesStream(
 			reasoningText.Reset()
 			toolUses = nil
 			doneItems = nil
+			reasoningItems = nil
 			inputTokens = 0
 			outputTokens = 0
 			credits = 0
@@ -700,6 +741,7 @@ func (h *Handler) handleResponsesStream(
 			reasoning = ""
 		}
 
+		closeReasoning()
 		if messageStarted {
 			text := msgText.String()
 			if messagesClosed == 0 {
@@ -722,7 +764,8 @@ func (h *Handler) handleResponsesStream(
 		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		h.promptCache.Update(account.ID, cacheProfile)
 
-		respObj := buildResponsesObject(respID, model, finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+		applyReasoningToResponse(respObj, reasoningItems, reasoning)
 		respObj.CreatedAt = createdAt
 		respObj.StoredInput = storedInput
 		respObj.Instructions = req.Instructions

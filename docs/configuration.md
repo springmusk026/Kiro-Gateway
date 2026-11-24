@@ -43,6 +43,8 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 | Variable | Description | Default |
 |---|---|---|
 | `KIRO_MAX_BODY_MB` | Largest accepted client request body; larger requests get `413`. | `64` |
+| `KIRO_FETCH_IMAGE_URLS` | `0` stops the gateway from downloading `http(s)` image and document URLs; such requests then get `400`. | on |
+| `KIRO_FETCH_ALLOW_HTTP` | `1` also allows plain `http://` media URLs (otherwise only `https://`). | off |
 | `KIRO_MAX_STORED_RESPONSES` / `KIRO_MAX_STORED_RESPONSES_MB` | Limits for stored `/v1/responses` objects (also expire after 30 days). | `20000` / `2048` |
 | `KIRO_KEEP_STRUCTURED_TOOL_HISTORY` | `1` sends earlier tool calls upstream as structured data instead of narrated text. | off |
 | `KIRO_GO_RTK` | `false` disables compression of large tool results before they are sent upstream. | on |

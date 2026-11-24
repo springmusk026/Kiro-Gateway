@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### APIs
+- Documents: Anthropic `document` blocks (base64, `text`, `content` and `url` sources, also inside
+  `tool_result`), OpenAI Chat `file` parts and Responses `input_file` items are forwarded to Kiro as documents
+  (pdf, csv, doc, docx, html, md, txt, xls, xlsx). Unsupported formats, files over 4.5 MB and more than 5
+  documents per request are rejected with a clear 400 instead of being dropped.
+- Image URLs: `http(s)` images (Anthropic `url` sources, OpenAI `image_url`, Responses `input_image`) are
+  downloaded by the gateway with SSRF protection (https only, public addresses only on every redirect, 10 s,
+  5 MB, image types checked by header and bytes, outbound proxy honoured). `KIRO_FETCH_IMAGE_URLS=0` turns
+  this off; `KIRO_FETCH_ALLOW_HTTP=1` allows plain http.
+- Responses: `reasoning` output items with the official `reasoning_summary_*` stream events, in the final
+  and stored response, and `usage.output_tokens_details.reasoning_tokens`; replayed `reasoning` input items
+  and `include: ["reasoning.encrypted_content"]` are accepted.
+- Anthropic: thinking blocks carry a `signature` (`signature_delta` in streams). It is an opaque marker,
+  not a verifiable signature.
+- OpenAI Chat: `usage.completion_tokens_details.reasoning_tokens` when reasoning is returned.
+- Responses echo the model name the client sent (Anthropic, OpenAI and Responses bodies, stream events and
+  stored responses); request logs keep the resolved Kiro model id.
+- Inline images and documents no longer count against the text payload budget, so a large attachment no
+  longer truncates the conversation history.
+
 ## 2.0.0 — independent project
 
 Kiro-Go began as a fork of [Quorinex/Kiro-Go](https://github.com/Quorinex/Kiro-Go) at version 1.1.5. Since

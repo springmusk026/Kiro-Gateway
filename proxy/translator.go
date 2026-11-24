@@ -282,6 +282,7 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 	history := make([]KiroHistoryMessage, 0)
 	var currentContent string
 	var currentImages []KiroImage
+	var currentDocuments []KiroDocument
 	var currentToolResults []KiroToolResult
 
 	for i, msg := range req.Messages {
@@ -289,11 +290,13 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 
 		if msg.Role == "user" {
 			content, images, toolResults := extractClaudeUserContent(msg.Content)
-			content = normalizeUserContent(content, len(images) > 0)
+			documents := extractClaudeDocuments(msg.Content)
+			content = userContentFallback(content, len(images) > 0, len(documents) > 0)
 
 			if isLast {
 				currentContent = content
 				currentImages = images
+				currentDocuments = documents
 				currentToolResults = toolResults
 			} else {
 				userMsg := KiroUserInputMessage{
@@ -303,6 +306,9 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 				}
 				if len(images) > 0 {
 					userMsg.Images = images
+				}
+				if len(documents) > 0 {
+					userMsg.Documents = documents
 				}
 				if len(toolResults) > 0 {
 					userMsg.UserInputMessageContext = &UserInputMessageContext{
@@ -364,8 +370,8 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 		finalContent = joinHistoryText(finalContent, buildToolResultsContinuation(currentToolResults, modelID))
 	}
 	if finalContent == "" {
-		if len(currentImages) > 0 {
-			finalContent = normalizeUserContent("", true)
+		if len(currentImages) > 0 || len(currentDocuments) > 0 {
+			finalContent = userContentFallback("", len(currentImages) > 0, len(currentDocuments) > 0)
 		} else {
 			finalContent = minimalFallbackUserContent
 		}
@@ -392,10 +398,11 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 	payload.ConversationState.ConversationID = buildConversationID(modelID, systemPrompt, firstClaudeConversationAnchor(req.Messages))
 	payload.ConversationState.RootConversationID = payload.ConversationState.ConversationID
 	payload.ConversationState.CurrentMessage.UserInputMessage = KiroUserInputMessage{
-		Content: finalContent,
-		ModelID: modelID,
-		Origin:  origin,
-		Images:  currentImages,
+		Content:   finalContent,
+		ModelID:   modelID,
+		Origin:    origin,
+		Images:    currentImages,
+		Documents: currentDocuments,
 	}
 
 	// Only attach structured tool results when they answer the last history
@@ -423,6 +430,7 @@ func ClaudeToKiro(req *ClaudeRequest, thinking bool) *KiroPayload {
 		}
 	}
 
+	finalizePayloadDocuments(payload)
 	truncatePayloadToLimit(payload, systemPrompt != "")
 
 	return payload
@@ -822,6 +830,12 @@ func extractClaudeUserContent(content interface{}) (string, []KiroImage, []KiroT
 			if img := extractImageFromClaudeBlock(block); img != nil {
 				images = append(images, *img)
 			}
+		case "document":
+			// Binary documents are collected by extractClaudeDocuments; text
+			// documents are inlined here.
+			inline, docImages := claudeDocumentInline(block)
+			text = joinPromptText(text, inline)
+			images = append(images, docImages...)
 		case "tool_result":
 			toolUseID, _ := block["tool_use_id"].(string)
 			resultContent, resultImages := extractToolResultContent(block["content"])
@@ -930,6 +944,17 @@ func extractToolResultContent(content interface{}) (string, []KiroImage) {
 					images = append(images, *img)
 					continue
 				}
+			case "document":
+				// The document itself rides on the user message (see
+				// extractClaudeDocuments); the result text says so.
+				if doc, _, _, err := claudeDocumentParts(block); err == nil && doc != nil {
+					parts = append(parts, fmt.Sprintf(toolResultDocumentFormat, doc.Name))
+					continue
+				}
+				inline, docImages := claudeDocumentInline(block)
+				parts = append(parts, inline)
+				images = append(images, docImages...)
+				continue
 			}
 			if text, ok := block["text"].(string); ok {
 				parts = append(parts, text)
@@ -1243,8 +1268,9 @@ func KiroToClaudeResponse(content, thinkingContent string, includeEmptyThinkingB
 
 	if thinkingContent != "" || includeEmptyThinkingBlock {
 		blocks = append(blocks, ClaudeContentBlock{
-			Type:     "thinking",
-			Thinking: thinkingContent,
+			Type:      "thinking",
+			Thinking:  thinkingContent,
+			Signature: thinkingSignature,
 		})
 	}
 
@@ -1503,6 +1529,7 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 	history := make([]KiroHistoryMessage, 0)
 	var currentContent string
 	var currentImages []KiroImage
+	var currentDocuments []KiroDocument
 	var currentToolResults []KiroToolResult
 
 	for i, msg := range nonSystemMessages {
@@ -1511,18 +1538,23 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 		switch msg.Role {
 		case "user":
 			content, images := extractOpenAIUserContent(msg.Content)
-			content = normalizeUserContent(content, len(images) > 0)
+			images = append(images, openAIFileImages(msg.Content)...)
+			documents := extractOpenAIDocuments(msg.Content)
+			content = joinPromptText(content, openAIFileErrorsText(msg.Content))
+			content = userContentFallback(content, len(images) > 0, len(documents) > 0)
 
 			if isLast {
 				currentContent = content
 				currentImages = images
+				currentDocuments = documents
 			} else {
 				history = append(history, KiroHistoryMessage{
 					UserInputMessage: &KiroUserInputMessage{
-						Content: content,
-						ModelID: modelID,
-						Origin:  origin,
-						Images:  images,
+						Content:   content,
+						ModelID:   modelID,
+						Origin:    origin,
+						Images:    images,
+						Documents: documents,
 					},
 				})
 			}
@@ -1555,6 +1587,18 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 
 		case "tool":
 			cleanText, toolImages := extractOpenAIUserContent(msg.Content)
+			toolImages = append(toolImages, openAIFileImages(msg.Content)...)
+			if toolDocs := extractOpenAIDocuments(msg.Content); len(toolDocs) > 0 {
+				currentDocuments = append(currentDocuments, toolDocs...)
+				for _, d := range toolDocs {
+					cleanText = joinPromptText(cleanText, fmt.Sprintf(toolResultDocumentFormat, d.Name))
+				}
+				if len(toolImages) == 0 {
+					// Keep the text-only path below from re-reading the raw
+					// file parts as JSON.
+					msg.Content = cleanText
+				}
+			}
 			var content string
 			if len(toolImages) > 0 {
 				currentImages = append(currentImages, toolImages...)
@@ -1581,9 +1625,10 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 					// (continuation text + narrated text).
 					history = append(history, KiroHistoryMessage{
 						UserInputMessage: &KiroUserInputMessage{
-							ModelID: modelID,
-							Origin:  origin,
-							Images:  currentImages,
+							ModelID:   modelID,
+							Origin:    origin,
+							Images:    currentImages,
+							Documents: currentDocuments,
 							UserInputMessageContext: &UserInputMessageContext{
 								ToolResults: currentToolResults,
 							},
@@ -1591,6 +1636,7 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 					})
 					currentToolResults = nil
 					currentImages = nil
+					currentDocuments = nil
 				}
 			}
 		}
@@ -1633,8 +1679,8 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 		finalContent = joinHistoryText(finalContent, buildToolResultsContinuation(currentToolResults, modelID))
 	}
 	if finalContent == "" {
-		if len(currentImages) > 0 {
-			finalContent = normalizeUserContent("", true)
+		if len(currentImages) > 0 || len(currentDocuments) > 0 {
+			finalContent = userContentFallback("", len(currentImages) > 0, len(currentDocuments) > 0)
 		} else {
 			finalContent = minimalFallbackUserContent
 		}
@@ -1661,10 +1707,11 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 	payload.ConversationState.AgentTaskType = "vibe"
 	payload.ConversationState.ConversationID = buildConversationID(modelID, systemPrompt, firstOpenAIConversationAnchor(nonSystemMessages))
 	payload.ConversationState.CurrentMessage.UserInputMessage = KiroUserInputMessage{
-		Content: finalContent,
-		ModelID: modelID,
-		Origin:  origin,
-		Images:  currentImages,
+		Content:   finalContent,
+		ModelID:   modelID,
+		Origin:    origin,
+		Images:    currentImages,
+		Documents: currentDocuments,
 	}
 
 	var attachToolResults []KiroToolResult
@@ -1694,6 +1741,7 @@ func OpenAIToKiro(req *OpenAIRequest, thinking bool) *KiroPayload {
 		}
 	}
 
+	finalizePayloadDocuments(payload)
 	truncatePayloadToLimit(payload, systemPrompt != "")
 
 	return payload
@@ -2062,7 +2110,11 @@ func sanitizeKiroHistory(history []KiroHistoryMessage, currentToolResultIDs map[
 		// dozens of "." assistant turns, which the model then imitates by
 		// replying ".". Mark such turns for removal instead.
 		if msg.UserInputMessage != nil && strings.TrimSpace(msg.UserInputMessage.Content) == "" && len(msg.UserInputMessage.Images) == 0 {
-			msg.UserInputMessage.Content = minimalFallbackUserContent
+			if len(msg.UserInputMessage.Documents) > 0 {
+				msg.UserInputMessage.Content = documentOnlyUserContent
+			} else {
+				msg.UserInputMessage.Content = minimalFallbackUserContent
+			}
 		}
 	}
 
@@ -2091,7 +2143,8 @@ func sanitizeKiroHistory(history []KiroHistoryMessage, currentToolResultIDs map[
 			if last.UserInputMessage != nil &&
 				strings.TrimSpace(last.UserInputMessage.Content) == strings.TrimSpace(msg.UserInputMessage.Content) &&
 				strings.TrimSpace(msg.UserInputMessage.Content) != "" &&
-				len(msg.UserInputMessage.Images) == 0 {
+				len(msg.UserInputMessage.Images) == 0 &&
+				len(msg.UserInputMessage.Documents) == 0 {
 				continue // skip duplicate consecutive user turn
 			}
 		}
@@ -2197,12 +2250,17 @@ func truncatePayloadToLimit(payload *KiroPayload, hasPriming bool) {
 
 // historyEntryByteSize returns the serialized size of a single history entry,
 // including the surrounding JSON array delimiter overhead (1 byte for the comma).
+//
+// Inline image and document bytes are not counted: the budget guards Kiro's
+// text-input limit ("Input is too long"), and attachments have their own
+// per-item limits (see documents.go / image_fetch.go). Counting a 4 MB PDF
+// against a 900 KB text budget would discard the whole conversation.
 func historyEntryByteSize(entry KiroHistoryMessage) int {
 	raw, err := json.Marshal(entry)
 	if err != nil {
 		return 0
 	}
-	return len(raw) + 1
+	return len(raw) + 1 - mediaBytes(entry.UserInputMessage)
 }
 
 // dropLeadingAssistant removes a leading assistant message from a history tail so
@@ -2215,12 +2273,17 @@ func dropLeadingAssistant(tail []KiroHistoryMessage) []KiroHistoryMessage {
 }
 
 // payloadByteSize returns the serialized size of the payload in bytes.
+// Inline media bytes are excluded, as in historyEntryByteSize.
 func payloadByteSize(payload *KiroPayload) int {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return 0
 	}
-	return len(raw)
+	n := len(raw) - mediaBytes(&payload.ConversationState.CurrentMessage.UserInputMessage)
+	for i := range payload.ConversationState.History {
+		n -= mediaBytes(payload.ConversationState.History[i].UserInputMessage)
+	}
+	return n
 }
 
 func currentMessageModelID(payload *KiroPayload) string {
@@ -2844,7 +2907,7 @@ func KiroToOpenAIResponseWithReasoning(content, reasoningContent string, toolUse
 			"message":       message,
 			"finish_reason": finishReason,
 		}},
-		"usage": buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, includeCache),
+		"usage": withReasoningTokenDetails(buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, includeCache), reasoningContent),
 	}
 }
 

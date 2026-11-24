@@ -134,10 +134,10 @@ func (h *Handler) runWebSearchLoop(ctx context.Context, w http.ResponseWriter, r
 		h.recordSuccessLog(ctx, "claude", req.Model, lastAccountID, inputTokens+outputTokens, totalCredits, time.Since(reqStart).Milliseconds())
 
 		if req.Stream {
-			h.renderWebSearchLoopSSE(w, req.Model, content, stopReason, inputTokens, outputTokens)
+			h.renderWebSearchLoopSSE(w, echoModel(ctx, req.Model), content, stopReason, inputTokens, outputTokens)
 			return
 		}
-		h.renderWebSearchLoopJSON(w, req.Model, content, stopReason, inputTokens, outputTokens)
+		h.renderWebSearchLoopJSON(w, echoModel(ctx, req.Model), content, stopReason, inputTokens, outputTokens)
 		return
 	}
 
