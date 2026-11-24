@@ -1055,10 +1055,11 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	kiroPayload := ClaudeToKiro(&req, thinking)
 
 	// Stream or non-stream
+	ctx := withStopSequences(r.Context(), req.StopSequences)
 	if req.Stream {
-		h.handleClaudeStream(r.Context(), w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleClaudeStream(ctx, w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
-		h.handleClaudeNonStream(r.Context(), w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleClaudeNonStream(ctx, w, kiroPayload, req.Model, thinking, thinkingResponseOpts, estimatedInputTokens, cacheProfile, apiKeyID)
 	}
 }
 
@@ -1187,8 +1188,22 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		var thinkingStarted bool
 		var eventThinkingOpen bool
 
+		// Stop sequences apply to answer text only. A match cuts the text and
+		// cancels the upstream call; stopBypass lets held-back text out at the
+		// end of a text run.
+		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopBypass := false
+
 		sendText := func(text string, thinkingState int) {
 			if thinkingState == 0 {
+				if stopper != nil && !stopBypass {
+					text = stopper.Push(text)
+					if stopper.Done() {
+						cancelUpstream()
+					}
+				}
 				if text == "" {
 					return
 				}
@@ -1375,9 +1390,17 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 
+		flushStopText := func() {
+			if rest := stopper.Flush(); rest != "" {
+				stopBypass = true
+				sendText(rest, 0)
+				stopBypass = false
+			}
+		}
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
-				if text == "" {
+				if text == "" || stopper.Done() {
 					return
 				}
 				if isThinking {
@@ -1388,7 +1411,14 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				processClaudeText(text, isThinking, false)
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopper.Done() {
+					return
+				}
 				processClaudeText("", false, true)
+				flushStopText()
+				if stopper.Done() {
+					return
+				}
 				rawContentBuilder.WriteString(tu.Name)
 				if b, err := json.Marshal(tu.Input); err == nil {
 					rawContentBuilder.Write(b)
@@ -1467,10 +1497,15 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 			thinkingSource = thinkingSourceUnknown
 			thinkingStarted = false
 			eventThinkingOpen = false
+			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset,
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
 			func() bool { return !messageStarted })
+		if err != nil && stopper.Done() {
+			// Upstream was cancelled because a stop sequence matched.
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -1493,6 +1528,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		}
 
 		processClaudeText("", false, true)
+		flushStopText()
 		if eventThinkingOpen {
 			sendText("", 3)
 		}
@@ -1520,12 +1556,18 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 
 		stopReason := mapClaudeStopReason(upstreamStopReason, len(toolUses))
+		var stopSequence interface{}
+		if stopper.Done() {
+			stopReason = "stop_sequence"
+			stopSequence = stopper.Matched()
+		}
 
 		ensureMessageStart()
 		h.sendSSE(w, flusher, "message_delta", map[string]interface{}{
 			"type": "message_delta",
 			"delta": map[string]interface{}{
-				"stop_reason": stopReason,
+				"stop_reason":   stopReason,
+				"stop_sequence": stopSequence,
 			},
 			"usage": buildClaudeUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
 		})
@@ -1747,15 +1789,26 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		var realInputTokens int
 		var upstreamStopReason string
 
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
+				if stopWatch.Hit() {
+					return
+				}
 				if isThinking {
 					thinkingContent += text
 				} else {
 					content += text
+					stopWatch.Observe(content, len(text))
 				}
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopWatch.Hit() {
+					return
+				}
 				toolUses = append(toolUses, tu)
 			},
 			OnComplete: func(inTok, outTok int) {
@@ -1786,11 +1839,15 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 			credits = 0
 			realInputTokens = 0
 			upstreamStopReason = ""
+			stopWatch.Reset()
 		}
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset, nil)
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
+		if err != nil && stopWatch.Hit() {
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -1809,6 +1866,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 
 		thinkingFormat := thinkingOpts.Format
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
+		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
 		rawThinkingContent := thinkingContent
 		if thinking && rawThinkingContent == "" && extractedReasoning != "" {
 			rawThinkingContent = extractedReasoning
@@ -1849,6 +1907,10 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		}
 
 		resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, model, upstreamStopReason)
+		if matchedStop != "" {
+			resp.StopReason = "stop_sequence"
+			resp.StopSequence = &matchedStop
+		}
 		resp.Usage.InputTokens = billedClaudeInputTokens(inputTokens, cacheUsage)
 		resp.Usage.CacheCreationInputTokens = cacheUsage.CacheCreationInputTokens
 		resp.Usage.CacheReadInputTokens = cacheUsage.CacheReadInputTokens
@@ -1922,10 +1984,11 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	kiroPayload := OpenAIToKiro(&req, thinking)
 
 	apiKeyID := apiKeyIDFromContext(r.Context())
+	ctx := withStopSequences(r.Context(), openAIStopSequences(req.Stop))
 	if req.Stream {
-		h.handleOpenAIStream(r.Context(), w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleOpenAIStream(ctx, w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
 	} else {
-		h.handleOpenAINonStream(r.Context(), w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
+		h.handleOpenAINonStream(ctx, w, kiroPayload, req.Model, thinking, estimatedInputTokens, cacheProfile, apiKeyID)
 	}
 }
 
@@ -2007,6 +2070,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		var thinkingStarted bool
 		var eventThinkingOpen bool
 		responseStarted := false
+
+		// Stop sequences: see handleClaudeStream.
+		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopBypass := false
 
 		sendStreamError := func(err error) {
 			data, _ := json.Marshal(map[string]interface{}{
@@ -2096,6 +2165,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					}
 				}
 			} else {
+				if stopper != nil && !stopBypass {
+					content = stopper.Push(content)
+					if stopper.Done() {
+						cancelUpstream()
+					}
+				}
 				if content == "" {
 					return
 				}
@@ -2222,9 +2297,17 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			}
 		}
 
+		flushStopText := func() {
+			if rest := stopper.Flush(); rest != "" {
+				stopBypass = true
+				sendChunk(rest, 0)
+				stopBypass = false
+			}
+		}
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
-				if text == "" {
+				if text == "" || stopper.Done() {
 					return
 				}
 				if isThinking {
@@ -2235,7 +2318,14 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				processText(text, isThinking, false)
 			},
 			OnToolUse: func(tu KiroToolUse) {
+				if stopper.Done() {
+					return
+				}
 				processText("", false, true)
+				flushStopText()
+				if stopper.Done() {
+					return
+				}
 
 				args, _ := json.Marshal(tu.Input)
 				rawContentBuilder.WriteString(tu.Name)
@@ -2310,10 +2400,15 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			thinkingSource = thinkingSourceUnknown
 			thinkingStarted = false
 			eventThinkingOpen = false
+			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset,
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
 			func() bool { return !responseStarted })
+		if err != nil && stopper.Done() {
+			// Upstream was cancelled because a stop sequence matched.
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -2337,6 +2432,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		}
 
 		processText("", false, true)
+		flushStopText()
 		if eventThinkingOpen {
 			sendChunk("", 3)
 		}
@@ -2366,6 +2462,9 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		h.promptCache.Update(account.ID, cacheProfile)
 		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
 		finishReason := mapOpenAIFinishReason(upstreamStopReason, len(toolCalls))
+		if stopper.Done() {
+			finishReason = "stop"
+		}
 
 		chunk := map[string]interface{}{
 			"id":      chatID,
@@ -2439,15 +2538,27 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		var realInputTokens int
 		var upstreamStopReason string
 
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		defer cancelUpstream()
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
+				if stopWatch.Hit() {
+					return
+				}
 				if isThinking {
 					reasoningContent += text
 				} else {
 					content += text
+					stopWatch.Observe(content, len(text))
 				}
 			},
-			OnToolUse:  func(tu KiroToolUse) { toolUses = append(toolUses, tu) },
+			OnToolUse: func(tu KiroToolUse) {
+				if !stopWatch.Hit() {
+					toolUses = append(toolUses, tu)
+				}
+			},
 			OnComplete: func(inTok, outTok int) { inputTokens = inTok; outputTokens = outTok },
 			OnCredits:  func(c float64) { credits = c },
 			OnContextUsage: func(pct float64) {
@@ -2471,11 +2582,15 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 			credits = 0
 			realInputTokens = 0
 			upstreamStopReason = ""
+			stopWatch.Reset()
 		}
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset, nil)
+		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
+		if err != nil && stopWatch.Hit() {
+			err = nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -2494,6 +2609,10 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		}
 
 		finalContent, extractedReasoning := extractThinkingFromContent(content)
+		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
+		if matchedStop != "" {
+			upstreamStopReason = "end_turn"
+		}
 		if thinking && reasoningContent == "" && extractedReasoning != "" {
 			reasoningContent = extractedReasoning
 		} else if !thinking {

@@ -189,6 +189,9 @@ type ClaudeRequest struct {
 	Thinking    *ClaudeThinkingConfig `json:"thinking,omitempty"`
 	Tools       []ClaudeTool          `json:"tools,omitempty"`
 	ToolChoice  interface{}           `json:"tool_choice,omitempty"`
+	// StopSequences end the output at the first match (stop_reason
+	// "stop_sequence"); enforced by the proxy since Kiro has no such option.
+	StopSequences []string `json:"stop_sequences,omitempty"`
 }
 
 type ClaudeThinkingConfig struct {
