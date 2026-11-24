@@ -234,6 +234,9 @@ func (h *Handler) handleResponsesNonStream(
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
@@ -271,11 +274,11 @@ func (h *Handler) handleResponsesNonStream(
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
 
 func mapResponsesCompletion(reason string) (status, incompleteReason string) {
@@ -597,6 +600,9 @@ func (h *Handler) handleResponsesStream(
 				if !isStreamIntegrityError(err) {
 					h.handleAccountFailure(account, err)
 					h.dropAffinity(apiKeyID, account.ID)
+				}
+				if isTerminalUpstreamError(err) {
+					break
 				}
 				continue
 			}

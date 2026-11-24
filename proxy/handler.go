@@ -1452,13 +1452,13 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !messageStarted {
+				if isTerminalUpstreamError(err) {
+					break
+				}
 				continue
 			}
 			h.recordFailureWithDetails(ctx, "claude", model, account.ID, err)
-			h.sendSSE(w, flusher, "error", map[string]interface{}{
-				"type":  "error",
-				"error": map[string]string{"type": "api_error", "message": err.Error()},
-			})
+			h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, model))
 			return
 		}
 
@@ -1507,12 +1507,12 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	if lastErr == nil {
-		h.sendClaudeError(w, 503, "api_error", "No available accounts")
+		h.sendClaudeNoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
+	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
 }
 
 func (h *Handler) sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
@@ -1759,6 +1759,9 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
@@ -1819,12 +1822,12 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 	}
 
 	if lastErr == nil {
-		h.sendClaudeError(w, 503, "api_error", "No available accounts")
+		h.sendClaudeNoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	h.sendClaudeError(w, 500, "api_error", lastErr.Error())
+	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
 }
 
 func (h *Handler) sendClaudeError(w http.ResponseWriter, status int, errType, message string) {
@@ -1937,10 +1940,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 
 		sendStreamError := func(err error) {
 			data, _ := json.Marshal(map[string]interface{}{
-				"error": map[string]string{
-					"message": err.Error(),
-					"type":    "server_error",
-				},
+				"error": openAIStreamErrorObject(err),
 			})
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
@@ -2255,6 +2255,9 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				h.dropAffinity(apiKeyID, account.ID)
 			}
 			if !responseStarted {
+				if isTerminalUpstreamError(err) {
+					break
+				}
 				continue
 			}
 			h.recordFailureWithDetails(ctx, "openai", model, account.ID, err)
@@ -2313,12 +2316,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
 
 // handleOpenAINonStream OpenAI 非流式响应
@@ -2398,6 +2401,9 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 				h.handleAccountFailure(account, err)
 				h.dropAffinity(apiKeyID, account.ID)
 			}
+			if isTerminalUpstreamError(err) {
+				break
+			}
 			continue
 		}
 
@@ -2429,23 +2435,16 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 	}
 
 	if lastErr == nil {
-		h.sendOpenAIError(w, 503, "server_error", "No available accounts")
+		h.sendOpenAINoAccounts(w)
 		return
 	}
 
 	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	h.sendOpenAIError(w, 500, "server_error", lastErr.Error())
+	h.sendOpenAIUpstreamError(w, lastErr)
 }
 
 func (h *Handler) sendOpenAIError(w http.ResponseWriter, status int, errType, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]interface{}{
-			"type":    errType,
-			"message": message,
-		},
-	})
+	h.sendOpenAIErrorWithCode(w, status, errType, "", message)
 }
 
 // refreshAccountToken serializes the complete refresh-token rotation lifecycle:
