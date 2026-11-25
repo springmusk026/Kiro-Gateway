@@ -143,7 +143,11 @@ func TestKiroTransportSendsNoAcceptEncoding(t *testing.T) {
 		got <- r.Header.Get("Accept-Encoding")
 	}))
 	defer srv.Close()
-	resp, err := (&http.Client{Transport: buildKiroTransport("")}).Get(srv.URL)
+	tr := buildKiroTransport("")
+	// http.ProxyFromEnvironment reads the environment once per process; using
+	// it here would freeze it before TestBuildKiroTransportFallsBackToEnvironmentProxy.
+	tr.Proxy = nil
+	resp, err := (&http.Client{Transport: tr}).Get(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
