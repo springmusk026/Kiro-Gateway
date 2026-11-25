@@ -1190,11 +1190,8 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 	// 获取 thinking 输出格式配置
 	thinkingFormat := thinkingOpts.Format
 
-	reqStart := time.Now()
 	msgID := "msg_" + uuid.New().String()
 	startInputTokens := estimatedInputTokens
-	excluded := make(map[string]bool)
-	var lastErr error
 	messageStarted := false
 	var messageStartUsage promptCacheUsage
 
@@ -1218,20 +1215,9 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		messageStarted = true
 	}
 
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 		messageStartUsage = cacheUsage
 
 		var inputTokens, outputTokens int
@@ -1312,8 +1298,7 @@ accountLoop:
 		// cancels the upstream call; stopBypass lets held-back text out at the
 		// end of a text run.
 		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
-		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
-		defer cancelUpstream()
+		cancelUpstream := a.cancel
 		stopBypass := false
 
 		sendText := func(text string, thinkingState int) {
@@ -1620,107 +1605,90 @@ accountLoop:
 			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
-			func() bool { return !messageStarted })
-		if err != nil && stopper.Done() {
-			// Upstream was cancelled because a stop sequence matched.
-			err = nil
+		finish := func() upstreamUsage {
+			processClaudeText("", false, true)
+			flushStopText()
+			if eventThinkingOpen {
+				sendText("", 3)
+			}
+			closeActiveBlock()
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputContent, extractedReasoning := extractThinkingFromContent(rawContentBuilder.String())
+			thinkingOutput := rawThinkingBuilder.String()
+			if thinking && thinkingOutput == "" && extractedReasoning != "" {
+				thinkingOutput = extractedReasoning
+			}
+			if !thinking {
+				thinkingOutput = ""
+			}
+			outputTokens = estimateClaudeOutputTokens(outputContent, thinkingOutput, toolUses)
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
 		}
-		if err != nil {
-			if ctx.Err() != nil {
+
+		respond := func(upstreamUsage) {
+			stopReason := mapClaudeStopReason(upstreamStopReason, len(toolUses))
+			var stopSequence interface{}
+			if stopper.Done() {
+				stopReason = "stop_sequence"
+				stopSequence = stopper.Matched()
+			}
+
+			ensureMessageStart()
+			h.sendSSE(w, flusher, "message_delta", map[string]interface{}{
+				"type": "message_delta",
+				"delta": map[string]interface{}{
+					"stop_reason":   stopReason,
+					"stop_sequence": stopSequence,
+				},
+				"usage": buildClaudeUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
+			})
+
+			h.sendSSE(w, flusher, "message_stop", map[string]interface{}{
+				"type": "message_stop",
+			})
+		}
+
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			stopped:  func() bool { return stopper.Done() },
+			finish:   finish,
+			respond:  respond,
+		}
+	}
+
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:     "claude",
+		payload:      payload,
+		model:        model,
+		apiKeyID:     apiKeyID,
+		cacheProfile: cacheProfile,
+		started:      func() bool { return messageStarted },
+		attempt:      attempt,
+		failStarted: func(a *upstreamAttempt, err error) {
+			h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, a.model))
+		},
+		failNoAccounts: func() {
+			if hb.Committed() {
+				h.sendSSE(w, flusher, "error", map[string]interface{}{
+					"type":  "error",
+					"error": map[string]string{"type": "overloaded_error", "message": noAvailableAccountsMessage},
+				})
 				return
 			}
-			lastErr = err
-			excluded[account.ID] = true
-			if !isStreamIntegrityError(err) {
-				h.handleAccountFailure(account, err)
-				h.dropAffinity(apiKeyID, account.ID)
+			h.sendClaudeNoAccounts(w)
+		},
+		fail: func(model string, err error) {
+			if hb.Committed() {
+				// A heartbeat already sent the 200 status line.
+				h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, model))
+				return
 			}
-			if !messageStarted {
-				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-					break
-				}
-				continue
-			}
-			h.recordFailureWithDetails(ctx, "claude", model, account.ID, err)
-			h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, model))
-			return
-		}
-
-		processClaudeText("", false, true)
-		flushStopText()
-		if eventThinkingOpen {
-			sendText("", 3)
-		}
-		closeActiveBlock()
-
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
-		}
-		outputContent, extractedReasoning := extractThinkingFromContent(rawContentBuilder.String())
-		thinkingOutput := rawThinkingBuilder.String()
-		if thinking && thinkingOutput == "" && extractedReasoning != "" {
-			thinkingOutput = extractedReasoning
-		}
-		if !thinking {
-			thinkingOutput = ""
-		}
-		outputTokens = estimateClaudeOutputTokens(outputContent, thinkingOutput, toolUses)
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-
-		stopReason := mapClaudeStopReason(upstreamStopReason, len(toolUses))
-		var stopSequence interface{}
-		if stopper.Done() {
-			stopReason = "stop_sequence"
-			stopSequence = stopper.Matched()
-		}
-
-		ensureMessageStart()
-		h.sendSSE(w, flusher, "message_delta", map[string]interface{}{
-			"type": "message_delta",
-			"delta": map[string]interface{}{
-				"stop_reason":   stopReason,
-				"stop_sequence": stopSequence,
-			},
-			"usage": buildClaudeUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil),
-		})
-
-		h.sendSSE(w, flusher, "message_stop", map[string]interface{}{
-			"type": "message_stop",
-		})
-		return
-	}
-
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		if hb.Committed() {
-			h.sendSSE(w, flusher, "error", map[string]interface{}{
-				"type":  "error",
-				"error": map[string]string{"type": "overloaded_error", "message": noAvailableAccountsMessage},
-			})
-			return
-		}
-		h.sendClaudeNoAccounts(w)
-		return
-	}
-
-	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	if hb.Committed() {
-		// A heartbeat already sent the 200 status line.
-		h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(lastErr, estimatedInputTokens, model))
-		return
-	}
-	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
+			h.sendClaudeUpstreamError(w, err, estimatedInputTokens, model)
+		},
+	})
 }
 
 func (h *Handler) sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
@@ -1888,24 +1856,9 @@ func (h *Handler) getRequestLogs() []RequestLog {
 
 // handleClaudeNonStream Claude 非流式响应
 func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWriter, payload *KiroPayload, model string, thinking bool, thinkingOpts claudeThinkingResponseOptions, estimatedInputTokens int, cacheProfile *promptCacheProfile, apiKeyID string) {
-	excluded := make(map[string]bool)
-	var lastErr error
-	reqStart := time.Now()
-
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 
 		var content string
 		var thinkingContent string
@@ -1915,9 +1868,7 @@ accountLoop:
 		var realInputTokens int
 		var upstreamStopReason string
 
-		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
-		defer cancelUpstream()
-		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, a.cancel)
 
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
@@ -1970,98 +1921,84 @@ accountLoop:
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
-		if err != nil && stopWatch.Hit() {
-			err = nil
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+		var finalContent, rawThinkingContent, matchedStop string
+		finish := func() upstreamUsage {
+			var extractedReasoning string
+			finalContent, extractedReasoning = extractThinkingFromContent(content)
+			finalContent, toolUses, matchedStop = stopWatch.Apply(finalContent, toolUses)
+			rawThinkingContent = thinkingContent
+			if thinking && rawThinkingContent == "" && extractedReasoning != "" {
+				rawThinkingContent = extractedReasoning
 			}
-			lastErr = err
-			excluded[account.ID] = true
-			if !isStreamIntegrityError(err) {
-				h.handleAccountFailure(account, err)
-				h.dropAffinity(apiKeyID, account.ID)
+			if !thinking {
+				rawThinkingContent = ""
 			}
-			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-				break
-			}
-			continue
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputTokens = estimateClaudeOutputTokens(finalContent, rawThinkingContent, toolUses)
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
 		}
 
-		thinkingFormat := thinkingOpts.Format
-		finalContent, extractedReasoning := extractThinkingFromContent(content)
-		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
-		rawThinkingContent := thinkingContent
-		if thinking && rawThinkingContent == "" && extractedReasoning != "" {
-			rawThinkingContent = extractedReasoning
-		}
-		if !thinking {
-			rawThinkingContent = ""
-		}
-
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
-		}
-		outputTokens = estimateClaudeOutputTokens(finalContent, rawThinkingContent, toolUses)
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog(ctx, "claude", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-
-		responseThinkingContent := rawThinkingContent
-		includeEmptyThinkingBlock := thinking && thinkingOpts.OmitDisplay && rawThinkingContent != ""
-		if includeEmptyThinkingBlock {
-			responseThinkingContent = ""
-		}
-
-		if thinking && responseThinkingContent != "" {
-			switch thinkingFormat {
-			case "think":
-				finalContent = "<think>" + responseThinkingContent + "</think>" + finalContent
+		respond := func(upstreamUsage) {
+			thinkingFormat := thinkingOpts.Format
+			responseThinkingContent := rawThinkingContent
+			includeEmptyThinkingBlock := thinking && thinkingOpts.OmitDisplay && rawThinkingContent != ""
+			if includeEmptyThinkingBlock {
 				responseThinkingContent = ""
-			case "reasoning_content":
-				finalContent = responseThinkingContent + finalContent
-				responseThinkingContent = ""
-			default:
 			}
-		}
 
-		resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, echoModel(ctx, model), upstreamStopReason)
-		if matchedStop != "" {
-			resp.StopReason = "stop_sequence"
-			resp.StopSequence = &matchedStop
-		}
-		resp.Usage.InputTokens = billedClaudeInputTokens(inputTokens, cacheUsage)
-		resp.Usage.CacheCreationInputTokens = cacheUsage.CacheCreationInputTokens
-		resp.Usage.CacheReadInputTokens = cacheUsage.CacheReadInputTokens
-		if cacheProfile != nil {
-			resp.Usage.CacheCreation = &ClaudeCacheCreationUsage{
-				Ephemeral5mInputTokens: cacheUsage.CacheCreation5mInputTokens,
-				Ephemeral1hInputTokens: cacheUsage.CacheCreation1hInputTokens,
+			if thinking && responseThinkingContent != "" {
+				switch thinkingFormat {
+				case "think":
+					finalContent = "<think>" + responseThinkingContent + "</think>" + finalContent
+					responseThinkingContent = ""
+				case "reasoning_content":
+					finalContent = responseThinkingContent + finalContent
+					responseThinkingContent = ""
+				default:
+				}
 			}
+
+			resp := KiroToClaudeResponse(finalContent, responseThinkingContent, includeEmptyThinkingBlock, toolUses, inputTokens, outputTokens, echoModel(ctx, model), upstreamStopReason)
+			if matchedStop != "" {
+				resp.StopReason = "stop_sequence"
+				resp.StopSequence = &matchedStop
+			}
+			resp.Usage.InputTokens = billedClaudeInputTokens(inputTokens, cacheUsage)
+			resp.Usage.CacheCreationInputTokens = cacheUsage.CacheCreationInputTokens
+			resp.Usage.CacheReadInputTokens = cacheUsage.CacheReadInputTokens
+			if cacheProfile != nil {
+				resp.Usage.CacheCreation = &ClaudeCacheCreationUsage{
+					Ephemeral5mInputTokens: cacheUsage.CacheCreation5mInputTokens,
+					Ephemeral1hInputTokens: cacheUsage.CacheCreation1hInputTokens,
+				}
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			json.NewEncoder(w).Encode(resp)
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(resp)
-		return
+
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			stopped:  stopWatch.Hit,
+			finish:   finish,
+			respond:  respond,
+		}
 	}
 
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		h.sendClaudeNoAccounts(w)
-		return
-	}
-
-	h.recordFailureWithDetails(ctx, "claude", model, "", lastErr)
-	h.sendClaudeUpstreamError(w, lastErr, estimatedInputTokens, model)
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:       "claude",
+		payload:        payload,
+		model:          model,
+		apiKeyID:       apiKeyID,
+		cacheProfile:   cacheProfile,
+		attempt:        attempt,
+		failNoAccounts: func() { h.sendClaudeNoAccounts(w) },
+		fail: func(model string, err error) {
+			h.sendClaudeUpstreamError(w, err, estimatedInputTokens, model)
+		},
+	})
 }
 
 func (h *Handler) sendClaudeError(w http.ResponseWriter, status int, errType, message string) {
@@ -2183,25 +2120,11 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		flusher.Flush()
 	}
-	excluded := make(map[string]bool)
-	var lastErr error
-	reqStart := time.Now()
+	responseStarted := false
 
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 
 		var upstreamStopReason string
 		var toolCalls []ToolCall
@@ -2217,21 +2140,11 @@ accountLoop:
 		var thinkingSource thinkingStreamSource
 		var thinkingStarted bool
 		var eventThinkingOpen bool
-		responseStarted := false
 
 		// Stop sequences: see handleClaudeStream.
 		stopper := newStopSequenceMatcher(stopSequencesFrom(ctx))
-		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
-		defer cancelUpstream()
+		cancelUpstream := a.cancel
 		stopBypass := false
-
-		sendStreamError := func(err error) {
-			data, _ := json.Marshal(map[string]interface{}{
-				"error": openAIStreamErrorObject(err),
-			})
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-		}
 
 		sendChunk := func(content string, thinkingState int) {
 			if content == "" && thinkingState == 2 {
@@ -2551,132 +2464,120 @@ accountLoop:
 			stopper = newStopSequenceMatcher(stopSequencesFrom(ctx))
 		}
 
-		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset,
-			func() bool { return !responseStarted })
-		if err != nil && stopper.Done() {
-			// Upstream was cancelled because a stop sequence matched.
-			err = nil
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+		var reasoningOutput string
+		finish := func() upstreamUsage {
+			processText("", false, true)
+			flushStopText()
+			if eventThinkingOpen {
+				sendChunk("", 3)
 			}
-			lastErr = err
-			excluded[account.ID] = true
-			// Integrity failures are upstream hiccups, not account faults.
-			if !isStreamIntegrityError(err) {
-				h.handleAccountFailure(account, err)
-				h.dropAffinity(apiKeyID, account.ID)
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputContent, extractedReasoning := extractThinkingFromContent(rawContentBuilder.String())
+			reasoningOutput = rawReasoningBuilder.String()
+			if thinking && reasoningOutput == "" && extractedReasoning != "" {
+				reasoningOutput = extractedReasoning
 			}
-			if !responseStarted {
-				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-					break
-				}
-				continue
+			if !thinking {
+				reasoningOutput = ""
 			}
-			h.recordFailureWithDetails(ctx, "openai", model, account.ID, err)
-			sendStreamError(err)
-			return
+			outputTokens = estimateApproxTokens(outputContent) + estimateApproxTokens(reasoningOutput)
+			for _, tc := range toolCalls {
+				outputTokens += estimateApproxTokens(tc.Function.Name)
+				outputTokens += estimateApproxTokens(tc.Function.Arguments)
+			}
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
 		}
 
-		processText("", false, true)
-		flushStopText()
-		if eventThinkingOpen {
-			sendChunk("", 3)
-		}
+		respond := func(upstreamUsage) {
+			finishReason := mapOpenAIFinishReason(upstreamStopReason, len(toolCalls))
+			if stopper.Done() {
+				finishReason = "stop"
+			}
 
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
-		}
-		outputContent, extractedReasoning := extractThinkingFromContent(rawContentBuilder.String())
-		reasoningOutput := rawReasoningBuilder.String()
-		if thinking && reasoningOutput == "" && extractedReasoning != "" {
-			reasoningOutput = extractedReasoning
-		}
-		if !thinking {
-			reasoningOutput = ""
-		}
-		outputTokens = estimateApproxTokens(outputContent) + estimateApproxTokens(reasoningOutput)
-		for _, tc := range toolCalls {
-			outputTokens += estimateApproxTokens(tc.Function.Name)
-			outputTokens += estimateApproxTokens(tc.Function.Arguments)
-		}
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-		finishReason := mapOpenAIFinishReason(upstreamStopReason, len(toolCalls))
-		if stopper.Done() {
-			finishReason = "stop"
-		}
-
-		usage := withReasoningTokenDetails(buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil), reasoningOutput)
-		chunk := map[string]interface{}{
-			"id":      chatID,
-			"object":  "chat.completion.chunk",
-			"created": created,
-			"model":   echoModel(ctx, model),
-			"choices": []map[string]interface{}{{
-				"index":         0,
-				"delta":         map[string]interface{}{},
-				"logprobs":      nil,
-				"finish_reason": finishReason,
-			}},
-		}
-		includeUsage, _ := ctx.Value(includeUsageKey{}).(bool)
-		if !includeUsage {
-			// Not official without stream_options.include_usage, but clients
-			// that never ask for it still read usage from the finish chunk.
-			chunk["usage"] = usage
-		}
-		writeChunk(chunk)
-		if includeUsage {
-			// Official shape: usage arrives in its own final chunk with an
-			// empty choices array.
-			writeChunk(map[string]interface{}{
+			usage := withReasoningTokenDetails(buildOpenAIUsageMap(inputTokens, outputTokens, cacheUsage, cacheProfile != nil), reasoningOutput)
+			chunk := map[string]interface{}{
 				"id":      chatID,
 				"object":  "chat.completion.chunk",
 				"created": created,
 				"model":   echoModel(ctx, model),
-				"choices": []interface{}{},
-				"usage":   usage,
-			})
+				"choices": []map[string]interface{}{{
+					"index":         0,
+					"delta":         map[string]interface{}{},
+					"logprobs":      nil,
+					"finish_reason": finishReason,
+				}},
+			}
+			includeUsage, _ := ctx.Value(includeUsageKey{}).(bool)
+			if !includeUsage {
+				// Not official without stream_options.include_usage, but clients
+				// that never ask for it still read usage from the finish chunk.
+				chunk["usage"] = usage
+			}
+			writeChunk(chunk)
+			if includeUsage {
+				// Official shape: usage arrives in its own final chunk with an
+				// empty choices array.
+				writeChunk(map[string]interface{}{
+					"id":      chatID,
+					"object":  "chat.completion.chunk",
+					"created": created,
+					"model":   echoModel(ctx, model),
+					"choices": []interface{}{},
+					"usage":   usage,
+				})
+			}
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
 		}
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		flusher.Flush()
-		return
+
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			stopped:  func() bool { return stopper.Done() },
+			finish:   finish,
+			respond:  respond,
+		}
 	}
 
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		if hb.Committed() {
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:     "openai",
+		payload:      payload,
+		model:        model,
+		apiKeyID:     apiKeyID,
+		cacheProfile: cacheProfile,
+		started:      func() bool { return responseStarted },
+		attempt:      attempt,
+		failStarted: func(_ *upstreamAttempt, err error) {
 			data, _ := json.Marshal(map[string]interface{}{
-				"error": openAIErrorObject("server_error", "server_overloaded", noAvailableAccountsMessage),
+				"error": openAIStreamErrorObject(err),
 			})
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
-			return
-		}
-		h.sendOpenAINoAccounts(w)
-		return
-	}
-
-	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	if hb.Committed() {
-		// A heartbeat already sent the 200 status line.
-		data, _ := json.Marshal(map[string]interface{}{"error": openAIStreamErrorObject(lastErr)})
-		fmt.Fprintf(w, "data: %s\n\n", data)
-		flusher.Flush()
-		return
-	}
-	h.sendOpenAIUpstreamError(w, lastErr)
+		},
+		failNoAccounts: func() {
+			if hb.Committed() {
+				data, _ := json.Marshal(map[string]interface{}{
+					"error": openAIErrorObject("server_error", "server_overloaded", noAvailableAccountsMessage),
+				})
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+				return
+			}
+			h.sendOpenAINoAccounts(w)
+		},
+		fail: func(_ string, err error) {
+			if hb.Committed() {
+				// A heartbeat already sent the 200 status line.
+				data, _ := json.Marshal(map[string]interface{}{"error": openAIStreamErrorObject(err)})
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+				return
+			}
+			h.sendOpenAIUpstreamError(w, err)
+		},
+	})
 }
 
 // includeUsageKey marks a chat stream whose client set
@@ -2685,25 +2586,9 @@ type includeUsageKey struct{}
 
 // handleOpenAINonStream OpenAI 非流式响应
 func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWriter, payload *KiroPayload, model string, thinking bool, estimatedInputTokens int, cacheProfile *promptCacheProfile, apiKeyID string) {
-	excluded := make(map[string]bool)
-	var lastErr error
-	reqStart := time.Now()
-
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 
 		var content string
 		var reasoningContent string
@@ -2713,9 +2598,7 @@ accountLoop:
 		var realInputTokens int
 		var upstreamStopReason string
 
-		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
-		defer cancelUpstream()
-		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, cancelUpstream)
+		stopWatch := newBufferedStopWatch(stopSequencesFrom(ctx), !thinking, a.cancel)
 
 		callback := &KiroStreamCallback{
 			OnText: func(text string, isThinking bool) {
@@ -2762,69 +2645,52 @@ accountLoop:
 
 		// Fully buffered: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(upstreamCtx, account, payload, callback, measure, reset, nil)
-		if err != nil && stopWatch.Hit() {
-			err = nil
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+		var finalContent string
+		finish := func() upstreamUsage {
+			var extractedReasoning, matchedStop string
+			finalContent, extractedReasoning = extractThinkingFromContent(content)
+			finalContent, toolUses, matchedStop = stopWatch.Apply(finalContent, toolUses)
+			if matchedStop != "" {
+				upstreamStopReason = "end_turn"
 			}
-			lastErr = err
-			excluded[account.ID] = true
-			// Integrity failures are upstream hiccups, not account faults.
-			if !isStreamIntegrityError(err) {
-				h.handleAccountFailure(account, err)
-				h.dropAffinity(apiKeyID, account.ID)
+			if thinking && reasoningContent == "" && extractedReasoning != "" {
+				reasoningContent = extractedReasoning
+			} else if !thinking {
+				reasoningContent = ""
 			}
-			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-				break
-			}
-			continue
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
 		}
 
-		finalContent, extractedReasoning := extractThinkingFromContent(content)
-		finalContent, toolUses, matchedStop := stopWatch.Apply(finalContent, toolUses)
-		if matchedStop != "" {
-			upstreamStopReason = "end_turn"
-		}
-		if thinking && reasoningContent == "" && extractedReasoning != "" {
-			reasoningContent = extractedReasoning
-		} else if !thinking {
-			reasoningContent = ""
+		respond := func(upstreamUsage) {
+			thinkingFormat := config.GetThinkingConfig().OpenAIFormat
+			resp := KiroToOpenAIResponseWithReasoning(finalContent, reasoningContent, toolUses, inputTokens, outputTokens, echoModel(ctx, model), thinkingFormat, upstreamStopReason, cacheUsage, cacheProfile != nil)
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			json.NewEncoder(w).Encode(resp)
 		}
 
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			stopped:  stopWatch.Hit,
+			finish:   finish,
+			respond:  respond,
 		}
-		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.promptCache.Update(account.ID, cacheProfile)
-		h.recordSuccessLog(ctx, "openai", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-
-		thinkingFormat := config.GetThinkingConfig().OpenAIFormat
-		resp := KiroToOpenAIResponseWithReasoning(finalContent, reasoningContent, toolUses, inputTokens, outputTokens, echoModel(ctx, model), thinkingFormat, upstreamStopReason, cacheUsage, cacheProfile != nil)
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(resp)
-		return
 	}
 
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		h.sendOpenAINoAccounts(w)
-		return
-	}
-
-	h.recordFailureWithDetails(ctx, "openai", model, "", lastErr)
-	h.sendOpenAIUpstreamError(w, lastErr)
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:       "openai",
+		payload:        payload,
+		model:          model,
+		apiKeyID:       apiKeyID,
+		cacheProfile:   cacheProfile,
+		attempt:        attempt,
+		failNoAccounts: func() { h.sendOpenAINoAccounts(w) },
+		fail:           func(_ string, err error) { h.sendOpenAIUpstreamError(w, err) },
+	})
 }
 
 func (h *Handler) sendOpenAIError(w http.ResponseWriter, status int, errType, message string) {

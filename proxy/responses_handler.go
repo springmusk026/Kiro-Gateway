@@ -188,25 +188,9 @@ func (h *Handler) handleResponsesNonStream(
 	req *ResponsesRequest, storedInput json.RawMessage, storeResponse bool,
 	cacheProfile *promptCacheProfile, customTools map[string]bool, toolNamespaces map[string]string,
 ) {
-	excluded := make(map[string]bool)
-	var lastErr error
-	reqStart := time.Now()
-
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 
 		var content, reasoningContent string
 		var toolUses []KiroToolUse
@@ -251,75 +235,61 @@ accountLoop:
 
 		// Fully buffered path: nothing reaches the client until the response is
 		// encoded, so a retry can never duplicate output.
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset, nil)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+		var finalContent string
+		finish := func() upstreamUsage {
+			var tagReasoning string
+			finalContent, tagReasoning = extractThinkingFromContent(content)
+			if reasoningContent == "" {
+				reasoningContent = tagReasoning
 			}
-			lastErr = err
-			excluded[account.ID] = true
-			// Integrity failures are upstream hiccups, not account faults.
-			if !isStreamIntegrityError(err) {
-				h.handleAccountFailure(account, err)
-				h.dropAffinity(apiKeyID, account.ID)
+			if !thinking {
+				reasoningContent = ""
 			}
-			if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-				break
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
+		}
+
+		respond := func(upstreamUsage) {
+			respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+			var reasoningItems []ResponseOutputItem
+			if strings.TrimSpace(reasoningContent) != "" {
+				reasoningItems = append(reasoningItems, newReasoningOutputItem(generateOutputItemID("rs"), reasoningContent))
 			}
-			continue
-		}
+			applyReasoningToResponse(respObj, reasoningItems, reasoningContent)
+			respObj.StoredInput = storedInput
+			respObj.Instructions = req.Instructions
 
-		finalContent, tagReasoning := extractThinkingFromContent(content)
-		if reasoningContent == "" {
-			reasoningContent = tagReasoning
-		}
-		if !thinking {
-			reasoningContent = ""
-		}
-
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
-		}
-		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoningContent, toolUses)
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-		h.promptCache.Update(account.ID, cacheProfile)
-
-		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
-		var reasoningItems []ResponseOutputItem
-		if strings.TrimSpace(reasoningContent) != "" {
-			reasoningItems = append(reasoningItems, newReasoningOutputItem(generateOutputItemID("rs"), reasoningContent))
-		}
-		applyReasoningToResponse(respObj, reasoningItems, reasoningContent)
-		respObj.StoredInput = storedInput
-		respObj.Instructions = req.Instructions
-
-		if storeResponse {
-			if saveErr := saveResponse(respObj); saveErr != nil {
-				logResponsesPersistFailure(respObj.ID, saveErr)
+			if storeResponse {
+				if saveErr := saveResponse(respObj); saveErr != nil {
+					logResponsesPersistFailure(respObj.ID, saveErr)
+				}
 			}
+
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(respObj)
 		}
 
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(respObj)
-		return
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			finish:   finish,
+			respond:  respond,
+		}
 	}
 
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		h.sendOpenAINoAccounts(w)
-		return
-	}
-	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
-	h.sendOpenAIUpstreamError(w, lastErr)
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:       "responses",
+		payload:        payload,
+		model:          model,
+		apiKeyID:       apiKeyID,
+		cacheProfile:   cacheProfile,
+		attempt:        attempt,
+		failNoAccounts: func() { h.sendOpenAINoAccounts(w) },
+		fail:           func(_ string, err error) { h.sendOpenAIUpstreamError(w, err) },
+	})
 }
 
 func mapResponsesCompletion(reason string) (status, incompleteReason string) {
@@ -498,26 +468,13 @@ func (h *Handler) handleResponsesStream(
 		})
 	}
 
-	excluded := make(map[string]bool)
-	var lastErr error
 	responseStarted := false
-	reqStart := time.Now()
+	// attemptDoneItems reads the current attempt's completed output items.
+	var attemptDoneItems func() []ResponseOutputItem
 
-accountLoop:
-	for attempt := 0; attempt < maxAccountRetryAttempts; attempt++ {
-		account := h.pickAccount(apiKeyID, conversationKey(payload), model, excluded)
-		if account == nil {
-			break
-		}
-		if err := h.ensureValidToken(account); err != nil {
-			lastErr = err
-			excluded[account.ID] = true
-			h.handleAccountFailure(account, err)
-			h.dropAffinity(apiKeyID, account.ID)
-			continue
-		}
-
-		cacheUsage := h.promptCache.Compute(account.ID, cacheProfile)
+	attempt := func(a *upstreamAttempt) upstreamAttemptRun {
+		model = a.model
+		cacheUsage := a.cacheUsage
 
 		var (
 			fullText           strings.Builder
@@ -716,92 +673,81 @@ accountLoop:
 			upstreamStopReason = ""
 		}
 
-		err := runKiroWithIntegrityRetry(ctx, account, payload, callback, measure, reset,
-			func() bool { return !responseStarted })
-		if err != nil {
-			if ctx.Err() != nil {
-				return
+		var finalContent, reasoning string
+		finish := func() upstreamUsage {
+			finalContent, _ = extractThinkingFromContent(fullText.String())
+			reasoning = reasoningText.String()
+			if !thinking {
+				reasoning = ""
 			}
-			if !responseStarted {
-				lastErr = err
-				excluded[account.ID] = true
-				// Integrity failures are upstream hiccups, not account faults.
-				if !isStreamIntegrityError(err) {
-					h.handleAccountFailure(account, err)
-					h.dropAffinity(apiKeyID, account.ID)
+
+			closeReasoning()
+			if messageStarted {
+				text := msgText.String()
+				if messagesClosed == 0 {
+					// A single message: report the same text as response.completed.
+					text = finalContent
 				}
-				if isTerminalUpstreamError(err) || stopForModelFallback(ctx, model, err) {
-					break
-				}
-				continue
+				closeMessage(text)
 			}
+
+			inputTokens = resolveInputTokens(realInputTokens, inputTokens, estimatedInputTokens)
+			outputTokens = estimateOpenAIOutputTokens(finalContent, reasoning, toolUses)
+			return upstreamUsage{inputTokens: inputTokens, outputTokens: outputTokens, credits: credits}
+		}
+
+		respond := func(upstreamUsage) {
+			respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
+			applyReasoningToResponse(respObj, reasoningItems, reasoning)
+			respObj.CreatedAt = createdAt
+			respObj.StoredInput = storedInput
+			respObj.Instructions = req.Instructions
+
+			if storeResponse {
+				if saveErr := saveResponse(respObj); saveErr != nil {
+					logResponsesPersistFailure(respObj.ID, saveErr)
+				}
+			}
+
+			// The official stream ends with response.completed; there is no
+			// trailing "data: [DONE]".
+			send("response.completed", map[string]interface{}{
+				"type":     "response.completed",
+				"response": respObj,
+			})
+		}
+
+		attemptDoneItems = func() []ResponseOutputItem { return doneItems }
+		return upstreamAttemptRun{
+			callback: callback,
+			measure:  measure,
+			reset:    reset,
+			finish:   finish,
+			respond:  respond,
+		}
+	}
+
+	h.executeUpstream(ctx, w, &upstreamRequest{
+		endpoint:     "responses",
+		payload:      payload,
+		model:        model,
+		apiKeyID:     apiKeyID,
+		cacheProfile: cacheProfile,
+		started:      func() bool { return responseStarted },
+		// An error after output started ends the response without counting
+		// against the account.
+		keepAccountAfterOutput: true,
+		attempt:                attempt,
+		failStarted: func(_ *upstreamAttempt, err error) {
 			info := classifyUpstreamError(err)
-			sendFailed(doneItems, info.Code, info.Message)
-			h.recordFailureWithDetails(ctx, "responses", model, account.ID, err)
-			return
-		}
-
-		finalContent, _ := extractThinkingFromContent(fullText.String())
-		reasoning := reasoningText.String()
-		if !thinking {
-			reasoning = ""
-		}
-
-		closeReasoning()
-		if messageStarted {
-			text := msgText.String()
-			if messagesClosed == 0 {
-				// A single message: report the same text as response.completed.
-				text = finalContent
-			}
-			closeMessage(text)
-		}
-
-		if realInputTokens > 0 {
-			inputTokens = realInputTokens
-		} else if inputTokens <= 0 {
-			inputTokens = estimatedInputTokens
-		}
-		outputTokens = estimateOpenAIOutputTokens(finalContent, reasoning, toolUses)
-
-		h.recordSuccessForApiKey(ctx, apiKeyID, inputTokens, outputTokens, credits)
-		h.pool.RecordSuccess(account.ID)
-		h.pool.UpdateStats(account.ID, inputTokens+outputTokens, credits)
-		h.recordSuccessLog(ctx, "responses", model, account.ID, inputTokens+outputTokens, credits, time.Since(reqStart).Milliseconds())
-		h.promptCache.Update(account.ID, cacheProfile)
-
-		respObj := buildResponsesObject(respID, echoModel(ctx, model), finalContent, toolUses, inputTokens, outputTokens, req, upstreamStopReason, cacheUsage, cacheProfile != nil, customTools, toolNamespaces)
-		applyReasoningToResponse(respObj, reasoningItems, reasoning)
-		respObj.CreatedAt = createdAt
-		respObj.StoredInput = storedInput
-		respObj.Instructions = req.Instructions
-
-		if storeResponse {
-			if saveErr := saveResponse(respObj); saveErr != nil {
-				logResponsesPersistFailure(respObj.ID, saveErr)
-			}
-		}
-
-		// The official stream ends with response.completed; there is no
-		// trailing "data: [DONE]".
-		send("response.completed", map[string]interface{}{
-			"type":     "response.completed",
-			"response": respObj,
-		})
-		return
-	}
-
-	if fb := h.takeModelFallback(ctx, w, payload, model, lastErr); fb != "" {
-		model, excluded = fb, make(map[string]bool)
-		goto accountLoop
-	}
-	if lastErr == nil {
-		sendFailed(nil, "server_overloaded", noAvailableAccountsMessage)
-		return
-	}
-	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)
-	info := classifyUpstreamError(lastErr)
-	sendFailed(nil, info.Code, info.Message)
+			sendFailed(attemptDoneItems(), info.Code, info.Message)
+		},
+		failNoAccounts: func() { sendFailed(nil, "server_overloaded", noAvailableAccountsMessage) },
+		fail: func(_ string, err error) {
+			info := classifyUpstreamError(err)
+			sendFailed(nil, info.Code, info.Message)
+		},
+	})
 }
 
 // handleResponseByID serves GET and DELETE /v1/responses/{id} from the
