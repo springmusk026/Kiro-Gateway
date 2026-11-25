@@ -43,8 +43,10 @@
 ### Fixed
 - Extended thinking now works for Kiro API-key accounts. The gateway sends the model's native
   `additionalModelRequestFields` (`thinking.type: adaptive` and the effort level) in the request body and the
-  `default-v2` agent mode, as Kiro CLI 3.5 does; previously the 5.5 models returned no reasoning. Adaptive
+  `default-v2` agent mode, as Kiro CLI does; previously the 5.5 models returned no reasoning. Adaptive
   thinking lets the model skip reasoning on trivial prompts, especially at low effort.
+- API-key accounts identify as Kiro CLI 3.6.0 (KAS 0.66.127), the current release, with the SDK user-agent
+  flags (`m/N,E`) it sends on every call.
 - An unknown model now returns 404 (`not_found_error` / `model_not_found`) instead of 529 "No available
   accounts", so clients stop retrying it.
 

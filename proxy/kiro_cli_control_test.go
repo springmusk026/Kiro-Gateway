@@ -103,9 +103,9 @@ func assertCLIControlRequest(t *testing.T, c capturedControlCall, host, target, 
 		}
 	}
 	ua, amz := h.Get("User-Agent"), h.Get("X-Amz-User-Agent")
-	tail := "KiroCLI/3.5.0 KAS/0.66.119 os/linux md/appVersion-3.5.0 app/AmazonQ-For-CLI acp-client/kiro-cli"
+	tail := "KiroCLI/3.6.0 KAS/0.66.127 os/linux md/appVersion-3.6.0 app/AmazonQ-For-CLI acp-client/kiro-cli"
 	if dashUA {
-		tail = "KiroCLI/3.5.0-KAS/0.66.119-os/linux-md/appVersion-3.5.0-app/AmazonQ-For-CLI acp-client/kiro-cli"
+		tail = "KiroCLI/3.6.0-KAS/0.66.127-os/linux-md/appVersion-3.6.0-app/AmazonQ-For-CLI acp-client/kiro-cli"
 	}
 	if !strings.HasPrefix(ua, "aws-sdk-js/1.0.0 ua/2.1 os/linux") || !strings.HasSuffix(ua, " m/N,E "+tail) || amz != "aws-sdk-js/1.0.0 "+tail {
 		t.Fatalf("%s user agents:\n%s\n%s", target, ua, amz)
@@ -190,7 +190,7 @@ func TestFeatureConfigurationPrefetchAPIKeyOnly(t *testing.T) {
 		t.Fatalf("%d calls, want 1 (OAuth accounts and repeats must not call)", len(c))
 	}
 	assertCLIControlRequest(t, c[0], "runtime.eu-central-1.kiro.dev", "KiroRuntimeService.GetFeatureConfiguration",
-		`{"origin":"KIRO_CLI","version":"3.5.0"}`, "attempt=1; max=1", true)
+		`{"origin":"KIRO_CLI","version":"3.6.0"}`, "attempt=1; max=1", true)
 
 	// After the TTL it is fetched again.
 	featureConfigMu.Lock()
@@ -224,8 +224,8 @@ func TestOAuthControlCallsUnchanged(t *testing.T) {
 
 func TestKiroCLISDKUserAgentsDashTail(t *testing.T) {
 	ua, amz := kiroCLISDKUserAgents("kiroruntime", "m/N,E", true)
-	if !strings.Contains(ua, "api/kiroruntime#1.0.0 m/N,E KiroCLI/3.5.0-KAS/0.66.119-os/linux-md/appVersion-3.5.0-app/AmazonQ-For-CLI acp-client/kiro-cli") ||
-		amz != "aws-sdk-js/1.0.0 KiroCLI/3.5.0-KAS/0.66.119-os/linux-md/appVersion-3.5.0-app/AmazonQ-For-CLI acp-client/kiro-cli" {
+	if !strings.Contains(ua, "api/kiroruntime#1.0.0 m/N,E KiroCLI/3.6.0-KAS/0.66.127-os/linux-md/appVersion-3.6.0-app/AmazonQ-For-CLI acp-client/kiro-cli") ||
+		amz != "aws-sdk-js/1.0.0 KiroCLI/3.6.0-KAS/0.66.127-os/linux-md/appVersion-3.6.0-app/AmazonQ-For-CLI acp-client/kiro-cli" {
 		t.Fatalf("%s | %s", ua, amz)
 	}
 }

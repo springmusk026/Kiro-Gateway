@@ -23,7 +23,7 @@ import (
 //
 //	ListAvailableModels      management.{region}.kiro.dev  KiroControlPlaneBearerService  {"origin":"KIRO_CLI"}                      attempt=1; max=3
 //	GetUsageLimits           management.{region}.kiro.dev  KiroControlPlaneBearerService  {"origin":"KIRO_CLI"}                      attempt=1; max=1
-//	GetFeatureConfiguration  runtime.{region}.kiro.dev     KiroRuntimeService             {"origin":"KIRO_CLI","version":"3.5.0"}   attempt=1; max=1, dash-joined UA
+//	GetFeatureConfiguration  runtime.{region}.kiro.dev     KiroRuntimeService             {"origin":"KIRO_CLI","version":"3.6.0"}   attempt=1; max=1, dash-joined UA
 //
 // OAuth accounts keep their existing calls (their IDE identity is not
 // covered by the capture).

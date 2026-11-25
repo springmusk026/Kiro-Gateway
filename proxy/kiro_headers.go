@@ -100,8 +100,8 @@ func accountBearerToken(account *config.Account) string {
 // plain HTTPS call (no AWS SDK), so it carries only the host application's own
 // user agent: no aws-sdk-js prefix and no x-amz-user-agent.
 const (
-	kiroCLIVersion = "3.5.0"
-	kiroKASVersion = "0.66.119"
+	kiroCLIVersion = "3.6.0"
+	kiroKASVersion = "0.66.127"
 )
 
 // responsesUserAgent is the User-Agent for the raw /v1/responses transport.
@@ -149,7 +149,7 @@ const kasNodeVersion = "22.23.4"
 // kiroCLISmithyUserAgents returns the User-Agent / x-amz-user-agent pair the
 // CLI's agent sends on its AWS SDK calls to the runtime service.
 func kiroCLISmithyUserAgents() (userAgent, amzUserAgent string) {
-	return kiroCLISDKUserAgents("kiroruntime", "m/N", false)
+	return kiroCLISDKUserAgents("kiroruntime", "m/N,E", false)
 }
 
 // kiroCLISDKUserAgents builds the AWS SDK user agents of one of the CLI
