@@ -26,7 +26,7 @@ test('create an API key and see it in the list', async ({ page, admin: api }) =>
   await dialog.getByRole('button', { name: 'Create key' }).click()
 
   // The plaintext key is shown exactly once.
-  const reveal = page.getByRole('dialog', { name: 'Your new API key' })
+  const reveal = page.getByRole('dialog', { name: /Copy your key now/ })
   await expect(reveal).toBeVisible()
   const plaintext = (await reveal.locator('code').textContent())?.trim() ?? ''
   expect(plaintext.length).toBeGreaterThanOrEqual(20)
