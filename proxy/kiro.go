@@ -210,8 +210,10 @@ type KiroPayload struct {
 
 	// AdditionalModelRequestFields carries per-model reasoning controls such as
 	// {"output_config":{"effort":"low"}}. Shape comes from ListAvailableModels.
-	// Only the /v1/responses transport sends it (as its `reasoning` block);
-	// it is never serialized into the generateAssistantResponse body.
+	// The /v1/responses transport sends it as its `reasoning` block; on the
+	// Kiro CLI runtime (API-key accounts) it rides in the
+	// GenerateAssistantResponse body exactly as Kiro CLI sends it. It is not
+	// sent to the IDE/Q hosts.
 	AdditionalModelRequestFields map[string]interface{} `json:"-"`
 
 	// ToolNameMap maps sanitized tool names (sent to Kiro) back to the
@@ -219,6 +221,17 @@ type KiroPayload struct {
 	// in tool_use responses so the client can match them to its tool registry.
 	// Not serialized to the Kiro API request body.
 	ToolNameMap map[string]string `json:"-"`
+}
+
+// kiroCLIAgentMode is the agentMode body field and mode-identifier header Kiro
+// CLI 3.5's v3 agent engine sends for a normal chat turn.
+const kiroCLIAgentMode = "default-v2"
+
+// cliRuntimeBody is the GenerateAssistantResponse body for the Kiro CLI
+// runtime: the payload plus additionalModelRequestFields.
+type cliRuntimeBody struct {
+	*KiroPayload
+	AdditionalModelRequestFields map[string]interface{} `json:"additionalModelRequestFields,omitempty"`
 }
 
 type KiroUserInputMessage struct {
@@ -460,7 +473,7 @@ func callKiroLegacyAPIContext(ctx context.Context, account *config.Account, payl
 	isAPIKey := config.IsAPIKeyAccount(account)
 	ensureAgentContinuationID(payload)
 	if isAPIKey {
-		payload.AgentMode = "vibe"
+		payload.AgentMode = kiroCLIAgentMode
 		defer func() { payload.AgentMode = "" }()
 	}
 
@@ -480,7 +493,12 @@ endpointLoop:
 			epURL = cliRuntimeURL(account)
 		}
 
-		reqBody, _ := json.Marshal(withCachePoints(payload))
+		var reqBody []byte
+		if isAPIKey {
+			reqBody, _ = json.Marshal(cliRuntimeBody{withCachePoints(payload), payload.AdditionalModelRequestFields})
+		} else {
+			reqBody, _ = json.Marshal(withCachePoints(payload))
+		}
 		// The serialized body size is the only number that can be compared
 		// against an upstream CONTENT_LENGTH_EXCEEDS_THRESHOLD rejection. It was
 		// previously computed only inside the truncation path and never logged,

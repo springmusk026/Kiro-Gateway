@@ -315,7 +315,7 @@ accountLoop:
 		goto accountLoop
 	}
 	if lastErr == nil {
-		h.sendOpenAINoAccounts(w)
+		h.sendOpenAINoAccounts(w, model)
 		return
 	}
 	h.recordFailureWithDetails(ctx, "responses", model, "", lastErr)

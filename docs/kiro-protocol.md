@@ -14,6 +14,25 @@
 
 Read-only research. Nothing in this repository was modified.
 
+## Live capture, 25 Nov 2026 (Kiro CLI 3.5, API key, us-east-1)
+
+Recorded from the official `kiro-cli chat --agent-engine v3` through a proxy, with a real API key (redacted).
+It corrects parts of the static analysis below:
+
+- Each chat turn makes **two** `KiroRuntimeService.GenerateAssistantResponse` calls (AWS JSON 1.0, `POST /` on
+  `runtime.{region}.kiro.dev`): a title call (`agentMode: "session-title"`, `modelId: "simple-task"`, no
+  extra fields) and the turn itself.
+- The turn body carries `agentMode: "default-v2"` and
+  `additionalModelRequestFields: {"output_config":{"effort":"medium"},"thinking":{"type":"adaptive"}}` at the
+  top level, next to `conversationState`. Headers: `TokenType: API_KEY`,
+  `x-amzn-kiro-client-attribution: kiro-cli`, `x-amzn-kiro-mode-identifier: default-v2`,
+  `x-amzn-kiro-fallback: 0;max=0`, `x-amzn-kiro-attempt: 1;max=3`, `amz-sdk-request: attempt=1; max=3`.
+- Reasoning arrives as `reasoningContentEvent` frames with `text`, then one with `signature`. Without
+  `thinking.type` the 5.5 models return no reasoning.
+- The CLI sent effort `medium` even when started with `--effort high`.
+
+Kiro Gateway now sends the same body fields and mode for API-key accounts (`proxy/kiro.go`, `cliRuntimeBody`).
+
 ## 0. Sources, notation, and caveats
 
 | Tag | Meaning |

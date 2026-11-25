@@ -230,14 +230,31 @@ func (h *Handler) noAccountsRetryAfter() time.Duration {
 
 const noAvailableAccountsMessage = "No available accounts"
 
-// sendClaudeNoAccounts mirrors Anthropic's capacity error: 529 overloaded_error.
-func (h *Handler) sendClaudeNoAccounts(w http.ResponseWriter) {
+// unknownModel reports a model no account in the pool lists, so "no account"
+// means "no such model" rather than a capacity problem a client should retry.
+func (h *Handler) unknownModel(model string) bool {
+	return h != nil && h.pool != nil && model != "" && !h.pool.AnyAccountListsModel(model)
+}
+
+// sendClaudeNoAccounts mirrors Anthropic's capacity error: 529 overloaded_error,
+// or 404 not_found_error when no account offers the model at all.
+func (h *Handler) sendClaudeNoAccounts(w http.ResponseWriter, model string) {
+	if h.unknownModel(model) {
+		h.sendClaudeError(w, http.StatusNotFound, "not_found_error", "model: "+model)
+		return
+	}
 	setRetryAfterHeader(w, h.noAccountsRetryAfter())
 	h.sendClaudeError(w, 529, "overloaded_error", noAvailableAccountsMessage)
 }
 
-// sendOpenAINoAccounts mirrors OpenAI's capacity error: 503.
-func (h *Handler) sendOpenAINoAccounts(w http.ResponseWriter) {
+// sendOpenAINoAccounts mirrors OpenAI's capacity error: 503, or 404
+// model_not_found when no account offers the model at all.
+func (h *Handler) sendOpenAINoAccounts(w http.ResponseWriter, model string) {
+	if h.unknownModel(model) {
+		h.sendOpenAIErrorWithCode(w, http.StatusNotFound, "invalid_request_error", "model_not_found",
+			fmt.Sprintf("The model `%s` does not exist or you do not have access to it.", model))
+		return
+	}
 	setRetryAfterHeader(w, h.noAccountsRetryAfter())
 	h.sendOpenAIErrorWithCode(w, http.StatusServiceUnavailable, "server_error", "server_overloaded", noAvailableAccountsMessage)
 }

@@ -173,7 +173,7 @@ func setKiroCLIRuntimeHeaders(req *http.Request, account *config.Account, target
 		req.Header.Set("TokenType", tt)
 	}
 	req.Header.Set("x-amzn-kiro-client-attribution", "kiro-cli")
-	req.Header.Set("x-amzn-kiro-mode-identifier", "vibe")
+	req.Header.Set("x-amzn-kiro-mode-identifier", kiroCLIAgentMode)
 	req.Header.Set("x-amzn-kiro-fallback", "0;max=0")
 	req.Header.Set("x-amzn-kiro-attempt", fmt.Sprintf("%d;max=%d", attempt, responsesAttemptBudget))
 	req.Header.Set("Amz-Sdk-Request", fmt.Sprintf("attempt=%d; max=%d", attempt, responsesAttemptBudget))

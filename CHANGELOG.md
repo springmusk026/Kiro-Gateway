@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+- Extended thinking now works for Kiro API-key accounts. The gateway sends the model's native
+  `additionalModelRequestFields` (`thinking.type: adaptive` and the effort level) in the request body and the
+  `default-v2` agent mode, as Kiro CLI 3.5 does; previously the 5.5 models returned no reasoning. Adaptive
+  thinking lets the model skip reasoning on trivial prompts, especially at low effort.
+- An unknown model now returns 404 (`not_found_error` / `model_not_found`) instead of 529 "No available
+  accounts", so clients stop retrying it.
+
 ## 2.1.0 — Kiro Gateway
 
 The project is now **Kiro Gateway** ([springmusk026/Kiro-Gateway](https://github.com/springmusk026/Kiro-Gateway)).

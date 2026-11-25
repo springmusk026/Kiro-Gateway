@@ -1710,7 +1710,7 @@ accountLoop:
 			})
 			return
 		}
-		h.sendClaudeNoAccounts(w)
+		h.sendClaudeNoAccounts(w, model)
 		return
 	}
 
@@ -2056,7 +2056,7 @@ accountLoop:
 		goto accountLoop
 	}
 	if lastErr == nil {
-		h.sendClaudeNoAccounts(w)
+		h.sendClaudeNoAccounts(w, model)
 		return
 	}
 
@@ -2664,7 +2664,7 @@ accountLoop:
 			flusher.Flush()
 			return
 		}
-		h.sendOpenAINoAccounts(w)
+		h.sendOpenAINoAccounts(w, model)
 		return
 	}
 
@@ -2819,7 +2819,7 @@ accountLoop:
 		goto accountLoop
 	}
 	if lastErr == nil {
-		h.sendOpenAINoAccounts(w)
+		h.sendOpenAINoAccounts(w, model)
 		return
 	}
 

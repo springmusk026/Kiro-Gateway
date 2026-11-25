@@ -103,7 +103,7 @@ func TestAPIKeyRuntimeCallMatchesCapturedClient(t *testing.T) {
 		"X-Amz-Target":                   "KiroRuntimeService.GenerateAssistantResponse",
 		"Tokentype":                      "API_KEY",
 		"X-Amzn-Kiro-Client-Attribution": "kiro-cli",
-		"X-Amzn-Kiro-Mode-Identifier":    "vibe",
+		"X-Amzn-Kiro-Mode-Identifier":    "default-v2", // kiro-cli 3.5 v3 engine, live capture
 		"X-Amzn-Kiro-Fallback":           "0;max=0",
 		"X-Amzn-Kiro-Attempt":            "1;max=3",
 		"Amz-Sdk-Request":                "attempt=1; max=3",
