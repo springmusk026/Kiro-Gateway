@@ -3,12 +3,12 @@ package proxy
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/springmusk026/Kiro-Gateway/config"
 	"github.com/springmusk026/Kiro-Gateway/logger"
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -282,11 +282,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 					return
 				}
 				startContentBlock("text")
-				h.sendSSE(w, flusher, "content_block_delta", map[string]interface{}{
-					"type":  "content_block_delta",
-					"index": activeBlockIndex,
-					"delta": map[string]string{"type": "text_delta", "text": text},
-				})
+				writeClaudeDelta(w, flusher, activeBlockIndex, "text", text)
 				return
 			}
 
@@ -309,21 +305,13 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 					return
 				}
 				startContentBlock("text")
-				h.sendSSE(w, flusher, "content_block_delta", map[string]interface{}{
-					"type":  "content_block_delta",
-					"index": activeBlockIndex,
-					"delta": map[string]string{"type": "text_delta", "text": outputText},
-				})
+				writeClaudeDelta(w, flusher, activeBlockIndex, "text", outputText)
 			case "reasoning_content":
 				if text == "" {
 					return
 				}
 				startContentBlock("text")
-				h.sendSSE(w, flusher, "content_block_delta", map[string]interface{}{
-					"type":  "content_block_delta",
-					"index": activeBlockIndex,
-					"delta": map[string]string{"type": "text_delta", "text": text},
-				})
+				writeClaudeDelta(w, flusher, activeBlockIndex, "text", text)
 			default:
 				if thinkingOpts.OmitDisplay {
 					if thinkingState == 1 {
@@ -346,11 +334,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				}
 				if text != "" {
 					startContentBlock("thinking")
-					h.sendSSE(w, flusher, "content_block_delta", map[string]interface{}{
-						"type":  "content_block_delta",
-						"index": activeBlockIndex,
-						"delta": map[string]string{"type": "thinking_delta", "thinking": text},
-					})
+					writeClaudeDelta(w, flusher, activeBlockIndex, "thinking", text)
 				}
 				if thinkingState == 3 && activeBlockType == "thinking" {
 					closeActiveBlock()
@@ -396,15 +380,15 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 						inThinkingBlock = true
 						dropTagThinking = !allowTagSource(&thinkingSource)
 						thinkingStarted = false
-					} else if forceFlush || len([]rune(textBuffer)) > 50 {
-						runes := []rune(textBuffer)
-						safeLen := len(runes)
+					} else if runeCount := utf8.RuneCountInString(textBuffer); forceFlush || runeCount > 50 {
+						safeLen := runeCount
 						if !forceFlush {
-							safeLen = max(0, len(runes)-15)
+							safeLen = max(0, runeCount-15)
 						}
 						if safeLen > 0 {
-							sendText(string(runes[:safeLen]), 0)
-							textBuffer = string(runes[safeLen:])
+							head, tail := splitRunes(textBuffer, safeLen)
+							sendText(head, 0)
+							textBuffer = tail
 						}
 						break
 					} else {
@@ -443,19 +427,19 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 						thinkingStarted = false
 						break
 					} else {
-						runes := []rune(textBuffer)
-						if len(runes) > 20 {
-							safeLen := len(runes) - 15
+						if runeCount := utf8.RuneCountInString(textBuffer); runeCount > 20 {
+							safeLen := runeCount - 15
 							if safeLen > 0 {
+								head, tail := splitRunes(textBuffer, safeLen)
 								if !dropTagThinking {
 									if !thinkingStarted {
-										sendText(string(runes[:safeLen]), 1)
+										sendText(head, 1)
 										thinkingStarted = true
 									} else {
-										sendText(string(runes[:safeLen]), 2)
+										sendText(head, 2)
 									}
 								}
-								textBuffer = string(runes[safeLen:])
+								textBuffer = tail
 							}
 						}
 						break
@@ -662,8 +646,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 
 func (h *Handler) sendSSE(w http.ResponseWriter, flusher http.Flusher, event string, data interface{}) {
 	jsonData, _ := json.Marshal(data)
-	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData))
-	flusher.Flush()
+	writeSSEEvent(w, flusher, event, jsonData)
 }
 
 // handleClaudeNonStream Claude 非流式响应

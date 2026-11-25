@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -99,7 +100,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 	roleSent := false
 	// writeChunk emits one chunk. The first chunk of a stream announces the
 	// assistant role, as the official API does.
-	writeChunk := func(chunk map[string]interface{}) {
+	writeRole := func() {
 		if !roleSent {
 			roleSent = true
 			roleData, _ := json.Marshal(map[string]interface{}{
@@ -114,10 +115,20 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					"finish_reason": nil,
 				}},
 			})
-			fmt.Fprintf(w, "data: %s\n\n", roleData)
+			writeSSEData(w, roleData)
 		}
+	}
+	writeChunk := func(chunk map[string]interface{}) {
+		writeRole()
 		data, _ := json.Marshal(chunk)
-		fmt.Fprintf(w, "data: %s\n\n", data)
+		writeSSEData(w, data)
+		flusher.Flush()
+	}
+	// writeDelta emits a content (or reasoning_content) chunk, hand-encoded
+	// with the same bytes as the map form writeChunk would marshal.
+	writeDelta := func(field, text string) {
+		writeRole()
+		writeOpenAIDeltaChunk(w, chatID, created, echoModel(ctx, model), field, text)
 		flusher.Flush()
 	}
 	responseStarted := false
@@ -151,7 +162,8 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				return
 			}
 
-			var chunk map[string]interface{}
+			// The chunk is a single delta field (see writeDelta).
+			var deltaField, deltaText string
 
 			if thinkingState > 0 {
 				if !thinking {
@@ -171,18 +183,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					if text == "" {
 						return
 					}
-					chunk = map[string]interface{}{
-						"id":      chatID,
-						"object":  "chat.completion.chunk",
-						"created": created,
-						"model":   echoModel(ctx, model),
-						"choices": []map[string]interface{}{{
-							"index":         0,
-							"delta":         map[string]string{"content": text},
-							"logprobs":      nil,
-							"finish_reason": nil,
-						}},
-					}
+					deltaField, deltaText = "content", text
 				case "think":
 					var text string
 					switch thinkingState {
@@ -196,34 +197,12 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 					if text == "" {
 						return
 					}
-					chunk = map[string]interface{}{
-						"id":      chatID,
-						"object":  "chat.completion.chunk",
-						"created": created,
-						"model":   echoModel(ctx, model),
-						"choices": []map[string]interface{}{{
-							"index":         0,
-							"delta":         map[string]string{"content": text},
-							"logprobs":      nil,
-							"finish_reason": nil,
-						}},
-					}
+					deltaField, deltaText = "content", text
 				default:
 					if content == "" {
 						return
 					}
-					chunk = map[string]interface{}{
-						"id":      chatID,
-						"object":  "chat.completion.chunk",
-						"created": created,
-						"model":   echoModel(ctx, model),
-						"choices": []map[string]interface{}{{
-							"index":         0,
-							"delta":         map[string]string{"reasoning_content": content},
-							"logprobs":      nil,
-							"finish_reason": nil,
-						}},
-					}
+					deltaField, deltaText = "reasoning_content", content
 				}
 			} else {
 				if stopper != nil && !stopBypass {
@@ -235,20 +214,9 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				if content == "" {
 					return
 				}
-				chunk = map[string]interface{}{
-					"id":      chatID,
-					"object":  "chat.completion.chunk",
-					"created": created,
-					"model":   echoModel(ctx, model),
-					"choices": []map[string]interface{}{{
-						"index":         0,
-						"delta":         map[string]string{"content": content},
-						"logprobs":      nil,
-						"finish_reason": nil,
-					}},
-				}
+				deltaField, deltaText = "content", content
 			}
-			writeChunk(chunk)
+			writeDelta(deltaField, deltaText)
 			responseStarted = true
 		}
 
@@ -290,15 +258,15 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 						inThinkingBlock = true
 						dropTagThinking = !allowTagSource(&thinkingSource)
 						thinkingStarted = false
-					} else if forceFlush || len([]rune(textBuffer)) > 50 {
-						runes := []rune(textBuffer)
-						safeLen := len(runes)
+					} else if runeCount := utf8.RuneCountInString(textBuffer); forceFlush || runeCount > 50 {
+						safeLen := runeCount
 						if !forceFlush {
-							safeLen = max(0, len(runes)-15)
+							safeLen = max(0, runeCount-15)
 						}
 						if safeLen > 0 {
-							sendChunk(string(runes[:safeLen]), 0)
-							textBuffer = string(runes[safeLen:])
+							head, tail := splitRunes(textBuffer, safeLen)
+							sendChunk(head, 0)
+							textBuffer = tail
 						}
 						break
 					} else {
@@ -337,19 +305,19 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 						thinkingStarted = false
 						break
 					} else {
-						runes := []rune(textBuffer)
-						if len(runes) > 20 {
-							safeLen := len(runes) - 15
+						if runeCount := utf8.RuneCountInString(textBuffer); runeCount > 20 {
+							safeLen := runeCount - 15
 							if safeLen > 0 {
+								head, tail := splitRunes(textBuffer, safeLen)
 								if !dropTagThinking {
 									if !thinkingStarted {
-										sendChunk(string(runes[:safeLen]), 1)
+										sendChunk(head, 1)
 										thinkingStarted = true
 									} else {
-										sendChunk(string(runes[:safeLen]), 2)
+										sendChunk(head, 2)
 									}
 								}
-								textBuffer = string(runes[safeLen:])
+								textBuffer = tail
 							}
 						}
 						break

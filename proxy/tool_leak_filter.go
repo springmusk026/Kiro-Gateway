@@ -169,6 +169,10 @@ func pendingToolTail(s string) int {
 			}
 		}
 	}
+	if !strings.Contains(s, "count") {
+		// Both patterns below need a literal "count"; skip the regex scans.
+		return hold
+	}
 	if loc := countTailRe.FindStringIndex(s); loc != nil {
 		if l := len(s) - loc[0]; l > hold {
 			hold = l

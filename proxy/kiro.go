@@ -726,9 +726,13 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 	}
 	callback = &trackedCallback
 
+	// Frame buffers are reused across frames: decoded strings are copies, so
+	// nothing keeps a reference into them.
+	var preludeBuf [12]byte
+	var messageBuf []byte
 	for {
 		// Prelude: total length, headers length, and prelude CRC.
-		prelude := make([]byte, 12)
+		prelude := preludeBuf[:]
 		_, readErr := io.ReadFull(body, prelude)
 		if readErr == io.EOF {
 			break
@@ -750,7 +754,10 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 		}
 
 		remaining := totalLength - len(prelude)
-		message := make([]byte, remaining)
+		if cap(messageBuf) < remaining {
+			messageBuf = make([]byte, remaining)
+		}
+		message := messageBuf[:remaining]
 		if _, err := io.ReadFull(body, message); err != nil {
 			return emitted, err
 		}
@@ -758,7 +765,7 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 			return emitted, fmt.Errorf("%w: message CRC mismatch", errInvalidKiroEventStream)
 		}
 
-		headers, headerErr := parseEventStreamHeaders(message[:headersLength])
+		headers, headerErr := parseEventStreamFrameHeaders(message[:headersLength])
 		if headerErr != nil {
 			return emitted, fmt.Errorf("%w: %v", errInvalidKiroEventStream, headerErr)
 		}
@@ -770,7 +777,7 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 			}
 		}
 
-		if messageType := headers[":message-type"]; messageType == "error" || messageType == "exception" {
+		if messageType := headers.messageType; messageType == "error" || messageType == "exception" {
 			detail, _ := event["message"].(string)
 			if detail == "" {
 				detail = messageType
@@ -781,7 +788,7 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 		// The runtime also delivers failures as ordinary events of these union
 		// members (the official client maps them to exceptions); treat them as
 		// upstream errors instead of silently skipping them.
-		switch et := headers[":event-type"]; et {
+		switch et := headers.eventType; et {
 		case "error", "throttlingError", "validationError", "serviceUnavailableError", "internalServerException":
 			detail := firstStringField(event, "message", "Message")
 			if reason := firstStringField(event, "reason"); reason != "" {
@@ -795,7 +802,7 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 
 		inputTokens, outputTokens = updateTokensFromEvent(event, inputTokens, outputTokens)
 
-		switch headers[":event-type"] {
+		switch headers.eventType {
 		case "assistantResponseEvent":
 			if content, ok := event["content"].(string); ok && content != "" {
 				sawOutput = true
@@ -1329,13 +1336,70 @@ func eventStreamChecksum(prelude, message []byte) uint32 {
 
 func parseEventStreamHeaders(data []byte) (map[string]string, error) {
 	headers := make(map[string]string)
+	err := walkEventStreamHeaders(data, func(name, value []byte) {
+		headers[string(name)] = string(value)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return headers, nil
+}
+
+// eventStreamFrameHeaders are the two headers the parser acts on.
+type eventStreamFrameHeaders struct {
+	messageType string
+	eventType   string
+}
+
+// parseEventStreamFrameHeaders validates a frame's headers like
+// parseEventStreamHeaders but keeps only :message-type and :event-type,
+// without building a map per frame.
+func parseEventStreamFrameHeaders(data []byte) (eventStreamFrameHeaders, error) {
+	var h eventStreamFrameHeaders
+	err := walkEventStreamHeaders(data, func(name, value []byte) {
+		switch string(name) {
+		case ":message-type":
+			h.messageType = internEventStreamValue(value)
+		case ":event-type":
+			h.eventType = internEventStreamValue(value)
+		}
+	})
+	return h, err
+}
+
+// internEventStreamValue returns the common header values without
+// allocating.
+func internEventStreamValue(v []byte) string {
+	switch string(v) {
+	case "event":
+		return "event"
+	case "assistantResponseEvent":
+		return "assistantResponseEvent"
+	case "reasoningContentEvent":
+		return "reasoningContentEvent"
+	case "toolUseEvent":
+		return "toolUseEvent"
+	case "meteringEvent":
+		return "meteringEvent"
+	case "contextUsageEvent":
+		return "contextUsageEvent"
+	case "metadataEvent":
+		return "metadataEvent"
+	}
+	return string(v)
+}
+
+// walkEventStreamHeaders calls visit with every string-typed (type 7)
+// header and validates the whole header block. The name passed to visit is
+// only valid during the call.
+func walkEventStreamHeaders(data []byte, visit func(name, value []byte)) error {
 	for offset := 0; offset < len(data); {
 		nameLength := int(data[offset])
 		offset++
 		if nameLength == 0 || offset+nameLength >= len(data) {
-			return nil, errors.New("malformed event header name")
+			return errors.New("malformed event header name")
 		}
-		name := string(data[offset : offset+nameLength])
+		nameBytes := data[offset : offset+nameLength]
 		offset += nameLength
 		valueType := data[offset]
 		offset++
@@ -1356,20 +1420,20 @@ func parseEventStreamHeaders(data []byte) (map[string]string, error) {
 			valueLength = 16
 		case 6, 7:
 			if offset+2 > len(data) {
-				return nil, errors.New("malformed variable event header")
+				return errors.New("malformed variable event header")
 			}
 			valueLength = int(data[offset])<<8 | int(data[offset+1])
 			offset += 2
 		default:
-			return nil, fmt.Errorf("unsupported event header type %d", valueType)
+			return fmt.Errorf("unsupported event header type %d", valueType)
 		}
 		if offset+valueLength > len(data) {
-			return nil, errors.New("truncated event header value")
+			return errors.New("truncated event header value")
 		}
 		if valueType == 7 {
-			headers[name] = string(data[offset : offset+valueLength])
+			visit(nameBytes, data[offset:offset+valueLength])
 		}
 		offset += valueLength
 	}
-	return headers, nil
+	return nil
 }
