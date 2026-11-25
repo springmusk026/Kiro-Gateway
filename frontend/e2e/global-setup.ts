@@ -28,7 +28,8 @@ function gatewayEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
       delete env[k]
     }
   }
-  return { ...env, ADMIN_PASSWORD, LOG_LEVEL: 'warn', ...extra }
+  // KIRO_PRICING=off keeps the test gateway fully offline (no models.dev fetch).
+  return { ...env, ADMIN_PASSWORD, LOG_LEVEL: 'warn', KIRO_PRICING: 'off', ...extra }
 }
 
 async function waitHealthy(url: string, proc: ChildProcess, logPath: string) {
