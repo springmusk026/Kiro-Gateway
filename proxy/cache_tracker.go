@@ -1,11 +1,10 @@
 package proxy
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"math/rand"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +69,11 @@ func newPromptCacheTracker(maxTTL time.Duration) *promptCacheTracker {
 }
 
 func (t *promptCacheTracker) BuildClaudeProfile(req *ClaudeRequest, totalInputTokens int) *promptCacheProfile {
+	// Breakpoints only exist once a block carries an explicit cache_control
+	// marker; without one the profile is nil and nothing needs hashing.
+	if !claudeCacheMarkersPresent(req) {
+		return nil
+	}
 	blocks := flattenClaudeCacheBlocks(req)
 	if len(blocks) == 0 {
 		return nil
@@ -81,8 +85,7 @@ func (t *promptCacheTracker) BuildClaudeProfile(req *ClaudeRequest, totalInputTo
 	var activeTTL time.Duration
 
 	for _, block := range blocks {
-		canonical := canonicalizeCacheValue(block.Value)
-		writeHashChunk(hasher, canonical)
+		writeHashChunk(hasher, block.canonicalBytes())
 		cumulativeTokens += block.Tokens
 
 		// Determine whether this block acts as a cache breakpoint:
@@ -146,8 +149,7 @@ func (t *promptCacheTracker) BuildOpenAIProfile(req *OpenAIRequest, totalInputTo
 	cumulativeTokens := 0
 
 	for _, block := range blocks {
-		canonical := canonicalizeCacheValue(block.Value)
-		writeHashChunk(hasher, canonical)
+		writeHashChunk(hasher, block.canonicalBytes())
 		cumulativeTokens += block.Tokens
 
 		if block.TTL <= 0 {
@@ -293,6 +295,61 @@ type cacheablePromptBlock struct {
 	Tokens       int
 	TTL          time.Duration
 	IsMessageEnd bool
+	// canonical is the canonical JSON of Value, computed once for both the
+	// token estimate and the fingerprint.
+	canonical []byte
+}
+
+// newCacheBlock builds a block whose token count comes from its canonical
+// form.
+func newCacheBlock(value interface{}, ttl time.Duration, isMessageEnd bool) cacheablePromptBlock {
+	canonical := appendCanonicalJSON(nil, value)
+	return cacheablePromptBlock{
+		Value:        value,
+		Tokens:       estimateApproxTokensBytes(canonical),
+		TTL:          ttl,
+		IsMessageEnd: isMessageEnd,
+		canonical:    canonical,
+	}
+}
+
+func (b cacheablePromptBlock) canonicalBytes() []byte {
+	if b.canonical != nil {
+		return b.canonical
+	}
+	return appendCanonicalJSON(nil, b.Value)
+}
+
+// claudeCacheMarkersPresent reports whether any block that
+// flattenClaudeCacheBlocks keeps carries a cache_control TTL. Tools never
+// do: ClaudeTool has no cache_control field.
+func claudeCacheMarkersPresent(req *ClaudeRequest) bool {
+	marked := func(block interface{}) bool {
+		return extractPromptCacheTTL(block) > 0 && !isAnthropicBillingHeaderBlock(block)
+	}
+	if system, ok := req.System.([]interface{}); ok {
+		for _, block := range system {
+			if marked(block) {
+				return true
+			}
+		}
+	}
+	for _, msg := range req.Messages {
+		switch content := msg.Content.(type) {
+		case string:
+		case []interface{}:
+			for _, block := range content {
+				if marked(block) {
+					return true
+				}
+			}
+		default:
+			if content != nil && marked(content) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func flattenClaudeCacheBlocks(req *ClaudeRequest) []cacheablePromptBlock {
@@ -308,11 +365,7 @@ func flattenClaudeCacheBlocks(req *ClaudeRequest) []cacheablePromptBlock {
 			"input_schema": tool.InputSchema,
 		}
 		fingerprintValue := stripCachePositionKeys(toolValue)
-		blocks = append(blocks, cacheablePromptBlock{
-			Value:  fingerprintValue,
-			Tokens: estimateApproxTokens(canonicalizeCacheValue(fingerprintValue)),
-			TTL:    normalizePromptCacheTTL(extractPromptCacheTTL(tool)),
-		})
+		blocks = append(blocks, newCacheBlock(fingerprintValue, normalizePromptCacheTTL(extractPromptCacheTTL(tool)), false))
 	}
 
 	appendSystemCacheBlocks(&blocks, req.System)
@@ -343,13 +396,7 @@ func flattenOpenAICacheBlocks(req *OpenAIRequest) []cacheablePromptBlock {
 				"parameters":  tool.Function.Parameters,
 			}
 			fingerprintValue := stripCachePositionKeys(toolValue)
-			canonical := canonicalizeCacheValue(fingerprintValue)
-			blocks = append(blocks, cacheablePromptBlock{
-				Value:        fingerprintValue,
-				Tokens:       estimateApproxTokens(canonical),
-				TTL:          0,
-				IsMessageEnd: toolIndex == len(req.Tools)-1,
-			})
+			blocks = append(blocks, newCacheBlock(fingerprintValue, 0, toolIndex == len(req.Tools)-1))
 		}
 		// Tool definitions typically stay stable across a multi-turn
 		// conversation, so treat the end of the tool list as its own
@@ -445,19 +492,13 @@ func appendOpenAIPromptBlock(blocks *[]cacheablePromptBlock, wrapper map[string]
 	}
 
 	fingerprintValue := stripCachePositionKeys(wrapper)
-	canonical := canonicalizeCacheValue(fingerprintValue)
 
 	ttl := time.Duration(0)
 	if isMessageEnd {
 		ttl = defaultPromptCacheTTL
 	}
 
-	*blocks = append(*blocks, cacheablePromptBlock{
-		Value:        fingerprintValue,
-		Tokens:       estimateApproxTokens(canonical),
-		TTL:          ttl,
-		IsMessageEnd: isMessageEnd,
-	})
+	*blocks = append(*blocks, newCacheBlock(fingerprintValue, ttl, isMessageEnd))
 }
 
 func buildCachePreludeBlock(req *ClaudeRequest) cacheablePromptBlock {
@@ -466,10 +507,7 @@ func buildCachePreludeBlock(req *ClaudeRequest) cacheablePromptBlock {
 		"model":       req.Model,
 		"tool_choice": req.ToolChoice,
 	}
-	return cacheablePromptBlock{
-		Value:  prelude,
-		Tokens: estimateApproxTokens(canonicalizeCacheValue(prelude)),
-	}
+	return newCacheBlock(prelude, 0, false)
 }
 
 func appendSystemCacheBlocks(blocks *[]cacheablePromptBlock, system interface{}) {
@@ -555,13 +593,7 @@ func appendPromptBlock(blocks *[]cacheablePromptBlock, wrapper map[string]interf
 	}
 
 	fingerprintValue := stripCachePositionKeys(wrapper)
-	canonical := canonicalizeCacheValue(fingerprintValue)
-	*blocks = append(*blocks, cacheablePromptBlock{
-		Value:        fingerprintValue,
-		Tokens:       estimateApproxTokens(canonical),
-		TTL:          ttl,
-		IsMessageEnd: isMessageEnd,
-	})
+	*blocks = append(*blocks, newCacheBlock(fingerprintValue, ttl, isMessageEnd))
 }
 
 func stripCachePositionKeys(value map[string]interface{}) map[string]interface{} {
@@ -596,6 +628,10 @@ func isAnthropicBillingHeaderBlock(value interface{}) bool {
 }
 
 func extractPromptCacheTTL(value interface{}) time.Duration {
+	if _, isTool := value.(ClaudeTool); isTool {
+		// Its JSON form has no cache_control key: skip the round trip below.
+		return 0
+	}
 	block, ok := value.(map[string]interface{})
 	if !ok {
 		if raw, err := json.Marshal(value); err == nil {
@@ -768,38 +804,45 @@ func buildOpenAIUsageMap(inputTokens, outputTokens int, usage promptCacheUsage, 
 }
 
 func canonicalizeCacheValue(value interface{}) string {
-	var buf bytes.Buffer
-	writeCanonicalJSON(&buf, value)
-	return buf.String()
+	return string(appendCanonicalJSON(nil, value))
 }
 
-func writeCanonicalJSON(buf *bytes.Buffer, value interface{}) {
+// appendCanonicalJSON appends value as JSON with sorted object keys and
+// cache_control removed. Strings, ints and float64 are encoded directly,
+// byte-identical to encoding/json; other scalars go through json.Marshal.
+func appendCanonicalJSON(dst []byte, value interface{}) []byte {
 	switch v := value.(type) {
 	case nil:
-		buf.WriteString("null")
+		return append(dst, "null"...)
 	case string:
-		encoded, _ := json.Marshal(v)
-		buf.Write(encoded)
+		return appendJSONString(dst, v)
 	case bool:
 		if v {
-			buf.WriteString("true")
-		} else {
-			buf.WriteString("false")
+			return append(dst, "true"...)
 		}
-	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		return append(dst, "false"...)
+	case int:
+		return strconv.AppendInt(dst, int64(v), 10)
+	case float64:
+		if out, ok := appendJSONFloat64(dst, v); ok {
+			return out
+		}
 		encoded, _ := json.Marshal(v)
-		buf.Write(encoded)
+		return append(dst, encoded...)
+	case float32, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, json.Number:
+		encoded, _ := json.Marshal(v)
+		return append(dst, encoded...)
 	case []interface{}:
-		buf.WriteByte('[')
+		dst = append(dst, '[')
 		for i, item := range v {
 			if i > 0 {
-				buf.WriteByte(',')
+				dst = append(dst, ',')
 			}
-			writeCanonicalJSON(buf, item)
+			dst = appendCanonicalJSON(dst, item)
 		}
-		buf.WriteByte(']')
+		return append(dst, ']')
 	case map[string]interface{}:
-		buf.WriteByte('{')
+		dst = append(dst, '{')
 		keys := make([]string, 0, len(v))
 		for key := range v {
 			if key == "cache_control" {
@@ -807,20 +850,19 @@ func writeCanonicalJSON(buf *bytes.Buffer, value interface{}) {
 			}
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for i, key := range keys {
 			if i > 0 {
-				buf.WriteByte(',')
+				dst = append(dst, ',')
 			}
-			encoded, _ := json.Marshal(key)
-			buf.Write(encoded)
-			buf.WriteByte(':')
-			writeCanonicalJSON(buf, v[key])
+			dst = appendJSONString(dst, key)
+			dst = append(dst, ':')
+			dst = appendCanonicalJSON(dst, v[key])
 		}
-		buf.WriteByte('}')
+		return append(dst, '}')
 	default:
 		encoded, _ := json.Marshal(v)
-		buf.Write(encoded)
+		return append(dst, encoded...)
 	}
 }
 
@@ -833,11 +875,11 @@ func isCachePositionKey(key string) bool {
 	}
 }
 
-func writeHashChunk(hasher hashWriter, chunk string) {
-	length := strconv.Itoa(len(chunk))
-	hasher.Write([]byte(length))
-	hasher.Write([]byte{0})
-	hasher.Write([]byte(chunk))
+func writeHashChunk(hasher hashWriter, chunk []byte) {
+	var prefix [24]byte
+	head := append(strconv.AppendInt(prefix[:0], int64(len(chunk)), 10), 0)
+	hasher.Write(head)
+	hasher.Write(chunk)
 	hasher.Write([]byte{0})
 }
 

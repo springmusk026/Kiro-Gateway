@@ -3,6 +3,8 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"math"
+	"strconv"
 	"sync"
 	"unicode/utf8"
 )
@@ -101,4 +103,25 @@ func jsonSize(v interface{}) (int, error) {
 		return 0, err
 	}
 	return cw.n - 1, nil // Encode adds a trailing newline
+}
+
+// appendJSONFloat64 appends f the way encoding/json encodes a float64. It
+// reports false for NaN and infinities, which encoding/json rejects.
+func appendJSONFloat64(dst []byte, f float64) ([]byte, bool) {
+	if math.IsInf(f, 0) || math.IsNaN(f) {
+		return dst, false
+	}
+	format := byte('f')
+	if abs := math.Abs(f); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
+		format = 'e'
+	}
+	dst = strconv.AppendFloat(dst, f, format, -1, 64)
+	if format == 'e' {
+		// Clean up e-09 to e-9, as encoding/json does.
+		if n := len(dst); n >= 4 && dst[n-4] == 'e' && dst[n-3] == '-' && dst[n-2] == '0' {
+			dst[n-2] = dst[n-1]
+			dst = dst[:n-1]
+		}
+	}
+	return dst, true
 }
