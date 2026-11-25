@@ -55,6 +55,10 @@ func TransformJSON(raw []byte, cfg Config) ([]byte, Stats, bool, error) {
 	if !cfg.Enabled {
 		return raw, Stats{}, false, nil
 	}
+	if !mayHoldStringOf(raw, cfg.MinBytes) {
+		// No text is long enough to compress: skip decoding the body.
+		return raw, Stats{}, false, nil
+	}
 	var payload any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, Stats{}, false, err
@@ -68,6 +72,33 @@ func TransformJSON(raw []byte, cfg Config) ([]byte, Stats, bool, error) {
 		return nil, stats, false, err
 	}
 	return updated, stats, true, nil
+}
+
+// mayHoldStringOf reports whether raw contains a JSON string literal that
+// could decode to at least n bytes. Escapes only shrink when decoded; a byte
+// >= 0x80 is counted as 3 because an invalid one decodes to U+FFFD.
+func mayHoldStringOf(raw []byte, n int) bool {
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '"' {
+			continue
+		}
+		size := 0
+		for i++; i < len(raw) && raw[i] != '"'; i++ {
+			switch {
+			case raw[i] == '\\':
+				i++ // the escaped byte cannot end the literal
+				size++
+			case raw[i] >= 0x80:
+				size += 3
+			default:
+				size++
+			}
+		}
+		if size >= n {
+			return true
+		}
+	}
+	return false
 }
 
 func TransformValue(payload any, cfg Config) (Stats, bool) {

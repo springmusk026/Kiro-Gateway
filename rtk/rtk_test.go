@@ -146,6 +146,26 @@ func repeatedBuildOutput(n int) string {
 	return b.String()
 }
 
+func TestMayHoldStringOfIsConservative(t *testing.T) {
+	cases := []string{
+		strings.Repeat("a", 500), strings.Repeat(`\n`, 500), strings.Repeat("\xff", 167),
+		strings.Repeat("é", 250), `\"` + strings.Repeat("x", 498),
+	}
+	for _, c := range cases {
+		raw := []byte(`{"k":"` + c + `"}`)
+		var decoded map[string]string
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded["k"]) >= 500 && !mayHoldStringOf(raw, 500) {
+			t.Fatalf("%q decodes to %d bytes but was ruled out", c[:10], len(decoded["k"]))
+		}
+	}
+	if mayHoldStringOf([]byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`), 500) {
+		t.Fatal("a short body cannot hold a 500-byte string")
+	}
+}
+
 func quoteJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
