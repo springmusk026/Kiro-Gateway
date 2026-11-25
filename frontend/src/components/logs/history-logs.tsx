@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Eye, EyeOff, History, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { getRouteApi } from '@tanstack/react-router'
+import { Eye, EyeOff, History, Loader2, MessagesSquare, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/app/confirm'
@@ -15,10 +16,12 @@ import { useClearLogs } from '@/lib/queries.settings'
 import type { StorageInfo } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { AuditTab } from './audit-tab'
+import { ConversationsTab } from './conversations-tab'
 import { RequestsTab } from './requests-tab'
 
 const LIVE_KEY = 'kiro_logs_live'
 const TAB_KEY = 'kiro_logs_tab'
+const route = getRouteApi('/_app/logs')
 
 function read(key: string, def: string) {
   try {
@@ -43,7 +46,11 @@ export function HistoryLogs({ storage }: { storage: StorageInfo }) {
   const clear = useClearLogs()
   const [privacy, setPrivacy] = usePrivacyMode()
   const [live, setLiveState] = useState(() => (typeof window === 'undefined' ? true : read(LIVE_KEY, 'true') === 'true'))
-  const [tab, setTabState] = useState(() => (typeof window === 'undefined' ? 'requests' : read(TAB_KEY, 'requests')))
+  const [tabState, setTabState] = useState(() => (typeof window === 'undefined' ? 'requests' : read(TAB_KEY, 'requests')))
+  const { conversation } = route.useSearch()
+  const navigate = route.useNavigate()
+  const tab = conversation ? 'conversations' : tabState
+  const openConversation = (id?: string) => navigate({ search: id ? { conversation: id } : {} })
   const [refreshing, setRefreshing] = useState(false)
 
   const setLive = (v: boolean) => {
@@ -53,6 +60,7 @@ export function HistoryLogs({ storage }: { storage: StorageInfo }) {
   const setTab = (v: string) => {
     setTabState(v)
     write(TAB_KEY, v)
+    if (conversation) openConversation()
   }
 
   const refresh = async () => {
@@ -142,6 +150,10 @@ export function HistoryLogs({ storage }: { storage: StorageInfo }) {
             <History />
             {t('logs.h.tabRequests')}
           </TabsTrigger>
+          <TabsTrigger value="conversations" className="px-3">
+            <MessagesSquare />
+            {t('logs.c.tab')}
+          </TabsTrigger>
           <TabsTrigger value="audit" className="px-3">
             <ShieldCheck />
             {t('logs.h.tabAudit')}
@@ -149,6 +161,15 @@ export function HistoryLogs({ storage }: { storage: StorageInfo }) {
         </TabsList>
         <TabsContent value="requests" className="animate-rise">
           <RequestsTab live={live} privacy={privacy} storage={storage} />
+        </TabsContent>
+        <TabsContent value="conversations" className="animate-rise">
+          <ConversationsTab
+            privacy={privacy}
+            storage={storage}
+            conversationId={conversation}
+            onOpen={openConversation}
+            onBack={() => openConversation()}
+          />
         </TabsContent>
         <TabsContent value="audit" className="animate-rise">
           <AuditTab />

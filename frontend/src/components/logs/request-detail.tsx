@@ -1,8 +1,11 @@
-import { Link } from '@tanstack/react-router'
-import { FileX2 } from 'lucide-react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { FileX2, MessagesSquare, Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { CopyButton } from '@/components/app/copy-button'
+import { prefillFromBody, stashPrefill } from '@/components/playground/prefill'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -80,17 +83,35 @@ export function RequestDetailSheet({
   onClose,
   labels,
   bodiesEnabled,
+  currentConversation,
 }: {
   record: RequestRecord | null
   onClose: () => void
   labels: Labels
   bodiesEnabled: boolean
+  /** The conversation already on screen: no link back to it. */
+  currentConversation?: string
 }) {
   const { t, lang } = useI18n()
+  const navigate = useNavigate()
   const full = useRequest(record?.id ?? null)
   const r = full.data ?? record
   const meta = r?.errorType ? ERROR_TYPES.find((e) => e.id === r.errorType) : undefined
   const hasBodies = !!(full.data?.requestBody || full.data?.responseBody)
+  const prefill = useMemo(
+    () => (full.data ? prefillFromBody(full.data.requestBody, full.data.endpoint, full.data.model ?? '', full.data.id) : null),
+    [full.data],
+  )
+  const openInPlayground = () => {
+    if (!prefill) return
+    if (!stashPrefill({ ...prefill, savedAt: Date.now() })) {
+      toast.error(t('logs.pg.storageError'))
+      return
+    }
+    onClose()
+    navigate({ to: '/playground', search: { prefill: 1 } })
+  }
+  const showConversation = !!r?.conversationId && r.conversationId !== currentConversation
 
   return (
     <Sheet open={!!record} onOpenChange={(o) => !o && onClose()}>
@@ -118,6 +139,24 @@ export function RequestDetailSheet({
                 <code className="min-w-0 flex-1 truncate font-mono text-[12.5px]">{r.id}</code>
                 <CopyButton value={r.id} />
               </div>
+              {(showConversation || prefill) && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {showConversation && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link to="/logs" search={{ conversation: r.conversationId }} onClick={onClose}>
+                        <MessagesSquare />
+                        {t('logs.c.view')}
+                      </Link>
+                    </Button>
+                  )}
+                  {prefill && (
+                    <Button variant="outline" size="sm" onClick={openInPlayground}>
+                      <Sparkles />
+                      {t('logs.pg.open')}
+                    </Button>
+                  )}
+                </div>
+              )}
             </SheetHeader>
             <ScrollArea className="min-h-0 flex-1">
               <div className="space-y-4 p-5 stagger">
@@ -145,6 +184,7 @@ export function RequestDetailSheet({
                       ...(r.fallbackModel ? [[t('cost.fbLogLabel'), r.fallbackModel] as [string, string]] : []),
                       [t('logs.h.stream'), r.stream ? t('logs.h.yes') : t('logs.h.no')],
                       [t('logs.h.colProtocol'), r.protocol || '–'],
+                      ...(r.conversationId ? [[t('logs.c.id'), r.conversationId] as [string, string]] : []),
                     ]}
                   />
                   <Group

@@ -1,8 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { ArrowUp, Bot, Brain, Copy, RotateCcw, Settings2, Sparkles, Square, SquarePen, Terminal, User } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Markdown } from '@/components/playground/markdown'
+import { takePrefill } from '@/components/playground/prefill'
 import { buildRequest, runChat, type ChatMessage, type Protocol } from '@/components/playground/stream'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,7 +24,11 @@ import { useModels } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_app/playground')({
-  validateSearch: (s: Record<string, unknown>): { model?: string } => (typeof s.model === 'string' ? { model: s.model } : {}),
+  validateSearch: (s: Record<string, unknown>): { model?: string; prefill?: number } => ({
+    ...(typeof s.model === 'string' ? { model: s.model } : {}),
+    // Set by "Open in Playground" in Request logs; the content itself is in sessionStorage.
+    ...(s.prefill ? { prefill: 1 } : {}),
+  }),
   component: PlaygroundPage,
 })
 
@@ -86,6 +91,28 @@ function PlaygroundPage() {
 
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
+  const navigate = useNavigate()
+  // "Open in Playground": load the hand-over once, then drop the search flag.
+  const prefillRead = useRef(false)
+  useEffect(() => {
+    if (!search.prefill || prefillRead.current) return
+    prefillRead.current = true
+    const p = takePrefill()
+    navigate({ to: '/playground', search: {}, replace: true })
+    if (!p) {
+      toast.error(t('playground.prefillMissing'))
+      return
+    }
+    const msgs = [...p.messages]
+    // A trailing user message goes into the composer, ready to send or edit.
+    const pending = msgs.length && msgs[msgs.length - 1].role === 'user' ? msgs.pop()!.content : ''
+    setPrefs((prev) => ({ ...prev, model: p.model || prev.model, protocol: p.protocol, system: p.system }))
+    setTurns(msgs)
+    setInput(pending)
+    toast.success(t('playground.prefilled', { n: p.messages.length }), {
+      description: p.stripped ? t('playground.prefillStripped', { n: p.stripped }) : undefined,
+    })
+  }, [search.prefill]) // eslint-disable-line react-hooks/exhaustive-deps
   const [settingsOpen, setSettingsOpen] = useState(false)
   const ctrl = useRef<AbortController | null>(null)
   const scroller = useRef<HTMLDivElement>(null)

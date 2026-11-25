@@ -3,6 +3,8 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { get, post } from './api'
 import type {
   AuditEvent,
+  ConversationDetail,
+  ConversationsPage,
   LoggingSettings,
   MigrationAction,
   MigrationResult,
@@ -23,11 +25,13 @@ export const hk = {
   request: (id: string) => ['requests', 'one', id] as const,
   usage: ['usage'] as const,
   audit: ['audit'] as const,
+  // Under 'requests' so refreshing or clearing the request log covers them.
+  conversations: ['requests', 'conversations'] as const,
 }
 
 export const PAGE_SIZE = 100
 
-function qs(params: Record<string, string | number | undefined | null>): string {
+export function qs(params: Record<string, string | number | undefined | null>): string {
   const p = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null || v === '' || v === 0) continue
@@ -64,6 +68,35 @@ export function useRequestPage(filters: RequestFilters, cursor: string | undefin
     queryFn: () => fetchPage(f, cursor, pageSize, !cursor),
     placeholderData: keepPreviousData,
     refetchInterval: cursor ? false : refetchInterval,
+  })
+}
+
+/** Download URL of the request log as CSV for the given filters (served by the admin API). */
+export function requestsExportUrl(filters: RequestFilters): string {
+  return '/admin/api/requests/export.csv' + qs({ ...normalizeFilters(filters) })
+}
+
+/** One page of conversations (keyset cursor = id of the last row of the previous page). */
+export function useConversationPage(hours: number, q: string, cursor: string | undefined, limit: number) {
+  const search = q.trim()
+  return useQuery({
+    queryKey: [...hk.conversations, 'page', hours, search, cursor ?? '', limit],
+    queryFn: async () => {
+      const p = await get<ConversationsPage>('/conversations' + qs({ hours, q: search, before: cursor, limit }))
+      return { conversations: p.conversations ?? [], hasMore: p.hasMore }
+    },
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useConversation(id: string | undefined) {
+  return useQuery({
+    queryKey: [...hk.conversations, 'one', id ?? ''],
+    enabled: !!id,
+    queryFn: async () => {
+      const d = await get<ConversationDetail>(`/conversations/${encodeURIComponent(id!)}`)
+      return { ...d, requests: d.requests ?? [] }
+    },
   })
 }
 
