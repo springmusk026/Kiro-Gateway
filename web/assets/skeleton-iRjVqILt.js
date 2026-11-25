@@ -1,0 +1,1 @@
+import{C as e,y as t}from"./createLucideIcon-Cto4YUNU.js";var n=e();function r({className:e,...r}){return(0,n.jsx)(`div`,{"data-slot":`skeleton`,className:t(`animate-pulse rounded-md bg-accent`,e),...r})}export{r as t};
