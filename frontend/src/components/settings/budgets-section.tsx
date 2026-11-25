@@ -64,7 +64,7 @@ export function UsageRoutingCard() {
   )
 }
 
-type BudgetForm = { limit: string; tz: string; webhook: string }
+type BudgetForm = { limit: string; tz: string; webhook: string; price: string }
 
 /** Settings → Budgets & alerts: the global daily cap. */
 export function BudgetsCard() {
@@ -78,12 +78,14 @@ export function BudgetsCard() {
             limit: q.data.dailyCreditLimit ? String(q.data.dailyCreditLimit) : '',
             tz: q.data.budgetTimeZone,
             webhook: q.data.alertWebhookURL,
+            price: String(q.data.creditPriceUsd ?? 0.02),
           }
         : undefined,
     [q.data],
   )
   const { draft, setDraft, dirty, reset, commit } = useDraft(server)
   const limitErr = !!draft && draft.limit.trim() !== '' && !NUM.test(draft.limit.trim())
+  const priceErr = !!draft && draft.price.trim() !== '' && (!NUM.test(draft.price.trim()) || Number(draft.price) > 100)
   const today = q.data?.today
   const limit = q.data?.dailyCreditLimit ?? 0
   const resets = today ? new Date(today.resetsAt).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' }) : ''
@@ -96,11 +98,16 @@ export function BudgetsCard() {
       loading={!draft}
       dirty={dirty}
       saving={save.isPending}
-      saveDisabled={limitErr}
+      saveDisabled={limitErr || priceErr}
       onReset={reset}
       onSave={async () => {
         if (!draft) return
-        const patch = { dailyCreditLimit: draft.limit.trim() ? Number(draft.limit) : 0, budgetTimeZone: draft.tz.trim() }
+        const patch = {
+          dailyCreditLimit: draft.limit.trim() ? Number(draft.limit) : 0,
+          budgetTimeZone: draft.tz.trim(),
+          // Empty or 0 goes back to the default price.
+          creditPriceUsd: draft.price.trim() ? Number(draft.price) : 0,
+        }
         if (await runSave(() => save.mutateAsync(patch), t('settings.saved'))) commit()
       }}
       footerExtra={
@@ -141,6 +148,25 @@ export function BudgetsCard() {
                 onChange={(e) => setDraft((d) => ({ ...d, tz: e.target.value }))}
               />
               <p className="text-xs text-muted-foreground">{t('cost.timeZoneHint')}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="credit-price">{t('pricing.creditPrice')}</Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground" aria-hidden>$</span>
+                <Input
+                  id="credit-price"
+                  inputMode="decimal"
+                  className="pl-7 tabular"
+                  placeholder="0.02"
+                  value={draft.price}
+                  aria-invalid={priceErr}
+                  aria-describedby="credit-price-hint"
+                  onChange={(e) => setDraft((d) => ({ ...d, price: e.target.value }))}
+                />
+              </div>
+              <p id="credit-price-hint" className={cn('text-xs', priceErr ? 'text-destructive' : 'text-muted-foreground')}>
+                {t(priceErr ? 'pricing.creditPriceInvalid' : 'pricing.creditPriceHint')}
+              </p>
             </div>
           </div>
           {limit > 0 && today && <UsageBar fraction={today.globalCredits / limit} />}
