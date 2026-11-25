@@ -119,6 +119,20 @@ error or uncaught exception; a test that expects one (a 401 on the login page) l
 - New settings go through `config/` (persisted by whichever store is active) and get an admin API route,
   audited automatically for non-GET calls.
 
+## Performance
+
+Request-path benchmarks live in `proxy/perf_bench_test.go`, on a coding-agent-sized request (long system
+prompt, 60 tools, 40-turn history; `proxy/perf_fixtures_test.go`) and a replayed upstream event stream:
+
+```bash
+go test ./proxy/ -run '^$' -bench . -benchmem -count=5 > new.txt
+# compare two runs: go run golang.org/x/perf/cmd/benchstat@latest old.txt new.txt
+```
+
+`TestUpstreamPayloadGolden` checks that the bytes sent to Kiro for that request stay identical on both
+transports; regenerate `proxy/testdata/upstream_golden/` with `-update-golden` only for an intended wire
+change. Build anything used only by a debug log behind `logger.DebugEnabled()`.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request: `gofmt`, `go vet`, all Go tests (the storage

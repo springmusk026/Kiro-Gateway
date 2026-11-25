@@ -12,6 +12,18 @@
 
 ### API
 - `GET /v1/usage`: usage and limits of the API key that sends it.
+- Per-key routing rules: `accountIds` pins a key to a set of accounts and `modelMap` maps client model names to
+  other models (admin API and the key dialog's *Routing* section).
+
+### Gateway
+- One upstream executor owns account selection, the upstream call, failover, model fallback and usage
+  accounting for all six chat paths (`proxy/upstream_executor.go`); `proxy/handler.go` is split by concern.
+- Faster request path with byte-identical upstream requests (golden test): the payload is serialized once,
+  debug dumps are built only at debug level, token estimation and prompt-cache fingerprints allocate a
+  fraction of before, and streaming encodes the per-token SSE events directly. A large coding-agent request
+  through the handler: about half the allocations and memory.
+- Upstream connections: one shared transport per proxy for streaming and REST calls, TLS session resumption,
+  bounded dial and TLS handshake, and HTTP/2 health pings that drop dead connections.
 - `GET /admin/api/conversations`, `GET /admin/api/conversations/{id}`, `GET /admin/api/requests/export.csv`.
 
 ### Storage

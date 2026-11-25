@@ -261,6 +261,19 @@ The admin API takes the same fields on `POST /admin/api/api-keys` and `PUT /admi
 `allowedModels` (array), `rpmLimit` (integer) and `expiresAt` (Unix seconds); `[]` / `0` clear them. Changes
 are recorded in the audit log like every admin change.
 
+### API key routing rules
+
+Optional, per key (API & Keys → create or edit a key → *Routing*):
+
+| Rule | Behaviour |
+|---|---|
+| Accounts | Empty uses every account. Otherwise the key is served **only** by the selected accounts: the others are excluded from affinity, rotation, failover, model fallback and web search. When none of them is available the request fails like any request with no available account. |
+| Model map | `client model = model` pairs. A request whose model matches a key (case-insensitive) runs on the mapped model; responses still echo the name the client sent. The map is applied after the *Allowed models* check, which sees the client's name. |
+
+Admin API: `accountIds` (array of account ids; unknown ids are rejected with 400) and `modelMap` (object) on
+`POST /admin/api/api-keys` and `PUT /admin/api/api-keys/{id}`; on update an omitted field is unchanged and
+`[]` / `{}` clear it.
+
 ### Encryption at rest
 
 Set `KIRO_ENCRYPTION_KEY` to a random 32-byte key, base64 or hex:
