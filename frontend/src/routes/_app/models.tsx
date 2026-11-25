@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { ArrowRight, Boxes, Brain, Shuffle, DatabaseZap, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
+import { ArrowRight, Boxes, Brain, CircleDollarSign, Shuffle, DatabaseZap, Eye, FlaskConical, Info, Loader2, RefreshCw, Search, Type } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { CopyButton } from '@/components/app/copy-button'
@@ -16,10 +16,12 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MappingsCard, ThinkingCard } from '@/components/models/model-config'
 import { FallbacksCard } from '@/components/models/fallbacks-card'
+import { ListPriceCell } from '@/components/models/list-price'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compact, timeAgo } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { pricesFetchedAt, pricesLoaded } from '@/lib/pricing'
 import { useModels, useRefreshModels, useToggleModel } from '@/lib/queries'
 import type { CatalogModel } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -224,6 +226,16 @@ function CatalogTab({ onAliases }: { onAliases: () => void }) {
                 <Info className="mt-0.5 size-3.5 shrink-0" />
                 {t('models.disabledHelp')}
               </p>
+              {data?.pricing && (
+                <p className="mt-2 flex gap-2 text-xs leading-relaxed text-muted-foreground">
+                  <CircleDollarSign className="mt-0.5 size-3.5 shrink-0" />
+                  {!data.pricing.enabled
+                    ? t('pricing.off')
+                    : pricesLoaded(data.pricing)
+                      ? t('pricing.catalogSource', { ago: pricesFetchedAt(data.pricing) ? timeAgo(pricesFetchedAt(data.pricing), lang) : '–' })
+                      : t('pricing.notLoaded')}
+                </p>
+              )}
             </CardContent>
           </Card>
           <Card className="gap-3">
@@ -267,6 +279,9 @@ function ModelTable({ models, onToggle, suffix }: { models: CatalogModel[]; onTo
             <th className="hidden px-4 py-2.5 text-right font-medium md:table-cell">{t('models.colOutput')}</th>
             <th className="hidden px-4 py-2.5 font-medium md:table-cell">{t('models.colInputs')}</th>
             <th className="px-4 py-2.5 text-right font-medium">{t('models.colRate')}</th>
+            <th className="hidden px-4 py-2.5 text-right font-medium 2xl:table-cell">
+              <span title={t('pricing.perM')}>{t('pricing.colPrice')}</span>
+            </th>
             <th className="hidden px-4 py-2.5 text-right font-medium sm:table-cell">{t('models.colAccounts')}</th>
             <th className="px-4 py-2.5 text-right font-medium">{t('models.colEnabled')}</th>
           </tr>
@@ -301,6 +316,12 @@ function ModelTable({ models, onToggle, suffix }: { models: CatalogModel[]; onTo
                     <p className="truncate text-xs text-muted-foreground">
                       {m.name && m.name !== m.id ? m.name : m.description || t('models.thinking', { suffix })}
                     </p>
+                    {m.listPrice && (
+                      <p className="text-xs text-muted-foreground 2xl:hidden">
+                        <ListPriceCell price={m.listPrice} source={m.priceSource} className="text-foreground" />{' '}
+                        {t('pricing.perM')}
+                      </p>
+                    )}
                   </div>
                 </div>
               </td>
@@ -345,6 +366,9 @@ function ModelTable({ models, onToggle, suffix }: { models: CatalogModel[]; onTo
                 </div>
               </td>
               <td className="px-4 py-3 text-right tabular">{m.rateMultiplier ? `${m.rateMultiplier}×` : '–'}</td>
+              <td className="hidden px-4 py-3 text-right text-[13px] 2xl:table-cell">
+                <ListPriceCell price={m.listPrice} source={m.priceSource} />
+              </td>
               <td className="hidden px-4 py-3 text-right sm:table-cell">
                 {m.accounts ? (
                   <span className="tabular">{m.accounts}</span>

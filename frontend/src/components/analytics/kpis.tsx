@@ -237,6 +237,7 @@ export function KpiSkeleton() {
           <Skeleton key={i} className="h-[112px] rounded-xl" />
         ))}
       </div>
+      <Skeleton className="h-[128px] rounded-xl" />
       <Skeleton className="h-[66px] rounded-xl" />
     </>
   )

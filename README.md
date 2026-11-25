@@ -35,7 +35,7 @@ spending limits and a clear view of what is being used.
 | **Works with your tools** | Claude Code, Codex, Cline, Continue, Cursor, LiteLLM and the official SDKs connect with a base URL and a key. Streaming, tools, images, documents and extended thinking behave like the official APIs. |
 | **One pool, many accounts** | Add accounts with Builder ID, IAM Identity Center, Microsoft SSO or Kiro API keys. Requests are spread across healthy accounts, conversations stay on one account to keep prompt caching effective, and accounts close to their limit are spared. |
 | **Cost under control** | Daily credit caps for the whole gateway and for each key, alerts at 80% and 100% (in the console and to Slack or Discord), per-model enable/disable and automatic fallback when a model is unavailable. |
-| **See everything** | Full request history, analytics with trends and breakdowns by model, account, key and client, an audit log of admin changes, and Prometheus metrics. |
+| **See everything** | Full request history, analytics with trends and breakdowns by model, account, key and client, cost at API list prices vs Kiro credits, an audit log of admin changes, and Prometheus metrics. |
 | **Safe by default** | Session-based admin login, API keys with model allow-lists, rate limits and expiry, credentials encrypted at rest, and careful, client-like behaviour towards Kiro's servers. |
 
 ## Why this exists

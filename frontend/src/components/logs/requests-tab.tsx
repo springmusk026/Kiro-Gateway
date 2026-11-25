@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { compact, maskEmail, timeAgo } from '@/lib/format'
+import { compact, maskEmail, timeAgo, usd } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { requestsExportUrl, useRequestPage, useUsageBy } from '@/lib/queries.history'
 import { TablePagination } from '@/components/app/table-pagination'
@@ -412,7 +412,14 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
                         '–'
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular">{r.credits ? r.credits.toFixed(3) : '–'}</TableCell>
+                    <TableCell className="text-right tabular">
+                      <span className="block leading-tight">{r.credits ? r.credits.toFixed(3) : '–'}</span>
+                      {!!r.costUsd && (
+                        <span className="block text-[11px] leading-tight text-muted-foreground" title={t('pricing.costTitle')}>
+                          {usd(r.costUsd)}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className={cn('text-right tabular', r.durationMs >= 30_000 && 'text-warning')}>
                       <span className="block leading-tight">{r.durationMs ? fmtMs(r.durationMs) : '–'}</span>
                       {r.ttfbMs > 0 && (

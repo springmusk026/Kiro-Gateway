@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { usePagination } from '@/hooks/use-pagination'
-import { compact, timeAgo } from '@/lib/format'
+import { compact, timeAgo, usd } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { useConversation, useConversationPage } from '@/lib/queries.history'
 import type { ConversationSummary, RequestRecord, StorageInfo } from '@/lib/types'
@@ -276,7 +276,14 @@ function ConversationRow({
         {compact(c.outputTokens)}
       </TableCell>
       <TableCell className="text-right tabular text-muted-foreground">{c.cacheReadTokens ? compact(c.cacheReadTokens) : '–'}</TableCell>
-      <TableCell className="!pr-4 text-right tabular">{c.credits ? c.credits.toFixed(3) : '–'}</TableCell>
+      <TableCell className="!pr-4 text-right tabular">
+        <span className="block leading-tight">{c.credits ? c.credits.toFixed(3) : '–'}</span>
+        {!!c.costUsd && (
+          <span className="block text-[11px] leading-tight text-muted-foreground" title={t('pricing.costTitle')}>
+            {usd(c.costUsd)}
+          </span>
+        )}
+      </TableCell>
     </TableRow>
   )
 }
@@ -297,9 +304,10 @@ function ConversationDetailView({ id, privacy, storage, onBack }: { id: string; 
           output: a.output + r.outputTokens,
           cache: a.cache + (r.cacheReadTokens ?? 0),
           credits: a.credits + r.credits,
+          cost: a.cost + (r.costUsd ?? 0),
           errors: a.errors + (r.status === 'error' ? 1 : 0),
         }),
-        { input: 0, output: 0, cache: 0, credits: 0, errors: 0 },
+        { input: 0, output: 0, cache: 0, credits: 0, cost: 0, errors: 0 },
       ),
     [reqs],
   )
@@ -337,13 +345,14 @@ function ConversationDetailView({ id, privacy, storage, onBack }: { id: string; 
         />
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-px border-b bg-border sm:grid-cols-3 lg:grid-cols-6 [&>div]:bg-card [&>div]:px-4 [&>div]:py-3">
+          <dl className="grid grid-cols-2 gap-px border-b bg-border sm:grid-cols-4 lg:grid-cols-7 [&>div]:bg-card [&>div]:px-4 [&>div]:py-3">
             <Stat label={t('logs.c.colRequests')} value={reqs.length.toLocaleString(lang)} />
             <Stat label={t('logs.c.duration')} value={span(last - start)} />
             <Stat label={t('logs.h.inputTokens')} value={compact(totals.input)} />
             <Stat label={t('logs.h.outputTokens')} value={compact(totals.output)} />
             <Stat label={t('logs.c.colCacheRead')} value={compact(totals.cache)} />
             <Stat label={t('logs.colCredits')} value={totals.credits.toFixed(3)} />
+            <Stat label={t('pricing.listPrice')} value={totals.cost ? usd(totals.cost) : '–'} title={t('pricing.costTitle')} className="col-span-2 lg:col-span-1" />
           </dl>
           {conv.data?.truncated && <p className="border-b px-4 py-2 text-xs text-muted-foreground">{t('logs.c.truncated', { n: reqs.length })}</p>}
           <ol className="divide-y">
@@ -403,9 +412,9 @@ function ConversationDetailView({ id, privacy, storage, onBack }: { id: string; 
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, title, className }: { label: string; value: string; title?: string; className?: string }) {
   return (
-    <div className="min-w-0">
+    <div className={cn('min-w-0', className)} title={title}>
       <dt className="truncate text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-base font-semibold tabular">{value}</dd>
     </div>

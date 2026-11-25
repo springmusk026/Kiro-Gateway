@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { timeAgo } from '@/lib/format'
+import { timeAgo, usd } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { useRequest } from '@/lib/queries.history'
 import type { RequestRecord } from '@/lib/types'
@@ -211,6 +211,7 @@ export function RequestDetailSheet({
                       [t('logs.h.inputTokens'), r.inputTokens.toLocaleString(lang)],
                       [t('logs.h.outputTokens'), r.outputTokens.toLocaleString(lang)],
                       [t('logs.colCredits'), r.credits ? String(r.credits) : '–'],
+                      [t('pricing.listPrice'), r.costUsd ? usd(r.costUsd) : '–'],
                     ]}
                   />
                 </div>

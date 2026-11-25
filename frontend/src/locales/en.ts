@@ -10,6 +10,7 @@ import { securityEn } from './en.security'
 import { costEn } from './en.cost'
 import { usageEn } from './en.usage'
 import { routingEn } from './en.routing'
+import { pricingEn } from './en.pricing'
 
 /** English messages: the source of truth for all UI text. */
 export const en = {
@@ -25,6 +26,7 @@ export const en = {
   ...costEn,
   ...usageEn,
   ...routingEn,
+  ...pricingEn,
 
   'app.name': 'Kiro Gateway',
   'app.tagline': 'Admin console',

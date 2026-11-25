@@ -64,6 +64,8 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 | `KIRO_LOG_BODIES_KB` | Record up to this many KB of each request and response body (overrides the console setting). | `0` (off) |
 | `KIRO_METRICS` | `1` serves Prometheus metrics at `GET /metrics`. | off |
 | `KIRO_METRICS_TOKEN` | Bearer token required to scrape `/metrics`. Without it only loopback and private-network clients may scrape. | – |
+| `KIRO_PRICING` | `off` stops fetching API list prices; costs then show as unknown (see [Cost and list prices](#cost-and-list-prices)). | on |
+| `KIRO_PRICING_URL` | Where list prices are fetched from (a copy of models.dev's `api.json`). | `https://models.dev/api.json` |
 
 ### Backups (compose `backup` profile)
 
@@ -152,6 +154,24 @@ each account's credits left and the pool's credits remaining this period.
   | `accounts_unavailable` | critical | no account can take a request (all disabled, banned, out of quota or cooling down) |
 
   Refresh outcomes are counted since start-up, so a restart clears the failure streak.
+
+### Cost and list prices
+
+The console shows what requests would have cost at the model vendor's API list price, next to what they cost
+on Kiro:
+
+- **List prices** come from [models.dev](https://models.dev). The gateway fetches `https://models.dev/api.json`
+  at start and once a day, and keeps a trimmed copy in `pricing-cache.json` next to the configuration so a
+  restart without network still has prices. Each request is priced when it is logged (`cost_usd` in the
+  request log and its CSV export); older logs are priced once prices load. Cache reads and writes are priced
+  only when Kiro reports them, and models without a list price count as $0. `KIRO_PRICING=off` turns this
+  off; `KIRO_PRICING_URL` points at another copy of the file.
+- **Credit price** (Settings → Budgets & alerts, `creditPriceUsd`): what one Kiro credit costs you, default
+  `$0.02` (the price of credits included in Kiro's plans; overage is billed separately). Kiro cost is
+  credits × credit price, computed in the console; savings are list price minus Kiro cost.
+- Shown on Analytics (list price, Kiro cost and savings, a cost trend and a list-price column in the
+  breakdown and its CSV), the Models catalog (input / output price per million tokens, cache prices and
+  context tiers on hover), request and conversation details, and the key usage page.
 
 ### Prompt-cache points (experimental)
 

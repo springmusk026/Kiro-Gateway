@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { compact, copyToClipboard, dateTime, duration, fixed, maskEmail, percent, timeAgo } from './format'
+import { compact, copyToClipboard, dateTime, duration, fixed, maskEmail, percent, timeAgo, usd, usdRate } from './format'
 
 describe('compact', () => {
   it.each([
@@ -18,6 +18,50 @@ describe('compact', () => {
     expect(compact(undefined)).toBe('–')
     expect(compact(NaN)).toBe('–')
   })
+})
+
+describe('usd', () => {
+  it.each([
+    [0, '$0.00'],
+    [0.0031, '$0.0031'],
+    [0.00314159, '$0.003142'],
+    [0.123456, '$0.1235'],
+    [0.5, '$0.50'],
+    [0.05, '$0.05'],
+    [0.99996, '$1.00'],
+    [0.00004, '<$0.0001'],
+    [1, '$1.00'],
+    [12.5, '$12.50'],
+    [1234.567, '$1,234.57'],
+    [999_999, '$999,999.00'],
+    [2_500_000, '$2.5M'],
+    [-0.25, '-$0.25'],
+    [-42, '-$42.00'],
+  ])('%d -> %s', (n, s) => expect(usd(n)).toBe(s))
+
+  it('abbreviates from ten thousand with compact', () => {
+    expect(usd(9_999.5, { compact: true })).toBe('$9,999.50')
+    expect(usd(12_345, { compact: true })).toBe('$12.3K')
+    expect(usd(0.0031, { compact: true })).toBe('$0.0031')
+  })
+
+  it('shows a dash for missing values', () => {
+    expect(usd(null)).toBe('–')
+    expect(usd(undefined)).toBe('–')
+    expect(usd(NaN)).toBe('–')
+    expect(usd(Infinity)).toBe('–')
+  })
+})
+
+describe('usdRate', () => {
+  it.each([
+    [3, '$3'],
+    [15, '$15'],
+    [0.3, '$0.30'],
+    [3.75, '$3.75'],
+    [0.075, '$0.075'],
+    [1250, '$1,250'],
+  ])('%d -> %s', (n, s) => expect(usdRate(n)).toBe(s))
 })
 
 describe('fixed and percent', () => {

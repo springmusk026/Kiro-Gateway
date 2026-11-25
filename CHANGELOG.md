@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Console
+- **Cost**: every request is priced at the model vendor's API list price (models.dev). Analytics shows list
+  price, Kiro cost (credits × the credit price in Settings → Budgets & alerts, default $0.02) and the savings,
+  with a cost trend and a list-price column in the breakdown and its CSV. The Models catalog shows list
+  prices; request details, conversations and the key usage page show cost. `KIRO_PRICING=off` turns it off.
 - Request logs → **Conversations**: requests grouped by their Kiro conversation id, with a timeline per
   conversation; a request's detail links to its conversation.
 - **Open in Playground** from a request with a captured body (model, system prompt and text messages).

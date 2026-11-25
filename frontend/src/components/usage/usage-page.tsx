@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { compact, dateTime, timeAgo } from '@/lib/format'
+import { compact, dateTime, timeAgo, usd } from '@/lib/format'
 import { LANGS, useI18n } from '@/lib/i18n'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
@@ -37,7 +37,8 @@ interface KeyUsage {
   }
   timeZone: string
   history: boolean
-  daily: { day: string; requests: number; errors: number; inputTokens: number; outputTokens: number; credits: number }[] | null
+  /** costUsd: API list-price equivalent (0 when unknown). */
+  daily: { day: string; requests: number; errors: number; inputTokens: number; outputTokens: number; credits: number; costUsd?: number }[] | null
   recent:
     | {
         time: string
@@ -384,6 +385,7 @@ function DailyChart({ data }: { data: KeyUsage }) {
     [data.daily, lang],
   )
   const fmt = metric === 'credits' ? fmtCredits : compact
+  const listTotal = (data.daily ?? []).reduce((s, d) => s + (d.costUsd ?? 0), 0)
   return (
     <Card className="min-w-0 gap-4">
       <CardHeader>
@@ -427,6 +429,12 @@ function DailyChart({ data }: { data: KeyUsage }) {
                         </dd>
                         <dt className="text-muted-foreground">{t('usage.credits')}</dt>
                         <dd className="text-right font-semibold">{fmtCredits(r.credits)}</dd>
+                        {!!r.d.costUsd && (
+                          <>
+                            <dt className="text-muted-foreground">{t('pricing.listPrice')}</dt>
+                            <dd className="text-right font-semibold">{usd(r.d.costUsd)}</dd>
+                          </>
+                        )}
                       </dl>
                     </div>
                   )
@@ -436,6 +444,11 @@ function DailyChart({ data }: { data: KeyUsage }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {listTotal > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground tabular" title={t('pricing.costTitle')}>
+            {t('pricing.usageTotal', { v: usd(listTotal) })}
+          </p>
+        )}
       </CardContent>
     </Card>
   )
