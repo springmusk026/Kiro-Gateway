@@ -58,3 +58,70 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run build:only
+
+  console-tests:
+    name: Console (unit tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kiro
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: kirogo_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U kiro -d kirogo_e2e"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      E2E_DATABASE_URL: postgres://kiro@localhost:5432/kirogo_e2e?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Build the console into web/
+        run: npm run build
+      - name: Build the gateway
+        working-directory: .
+        run: |
+          go build -o "$RUNNER_TEMP/kiro-gateway" .
+          echo "E2E_GATEWAY_BIN=$RUNNER_TEMP/kiro-gateway" >> "$GITHUB_ENV"
+      - run: npx playwright install --with-deps chromium
+      - name: Playwright (JSON and PostgreSQL backends)
+        run: npx playwright test --trace off
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14

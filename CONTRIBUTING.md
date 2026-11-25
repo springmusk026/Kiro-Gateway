@@ -35,8 +35,10 @@ For console work, run `npm run dev` in `frontend/` while the gateway runs on por
    ```bash
    gofmt -l $(git ls-files '*.go')        # must print nothing
    go vet ./... && go test ./... && go test -race ./proxy/
-   (cd frontend && npx tsc --noEmit && npm run build:only)
+   (cd frontend && npx tsc --noEmit && npm test && npm run build && npx playwright test)
    ```
+
+   `npm run build` publishes the console into `web/` for the end-to-end tests; don't commit that (see 6).
 3. **Add tests** for behaviour you change or add. Gateway behaviour is tested with Go tests in the package you
    touch; storage changes need a test that runs against PostgreSQL (`KIRO_TEST_DATABASE_URL`).
 4. **Update the docs** when you add a setting, an environment variable, an endpoint or change behaviour users
