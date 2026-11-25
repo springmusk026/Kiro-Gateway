@@ -215,7 +215,8 @@ export interface CredentialImport {
 export interface ApiKeyView {
   id: string
   name?: string
-  keyMasked: string
+  /** Display hint (prefix and last 4); the key itself is only shown once. */
+  keyHint: string
   enabled: boolean
   migrated?: boolean
   createdAt: number
@@ -296,6 +297,8 @@ export interface RequestRecord {
   errorType?: RequestLog['errorType']
   inputTokens: number
   outputTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
   credits: number
   durationMs: number
   ttfbMs: number
@@ -304,6 +307,8 @@ export interface RequestRecord {
   responseBytes: number
   /** Model the request was retried on after its own was unavailable. */
   fallbackModel?: string
+  /** Upstream conversation id ("sess_…"); turns of one conversation share it. */
+  conversationId?: string
   requestBody?: string
   responseBody?: string
 }
@@ -314,6 +319,36 @@ export interface RequestsPage {
   /** Matching rows (first page only), capped server-side. */
   total?: number
   totalCapped?: boolean
+}
+
+/** GET /conversations: one row per upstream conversation. */
+export interface ConversationSummary {
+  id: string
+  firstSeen: string
+  lastSeen: string
+  requests: number
+  models: string[] | null
+  accounts: string[] | null
+  apiKeys: string[] | null
+  userAgent?: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  credits: number
+  errors: number
+  cancelled: number
+}
+
+export interface ConversationsPage {
+  conversations: ConversationSummary[] | null
+  hasMore: boolean
+}
+
+/** GET /conversations/{id}: its requests in order (no bodies). */
+export interface ConversationDetail {
+  id: string
+  requests: RequestRecord[] | null
+  truncated: boolean
 }
 
 export interface RequestFilters {

@@ -39,6 +39,7 @@ type requestTrace struct {
 
 	model, accountID, errMsg, errType, status string
 	fallbackModel                             string
+	conversationID                            string
 	input, output                             int
 	cacheRead, cacheWrite                     int
 	credits                                   float64
@@ -85,6 +86,16 @@ func (t *requestTrace) setFailure(model, accountID, msg, typ string) {
 func (t *requestTrace) setFallbackModel(m string) {
 	t.mu.Lock()
 	t.fallbackModel = m
+	t.mu.Unlock()
+}
+
+// setConversation records the upstream conversation id the request was sent under.
+func (t *requestTrace) setConversation(id string) {
+	if id == "" {
+		return
+	}
+	t.mu.Lock()
+	t.conversationID = id
 	t.mu.Unlock()
 }
 
@@ -263,31 +274,32 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 	end := time.Now()
 	t.mu.Lock()
 	rec := &telemetry.RequestRecord{
-		ID:            t.id,
-		Time:          t.start,
-		Method:        t.method,
-		Path:          t.path,
-		Endpoint:      t.endpoint,
-		Model:         t.model,
-		AccountID:     t.accountID,
-		APIKeyID:      t.apiKeyID,
-		ClientIP:      t.clientIP,
-		UserAgent:     t.agent,
-		Stream:        t.stream || strings.HasPrefix(tw.Header().Get("Content-Type"), "text/event-stream"),
-		Protocol:      t.protocol,
-		Status:        t.status,
-		HTTPStatus:    tw.status,
-		Error:         t.errMsg,
-		ErrorType:     t.errType,
-		InputTokens:   t.input,
-		OutputTokens:  t.output,
-		CacheRead:     t.cacheRead,
-		CacheWrite:    t.cacheWrite,
-		FallbackModel: t.fallbackModel,
-		Credits:       t.credits,
-		DurationMs:    end.Sub(t.start).Milliseconds(),
-		RequestBytes:  atomic.LoadInt64(&t.reqBytes),
-		ResponseBytes: tw.bytes,
+		ID:             t.id,
+		Time:           t.start,
+		Method:         t.method,
+		Path:           t.path,
+		Endpoint:       t.endpoint,
+		Model:          t.model,
+		AccountID:      t.accountID,
+		APIKeyID:       t.apiKeyID,
+		ClientIP:       t.clientIP,
+		UserAgent:      t.agent,
+		Stream:         t.stream || strings.HasPrefix(tw.Header().Get("Content-Type"), "text/event-stream"),
+		Protocol:       t.protocol,
+		Status:         t.status,
+		HTTPStatus:     tw.status,
+		Error:          t.errMsg,
+		ErrorType:      t.errType,
+		InputTokens:    t.input,
+		OutputTokens:   t.output,
+		CacheRead:      t.cacheRead,
+		CacheWrite:     t.cacheWrite,
+		FallbackModel:  t.fallbackModel,
+		ConversationID: t.conversationID,
+		Credits:        t.credits,
+		DurationMs:     end.Sub(t.start).Milliseconds(),
+		RequestBytes:   atomic.LoadInt64(&t.reqBytes),
+		ResponseBytes:  tw.bytes,
 	}
 	if t.reqBody != nil {
 		rec.RequestBody = t.reqBody.buf.String()

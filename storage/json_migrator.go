@@ -156,12 +156,12 @@ func (m *JSONMigrator) status(ctx context.Context) (*telemetry.MigrationStatus, 
 		}
 		haveKey := map[string]bool{}
 		for _, k := range cur.ApiKeys {
-			haveKey[k.Key] = true
+			haveKey[config.ApiKeyDigest(k)] = true
 		}
 		keys := jsonKeys(src)
 		st.JSONKeys = len(keys)
 		for _, k := range keys {
-			if !haveKey[k.Key] {
+			if !haveKey[config.ApiKeyDigest(k)] {
 				st.MissingKeys++
 			}
 		}

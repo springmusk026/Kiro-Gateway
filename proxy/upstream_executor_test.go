@@ -88,7 +88,7 @@ func (x *executorHarness) run(ctx context.Context, model string, script func(n i
 			}
 		},
 		failStarted:    func(_ *upstreamAttempt, err error) { x.startedErr = err },
-		failNoAccounts: func() { x.noAccounts++ },
+		failNoAccounts: func(string) { x.noAccounts++ },
 		fail:           func(model string, err error) { x.failModel, x.failErr = model, err },
 	})
 }

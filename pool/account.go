@@ -150,6 +150,20 @@ func (p *AccountPool) accountHasModel(accountID, model string) bool {
 	return list[strings.ToLower(strings.TrimSpace(model))]
 }
 
+// AnyAccountListsModel reports whether some account could serve model: one
+// whose model list includes it, or one whose list is not known yet (cold
+// start). It is false only when every account has a list and none has model.
+func (p *AccountPool) AnyAccountListsModel(model string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for i := range p.accounts {
+		if p.accountHasModel(p.accounts[i].ID, model) {
+			return true
+		}
+	}
+	return len(p.accounts) == 0
+}
+
 // GetNextForModel 获取下一个支持指定模型的可用账号。
 // model 应为去掉 thinking 后缀的实际模型名。
 // 若无账号有该模型列表数据，行为与 GetNext 相同（乐观路由）。

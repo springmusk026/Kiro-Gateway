@@ -623,7 +623,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 		failStarted: func(a *upstreamAttempt, err error) {
 			h.sendSSE(w, flusher, "error", claudeStreamErrorEvent(err, estimatedInputTokens, a.model))
 		},
-		failNoAccounts: func() {
+		failNoAccounts: func(model string) {
 			if hb.Committed() {
 				h.sendSSE(w, flusher, "error", map[string]interface{}{
 					"type":  "error",
@@ -631,7 +631,7 @@ func (h *Handler) handleClaudeStream(ctx context.Context, w http.ResponseWriter,
 				})
 				return
 			}
-			h.sendClaudeNoAccounts(w)
+			h.sendClaudeNoAccounts(w, model)
 		},
 		fail: func(model string, err error) {
 			if hb.Committed() {
@@ -789,7 +789,7 @@ func (h *Handler) handleClaudeNonStream(ctx context.Context, w http.ResponseWrit
 		apiKeyID:       apiKeyID,
 		cacheProfile:   cacheProfile,
 		attempt:        attempt,
-		failNoAccounts: func() { h.sendClaudeNoAccounts(w) },
+		failNoAccounts: func(model string) { h.sendClaudeNoAccounts(w, model) },
 		fail: func(model string, err error) {
 			h.sendClaudeUpstreamError(w, err, estimatedInputTokens, model)
 		},

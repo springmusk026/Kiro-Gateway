@@ -16,3 +16,18 @@ func (p *AccountPool) CoolingIDs() map[string]bool {
 	}
 	return out
 }
+
+// CooldownsUntil returns, for each account cooling down right now (throttled,
+// parked until a quota reset, or disabled), when its cooldown ends.
+func (p *AccountPool) CooldownsUntil() map[string]time.Time {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	now := time.Now()
+	out := make(map[string]time.Time)
+	for id, until := range p.cooldowns {
+		if now.Before(until) {
+			out[id] = until
+		}
+	}
+	return out
+}

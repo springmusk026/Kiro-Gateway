@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { KeyRound, MoreHorizontal, Pencil, Plus, RotateCcw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { KeyRound, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, Share2, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 import { TablePagination } from '@/components/app/table-pagination'
 import { usePagination } from '@/hooks/use-pagination'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useConfirm } from '@/components/app/confirm'
+import { CopyButton } from '@/components/app/copy-button'
 import { EmptyState } from '@/components/app/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,40 +27,9 @@ import type { ApiKeyView } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { KeyDialog, RevealDialog } from './key-dialogs'
 import { RestrictionBadges } from './key-restriction-badges'
+import { UsageMeter } from './usage-meter'
 
-function UsageMeter({ label, used, limit, format }: { label: string; used: number; limit?: number; format: (n: number) => string }) {
-  const { t } = useI18n()
-  const pct = limit && limit > 0 ? Math.min(100, (100 * used) / limit) : null
-  return (
-    <div className="min-w-0">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="tabular">
-          <span className="font-medium">{format(used)}</span>
-          <span className="text-muted-foreground"> / {limit && limit > 0 ? format(limit) : t('keys.unlimited')}</span>
-        </span>
-      </div>
-      <div className={cn('mt-1.5 h-1.5 overflow-hidden rounded-full', pct != null && 'bg-muted')} aria-hidden={pct == null}>
-        {pct != null && (
-          <div
-            role="progressbar"
-            aria-valuenow={Math.round(pct)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={label}
-            className={cn(
-              'h-full rounded-full transition-[width] duration-500',
-              pct >= 95 ? 'bg-destructive' : pct >= 80 ? 'bg-warning' : 'bg-primary',
-            )}
-            style={{ width: `${pct}%` }}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
+function KeyRow({ k, onEdit, onRegenerated }: { k: ApiKeyView; onEdit: () => void; onRegenerated: (plaintext: string) => void }) {
   const { t, lang } = useI18n()
   const confirm = useConfirm()
   const update = useUpdateApiKey()
@@ -109,7 +79,7 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
             )}
             <RestrictionBadges k={k} />
           </div>
-          <code className="mt-0.5 block truncate font-mono text-[12.5px] text-muted-foreground">{k.keyMasked}</code>
+          <code className="mt-0.5 block truncate font-mono text-[12.5px] text-muted-foreground">{k.keyHint}</code>
           <p className="mt-1 text-xs text-muted-foreground">
             <Tooltip>
               <TooltipTrigger className="cursor-default">{t('keys.createdAgo', { when: timeAgo(k.createdAt, lang) })}</TooltipTrigger>
@@ -178,6 +148,25 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
               <RotateCcw />
               {t('keys.resetUsage')}
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={async () => {
+                if (
+                  await confirm({
+                    title: t('keys.regenerateTitle', { name }),
+                    description: t('keys.regenerateBody'),
+                    confirmLabel: t('keys.regenerate'),
+                    destructive: true,
+                  })
+                )
+                  act(async () => {
+                    const r = await update.mutateAsync({ id: k.id, patch: { regenerate: true } })
+                    if (r.key) onRegenerated(r.key)
+                  }, t('keys.regenerated'))
+              }}
+            >
+              <RefreshCw />
+              {t('keys.regenerate')}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
@@ -233,10 +222,24 @@ export function ApiKeysCard({ onKeyCreated }: { onKeyCreated: (plaintext: string
             <p className="mt-1 text-sm text-muted-foreground">{t('keys.desc')}</p>
           </div>
         </div>
-        <Button onClick={() => setDialog({ open: true, editing: null })}>
-          <Plus />
-          {t('keys.add')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button asChild variant="outline">
+                <a href="/admin/usage" target="_blank" rel="noopener">
+                  <Share2 />
+                  {t('keys.shareUsage')}
+                </a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">{t('keys.shareUsageHint')}</TooltipContent>
+          </Tooltip>
+          <CopyButton value={typeof window === 'undefined' ? '/admin/usage' : window.location.origin + '/admin/usage'} />
+          <Button onClick={() => setDialog({ open: true, editing: null })}>
+            <Plus />
+            {t('keys.add')}
+          </Button>
+        </div>
       </div>
 
       {settings.data && (
@@ -289,7 +292,15 @@ export function ApiKeysCard({ onKeyCreated }: { onKeyCreated: (plaintext: string
         <>
           <ul className="stagger divide-y">
             {pg.pageItems.map((k) => (
-              <KeyRow key={k.id} k={k} onEdit={() => setDialog({ open: true, editing: k })} />
+              <KeyRow
+                key={k.id}
+                k={k}
+                onEdit={() => setDialog({ open: true, editing: k })}
+                onRegenerated={(plain) => {
+                  setRevealed(plain)
+                  onKeyCreated(plain)
+                }}
+              />
             ))}
           </ul>
           <TablePagination page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />

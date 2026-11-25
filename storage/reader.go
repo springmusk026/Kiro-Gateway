@@ -16,14 +16,14 @@ import (
 const requestSelect = `SELECT l.id, l.ts, l.method, l.path, l.endpoint, l.model, l.account_id, l.account_email,
 	l.api_key_id, l.client_ip, l.user_agent, l.stream, l.protocol, l.status, l.http_status, l.error, l.error_type,
 	l.input_tokens, l.output_tokens, l.credits, l.duration_ms, l.ttfb_ms, l.attempts, l.request_bytes, l.response_bytes,
-	l.cache_read_tokens, l.cache_write_tokens, l.fallback_model`
+	l.cache_read_tokens, l.cache_write_tokens, l.fallback_model, l.conversation_id`
 
 func scanRequest(row pgx.Row, extra ...any) (*telemetry.RequestRecord, error) {
 	var x telemetry.RequestRecord
 	dst := []any{&x.ID, &x.Time, &x.Method, &x.Path, &x.Endpoint, &x.Model, &x.AccountID, &x.AccountEmail,
 		&x.APIKeyID, &x.ClientIP, &x.UserAgent, &x.Stream, &x.Protocol, &x.Status, &x.HTTPStatus, &x.Error,
 		&x.ErrorType, &x.InputTokens, &x.OutputTokens, &x.Credits, &x.DurationMs, &x.TTFBMs, &x.Attempts,
-		&x.RequestBytes, &x.ResponseBytes, &x.CacheRead, &x.CacheWrite, &x.FallbackModel}
+		&x.RequestBytes, &x.ResponseBytes, &x.CacheRead, &x.CacheWrite, &x.FallbackModel, &x.ConversationID}
 	if err := row.Scan(append(dst, extra...)...); err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func requestWhere(f telemetry.LogFilter) ([]string, []any) {
 	if s := strings.TrimSpace(f.Search); s != "" {
 		args = append(args, "%"+s+"%")
 		n := len(args)
-		where = append(where, fmt.Sprintf("(l.model ILIKE $%d OR l.error ILIKE $%d OR l.account_email ILIKE $%d OR l.path ILIKE $%d OR l.client_ip ILIKE $%d)", n, n, n, n, n))
+		where = append(where, fmt.Sprintf("(l.model ILIKE $%d OR l.error ILIKE $%d OR l.account_email ILIKE $%d OR l.path ILIKE $%d OR l.client_ip ILIKE $%d OR l.conversation_id ILIKE $%d)", n, n, n, n, n, n))
 	}
 	if f.BeforeID != "" {
 		// Keyset pagination on (ts, id).

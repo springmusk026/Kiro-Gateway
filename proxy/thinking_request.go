@@ -230,6 +230,7 @@ type reasoningControls struct {
 	Levels       []string // accepted effort levels, in schema order (ascending)
 	DefaultLevel string
 	Toggle       bool // thinking.type accepts both "adaptive" and "disabled"
+	Adaptive     bool // thinking.type accepts "adaptive"
 }
 
 var modelReasoningControls sync.Map // lowercased model id -> reasoningControls
@@ -322,6 +323,7 @@ func parseReasoningControls(raw json.RawMessage) (reasoningControls, bool) {
 		hasDisabled = hasDisabled || t == "disabled"
 	}
 	rc.Toggle = hasAdaptive && hasDisabled
+	rc.Adaptive = hasAdaptive
 	return rc, rc.Path != "" || rc.Toggle
 }
 
@@ -361,29 +363,40 @@ func pickEffortLevel(want string, levels []string) string {
 }
 
 // nativeReasoningFields builds additionalModelRequestFields for the model, or
-// nil when the model declares no effort control or nothing was requested.
+// nil when the model declares no matching controls or nothing was requested.
+// Kiro CLI sends {"thinking":{"type":"adaptive"},"output_config":{"effort":…}}
+// in the GenerateAssistantResponse body; without thinking.type the 5.5 models
+// return no reasoning at all.
 func nativeReasoningFields(model string, spec thinkingSpec) map[string]interface{} {
-	if spec.Effort == "" {
+	if spec.Effort == "" && !spec.Enabled {
 		return nil
 	}
 	rc, ok := lookupReasoningControls(model)
-	if !ok || rc.Path == "" {
+	if !ok {
 		return nil
 	}
-	level := pickEffortLevel(spec.Effort, rc.Levels)
-	if level == "" {
-		return nil
+	fields := map[string]interface{}{}
+	if spec.Enabled && rc.Adaptive && rc.Path == "output_config" {
+		fields["thinking"] = map[string]interface{}{"type": "adaptive"}
 	}
-	// Mirror Kiro's own client: the top levels need thinking on.
-	if !spec.Enabled && (level == "xhigh" || level == "max") {
-		for i := len(rc.Levels) - 1; i >= 0; i-- {
-			if l := rc.Levels[i]; l != "xhigh" && l != "max" {
-				level = l
-				break
+	if rc.Path != "" && spec.Effort != "" {
+		if level := pickEffortLevel(spec.Effort, rc.Levels); level != "" {
+			// Mirror Kiro's own client: the top levels need thinking on.
+			if !spec.Enabled && (level == "xhigh" || level == "max") {
+				for i := len(rc.Levels) - 1; i >= 0; i-- {
+					if l := rc.Levels[i]; l != "xhigh" && l != "max" {
+						level = l
+						break
+					}
+				}
 			}
+			fields[rc.Path] = map[string]interface{}{"effort": level}
 		}
 	}
-	return map[string]interface{}{rc.Path: map[string]interface{}{"effort": level}}
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields
 }
 
 // applyThinkingSpec stamps the native controls onto a translated payload.

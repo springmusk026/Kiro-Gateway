@@ -14,6 +14,25 @@
 
 Read-only research. Nothing in this repository was modified.
 
+## Live capture, 25 Nov 2026 (Kiro CLI 3.5, API key, us-east-1)
+
+Recorded from the official `kiro-cli chat --agent-engine v3` through a proxy, with a real API key (redacted).
+It corrects parts of the static analysis below:
+
+- Each chat turn makes **two** `KiroRuntimeService.GenerateAssistantResponse` calls (AWS JSON 1.0, `POST /` on
+  `runtime.{region}.kiro.dev`): a title call (`agentMode: "session-title"`, `modelId: "simple-task"`, no
+  extra fields) and the turn itself.
+- The turn body carries `agentMode: "default-v2"` and
+  `additionalModelRequestFields: {"output_config":{"effort":"medium"},"thinking":{"type":"adaptive"}}` at the
+  top level, next to `conversationState`. Headers: `TokenType: API_KEY`,
+  `x-amzn-kiro-client-attribution: kiro-cli`, `x-amzn-kiro-mode-identifier: default-v2`,
+  `x-amzn-kiro-fallback: 0;max=0`, `x-amzn-kiro-attempt: 1;max=3`, `amz-sdk-request: attempt=1; max=3`.
+- Reasoning arrives as `reasoningContentEvent` frames with `text`, then one with `signature`. Without
+  `thinking.type` the 5.5 models return no reasoning.
+- The CLI sent effort `medium` even when started with `--effort high`.
+
+Kiro Gateway now sends the same body fields and mode for API-key accounts (`proxy/kiro.go`, `cliRuntimeBody`).
+
 ## 0. Sources, notation, and caveats
 
 | Tag | Meaning |
@@ -264,7 +283,15 @@ CPS errors:
 
 ListAvailableModels caching ([JS] `won`=`ACPModelConfigProvider`): TTL 5 min (`_nd=300e3`); empty-result TTL 30 s; fetch timeout 30 s; pagination cap 10 pages (`QAo`); a periodic refresh is skipped when signed out. Each model is post-processed into `effortLevels/effortSchemaPath/defaultEffortLevel` (`yPu`) and `thinkingToggleable/defaultThinkingEnabled` (`bPu`).
 
-**[KG] status: divergent (old IDE REST surface).**
+**[KG] status: divergent (old IDE REST surface) for OAuth accounts; API-key accounts use the CLI calls.**
+
+API-key accounts (the Kiro CLI identity) make the calls the capture shows (`proxy/kiro_cli_control.go`):
+`POST https://management.{region}.kiro.dev/` with `x-amz-target: KiroControlPlaneBearerService.ListAvailableModels`
+(`{"origin":"KIRO_CLI"}`, `amz-sdk-request: attempt=1; max=3`) and `.GetUsageLimits` (`{"origin":"KIRO_CLI"}`,
+`attempt=1; max=1`), and `KiroRuntimeService.GetFeatureConfiguration` on `runtime.{region}.kiro.dev`
+(`{"origin":"KIRO_CLI","version":"3.5.0"}`, dash-joined control UA, `attempt=1; max=1`) at most every 15 minutes
+per account, in the background when chat starts; its result is cached and not acted on. The rows below describe
+OAuth accounts.
 
 | Op | Kiro Gateway | Status |
 |---|---|---|
@@ -329,10 +356,10 @@ Token file / refresh correctness notes from KAS ([JS] `FileAuthProvider`, `s4e`)
 | Which API per account | decided by `GetFeatureConfiguration.create_response_api` | always `/v1/responses` (auto, with legacy fallback) | divergent |
 | Body shapes (`/v1/responses`) | §1.1 | mostly match | partial |
 | GAR event-stream parse | full union incl. inline error events, reasoning signature, refusal | ignores inline error events, signature, refusal | partial |
-| ListAvailableModels | CPS `management` host, paginated, rich Model | old `codewhisperer` REST, no pagination | divergent |
-| GetUsageLimits/overage | CPS `management` host | old `q`/`codewhisperer` host | divergent |
+| ListAvailableModels | CPS `management` host, paginated, rich Model | API keys: CPS awsJson (no pagination); OAuth: old `codewhisperer` REST | API keys match; OAuth divergent |
+| GetUsageLimits/overage | CPS `management` host | API keys: CPS awsJson GetUsageLimits; overage and OAuth: old `q`/`codewhisperer` host | partial |
 | MCP (web search) | `runtime…/mcp` + `tools/list` first | `q…/mcp`, no `tools/list` | divergent |
-| GetFeatureConfiguration | always, before first turn | never | missing |
+| GetFeatureConfiguration | always, before first turn | API keys: in the background as chat starts, 15 min per account, result unused; OAuth: never | partial |
 | Token refresh | per §1.8, single-flight, symlink-safe | matches intent; UA + IdC token-type gaps | partial |
 | Native effort / thinking | `reasoning.effort` + `thinking.type` from model schema | `reasoning.effort` only (`thinking_request.go`), `thinking.type` parsed but never emitted | partial |
 | Prompt caching | model-declared `promptCaching`, `cachePoint` blocks | experimental cache points on GAR behind `KIRO_CACHE_POINTS=1` (`proxy/cache_points.go`), unverified | partial |

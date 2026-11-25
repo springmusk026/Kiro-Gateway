@@ -271,14 +271,13 @@ func (s *ConfigStore) Save(c *config.Config) error {
 		keySeen[k.ID] = true
 		newKeys[k.ID] = h
 		if s.keys[k.ID] != h {
-			if codec.Enabled() {
-				enc, err := codec.EncryptApiKey(*k)
-				if err != nil {
-					return err
-				}
-				if data, err = json.Marshal(&enc); err != nil {
-					return err
-				}
+			// Always through the codec: it stores key hashes, never values.
+			enc, err := codec.EncryptApiKey(*k)
+			if err != nil {
+				return err
+			}
+			if data, err = json.Marshal(&enc); err != nil {
+				return err
 			}
 			keyWrites = append(keyWrites, rowWrite{id: k.ID, position: i, data: data})
 		}

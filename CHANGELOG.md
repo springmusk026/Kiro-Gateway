@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+### Console
+- Request logs → **Conversations**: requests grouped by their Kiro conversation id, with a timeline per
+  conversation; a request's detail links to its conversation.
+- **Open in Playground** from a request with a captured body (model, system prompt and text messages).
+- **CSV export** of the filtered request log (server-side, up to 100,000 rows, no bodies) and of the
+  Analytics breakdown, with spreadsheet formula injection guarded.
+- **Key usage page** at `/admin/usage` for key holders (no admin sign-in), linked from API & Keys.
+
+### API
+- `GET /v1/usage`: usage and limits of the API key that sends it.
+- `GET /admin/api/conversations`, `GET /admin/api/conversations/{id}`, `GET /admin/api/requests/export.csv`.
+
+### Storage
+- Request logs record the upstream conversation id (`conversation_id`, added on start with indexes on
+  `(conversation_id, ts)` and `(api_key_id, ts)`; no numbered migration).
+
+### Project
+- Release automation: tagging `vX.Y.Z` publishes a GitHub Release with the matching CHANGELOG section as notes
+  and archives (binary + `web/` console + README, LICENSE) for linux/amd64, linux/arm64, darwin/arm64 and
+  windows/amd64. Dependabot keeps Go modules, npm packages and GitHub Actions up to date weekly.
+
+### Upstream
+- Kiro API-key accounts make the Kiro CLI's control-plane calls (from the wire capture): `ListAvailableModels`
+  and `GetUsageLimits` as AWS JSON on `management.{region}.kiro.dev`, and `GetFeatureConfiguration` on the
+  runtime host at most every 15 minutes per account, in the background (result cached, not acted on). OAuth
+  accounts are unchanged.
+
+### Alerts
+- Account health alerts alongside the budget alerts (console banner, `GET /admin/api/alerts`, webhook, once per
+  day and level): token expiring within 24 h without a successful refresh, 3+ failed refreshes in a row,
+  banned or suspended account, account cooling down or parked for more than an hour, and no account available.
+
+### Security
+- API keys are stored as SHA-256 hashes with a display hint (`sk-ab12…9f3c`) and shown only once, when created
+  or regenerated (new *Regenerate key* action). Existing plaintext or encrypted keys are hashed on the first
+  start and saved, in `config.json` and PostgreSQL alike; `kiro-gateway export` writes hashes. The admin API
+  returns `keyHint` instead of `keyMasked`. See [docs/upgrading.md](docs/upgrading.md#api-keys-are-hashed).
+
+### Fixed
+- Extended thinking now works for Kiro API-key accounts. The gateway sends the model's native
+  `additionalModelRequestFields` (`thinking.type: adaptive` and the effort level) in the request body and the
+  `default-v2` agent mode, as Kiro CLI does; previously the 5.5 models returned no reasoning. Adaptive
+  thinking lets the model skip reasoning on trivial prompts, especially at low effort.
+- API-key accounts identify as Kiro CLI 3.6.0 (KAS 0.66.127), the current release, with the SDK user-agent
+  flags (`m/N,E`) it sends on every call.
+- An unknown model now returns 404 (`not_found_error` / `model_not_found`) instead of 529 "No available
+  accounts", so clients stop retrying it.
+
 ## 2.1.0 — Kiro Gateway
 
 The project is now **Kiro Gateway** ([springmusk026/Kiro-Gateway](https://github.com/springmusk026/Kiro-Gateway)).

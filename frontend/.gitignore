@@ -3,3 +3,5 @@ dist
 .tanstack
 .vinxi
 .output
+test-results
+playwright-report

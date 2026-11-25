@@ -18,8 +18,10 @@ import (
 //
 // With KIRO_ENCRYPTION_KEY set (32 bytes, base64 or hex), the stores encrypt
 // sensitive fields when they serialize the configuration and decrypt them
-// when they load it, so the in-memory configuration is always plaintext and
-// lookups (API keys, admin password) work unchanged. Values are AES-256-GCM
+// when they load it, so the in-memory configuration is always plaintext.
+// Gateway API keys are not encrypted but stored as SHA-256 hashes
+// (apikeys.go); an encrypted key value written by an older build is
+// decrypted on load and then hashed. Values are AES-256-GCM
 // with a random nonce, stored as "enc:v1:" + base64(nonce|ciphertext).
 // Plaintext values load fine and are encrypted on the next save; encrypted
 // values without the right key are a hard error, never silently dropped.
@@ -193,9 +195,23 @@ func (c *SecretCodec) DecryptAccount(a *Account) (plain bool, err error) {
 	return plain, nil
 }
 
-// EncryptApiKey returns a copy of k with its key value encrypted.
+// EncryptApiKey returns the copy of k that is written to a store. API keys
+// are stored as hashes only, so a plaintext key value is replaced by its hash
+// and hint here, whatever the caller passed in. An encrypted value (a raw
+// export of a configuration that was never migrated) is decrypted and hashed
+// when the key is available, and kept encrypted otherwise.
 func (c *SecretCodec) EncryptApiKey(k ApiKeyEntry) (ApiKeyEntry, error) {
-	return k, c.encryptFields(apiKeySecrets(&k))
+	if c != nil && c.err != nil {
+		return k, c.err
+	}
+	if IsEncryptedValue(k.Key) && c.Enabled() {
+		dec := &SecretCodec{aead: c.aead}
+		if v, _, err := dec.DecryptString(k.Key); err == nil {
+			k.Key = v
+		}
+	}
+	hashApiKeyEntry(&k)
+	return k, nil
 }
 
 // DecryptApiKey decrypts k's key value in place.

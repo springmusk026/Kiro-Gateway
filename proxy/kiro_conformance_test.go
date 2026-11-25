@@ -17,7 +17,7 @@ func TestResponsesIdentity(t *testing.T) {
 		t.Fatalf("oauth UA = %q", ua)
 	}
 	key := &config.Account{ID: "k", AuthMethod: "api_key", KiroApiKey: "ksk_x"}
-	if ua := responsesUserAgent(key); !strings.HasPrefix(ua, "KiroCLI/3.5.0 KAS/") || !strings.HasSuffix(ua, "app/AmazonQ-For-CLI acp-client/kiro-cli") {
+	if ua := responsesUserAgent(key); !strings.HasPrefix(ua, "KiroCLI/3.6.0 KAS/") || !strings.HasSuffix(ua, "app/AmazonQ-For-CLI acp-client/kiro-cli") {
 		t.Fatalf("api key UA = %q", ua)
 	}
 	cases := map[string]string{"social": "", "": "", "idc": "SSO_OIDC", "external_idp": "EXTERNAL_IDP"}
@@ -103,7 +103,7 @@ func TestAPIKeyRuntimeCallMatchesCapturedClient(t *testing.T) {
 		"X-Amz-Target":                   "KiroRuntimeService.GenerateAssistantResponse",
 		"Tokentype":                      "API_KEY",
 		"X-Amzn-Kiro-Client-Attribution": "kiro-cli",
-		"X-Amzn-Kiro-Mode-Identifier":    "vibe",
+		"X-Amzn-Kiro-Mode-Identifier":    "default-v2", // kiro-cli 3.5 v3 engine, live capture
 		"X-Amzn-Kiro-Fallback":           "0;max=0",
 		"X-Amzn-Kiro-Attempt":            "1;max=3",
 		"Amz-Sdk-Request":                "attempt=1; max=3",
@@ -119,7 +119,7 @@ func TestAPIKeyRuntimeCallMatchesCapturedClient(t *testing.T) {
 			t.Errorf("%s must not be sent", absent)
 		}
 	}
-	if ua := req.Header.Get("User-Agent"); !strings.HasPrefix(ua, "aws-sdk-js/1.0.0 ua/2.1 os/") || !strings.Contains(ua, "api/kiroruntime#1.0.0 m/N KiroCLI/3.5.0") {
+	if ua := req.Header.Get("User-Agent"); !strings.HasPrefix(ua, "aws-sdk-js/1.0.0 ua/2.1 os/") || !strings.Contains(ua, "api/kiroruntime#1.0.0 m/N,E KiroCLI/3.6.0") {
 		t.Errorf("UA = %q", ua)
 	}
 }

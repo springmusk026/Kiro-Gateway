@@ -97,7 +97,8 @@ account loop early so the budget is not spent on accounts that would fail the sa
 Daily credit caps (global and per API key) are checked in memory right after authentication, before any
 upstream call; exceeding one returns `429` in the API's own shape. Daily counters are updated from the
 credits each request reports and persisted with the debounced config writer. A background loop evaluates
-alerts every 30 s and posts new ones to the optional webhook (`proxy/cost_controls.go`).
+budget and account health alerts every 30 s from memory and posts new ones to the optional webhook
+(`proxy/cost_controls.go`, `proxy/account_alerts.go`).
 
 ## Streaming
 

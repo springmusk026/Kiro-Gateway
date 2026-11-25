@@ -86,7 +86,7 @@ type upstreamRequest struct {
 	// failStarted reports an error after output started, in-stream.
 	failStarted func(a *upstreamAttempt, err error)
 	// failNoAccounts reports that no account could serve the request.
-	failNoAccounts func()
+	failNoAccounts func(model string)
 	// fail reports the last upstream error once every option is spent.
 	fail func(model string, err error)
 }
@@ -137,7 +137,7 @@ func (h *Handler) executeUpstream(ctx context.Context, w http.ResponseWriter, re
 	}
 
 	if lastErr == nil {
-		req.failNoAccounts()
+		req.failNoAccounts(model)
 		return
 	}
 	h.recordFailureWithDetails(ctx, req.endpoint, model, "", lastErr)

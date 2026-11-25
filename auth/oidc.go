@@ -23,10 +23,19 @@ var socialTokenURL = func() string {
 
 // RefreshToken 刷新 access token
 // Returns: accessToken, refreshToken, expiresAt, profileArn, error
+// The outcome is recorded per account for health alerts (refresh_health.go).
 func RefreshToken(account *config.Account) (string, string, int64, string, error) {
 	if config.IsAPIKeyAccount(account) {
 		return "", "", 0, "", fmt.Errorf("API Key credentials do not support token refresh")
 	}
+	accessToken, refreshToken, expiresAt, profileArn, err := refreshAccountToken(account)
+	if account != nil {
+		recordRefreshResult(account.ID, err, time.Now())
+	}
+	return accessToken, refreshToken, expiresAt, profileArn, err
+}
+
+func refreshAccountToken(account *config.Account) (string, string, int64, string, error) {
 	// Resolve per-account proxy: account.ProxyURL > global config
 	proxyURL := account.ProxyURL
 	if proxyURL == "" {

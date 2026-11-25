@@ -136,15 +136,24 @@ func remapReasoningFields(fields map[string]interface{}, model string) map[strin
 			}
 		}
 	}
+	_, thinking := fields["thinking"]
 	rc, ok := lookupReasoningControls(model)
-	if effort == "" || !ok || rc.Path == "" {
+	if !ok {
 		return nil
 	}
-	level := pickEffortLevel(effort, rc.Levels)
-	if level == "" {
+	out := map[string]interface{}{}
+	if thinking && rc.Adaptive && rc.Path == "output_config" {
+		out["thinking"] = map[string]interface{}{"type": "adaptive"}
+	}
+	if effort != "" && rc.Path != "" {
+		if level := pickEffortLevel(effort, rc.Levels); level != "" {
+			out[rc.Path] = map[string]interface{}{"effort": level}
+		}
+	}
+	if len(out) == 0 {
 		return nil
 	}
-	return map[string]interface{}{rc.Path: map[string]interface{}{"effort": level}}
+	return out
 }
 
 func truncateForLog(s string, n int) string {

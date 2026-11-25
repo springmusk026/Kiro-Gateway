@@ -325,3 +325,24 @@ func TestReloadDropsOverQuotaAccountWhenAllowOverUsageDisabled(t *testing.T) {
 		t.Fatalf("expected over-quota account to be dropped, got %q", got.ID)
 	}
 }
+
+func TestAnyAccountListsModel(t *testing.T) {
+	p := newTestPool(config.Account{ID: "a", Enabled: true}, config.Account{ID: "b", Enabled: true})
+	if !p.AnyAccountListsModel("anything") {
+		t.Fatal("accounts without model lists must be treated as able to serve any model")
+	}
+	p.SetModelList("a", []string{"claude-haiku-5.5"})
+	if !p.AnyAccountListsModel("no-such-model") {
+		t.Fatal("account b has no list yet, so the model may still exist")
+	}
+	p.SetModelList("b", []string{"Claude-Sonnet-5.5"})
+	if p.AnyAccountListsModel("no-such-model") {
+		t.Fatal("no account lists the model")
+	}
+	if !p.AnyAccountListsModel("claude-sonnet-5.5") || !p.AnyAccountListsModel("claude-haiku-5.5") {
+		t.Fatal("listed models must be found")
+	}
+	if !newTestPool().AnyAccountListsModel("x") {
+		t.Fatal("an empty pool reports no accounts, not an unknown model")
+	}
+}

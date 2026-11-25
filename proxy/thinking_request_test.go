@@ -141,8 +141,36 @@ func TestNativeReasoningFields(t *testing.T) {
 	if f := nativeReasoningFields("plain-test-1", on("high")); f != nil {
 		t.Fatalf("model without schema must get nothing: %v", f)
 	}
-	if f := nativeReasoningFields("claude-test-1", on("")); f != nil {
-		t.Fatalf("no effort must send nothing: %v", f)
+	if f := nativeReasoningFields("claude-test-1", on("")); f["thinking"].(map[string]interface{})["type"] != "adaptive" || f["output_config"] != nil {
+		t.Fatalf("thinking without effort must send only thinking.type: %v", f)
+	}
+	if f := nativeReasoningFields("claude-test-1", on("low")); f["thinking"] == nil {
+		t.Fatalf("thinking on must send thinking.type adaptive like Kiro CLI: %v", f)
+	}
+	if f := nativeReasoningFields("claude-test-1", thinkingSpec{Effort: "low"}); f["thinking"] != nil {
+		t.Fatalf("thinking off must not send thinking.type: %v", f)
+	}
+	if f := nativeReasoningFields("claude-test-1", thinkingSpec{}); f != nil {
+		t.Fatalf("nothing requested must send nothing: %v", f)
+	}
+}
+
+func TestCLIRuntimeBodyCarriesAdditionalFields(t *testing.T) {
+	p := &KiroPayload{AgentMode: kiroCLIAgentMode, AdditionalModelRequestFields: map[string]interface{}{
+		"thinking": map[string]interface{}{"type": "adaptive"}, "output_config": map[string]interface{}{"effort": "medium"}}}
+	raw, _ := json.Marshal(cliRuntimeBody{p, p.AdditionalModelRequestFields})
+	var got map[string]interface{}
+	_ = json.Unmarshal(raw, &got)
+	if got["agentMode"] != "default-v2" || got["conversationState"] == nil {
+		t.Fatalf("payload fields missing: %s", raw)
+	}
+	amrf, _ := got["additionalModelRequestFields"].(map[string]interface{})
+	if amrf["thinking"] == nil || amrf["output_config"] == nil {
+		t.Fatalf("additionalModelRequestFields missing: %s", raw)
+	}
+	raw, _ = json.Marshal(cliRuntimeBody{&KiroPayload{}, nil})
+	if strings.Contains(string(raw), "additionalModelRequestFields") {
+		t.Fatalf("empty fields must be omitted: %s", raw)
 	}
 }
 

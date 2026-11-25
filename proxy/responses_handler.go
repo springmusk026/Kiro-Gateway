@@ -287,7 +287,7 @@ func (h *Handler) handleResponsesNonStream(
 		apiKeyID:       apiKeyID,
 		cacheProfile:   cacheProfile,
 		attempt:        attempt,
-		failNoAccounts: func() { h.sendOpenAINoAccounts(w) },
+		failNoAccounts: func(model string) { h.sendOpenAINoAccounts(w, model) },
 		fail:           func(_ string, err error) { h.sendOpenAIUpstreamError(w, err) },
 	})
 }
@@ -742,7 +742,7 @@ func (h *Handler) handleResponsesStream(
 			info := classifyUpstreamError(err)
 			sendFailed(attemptDoneItems(), info.Code, info.Message)
 		},
-		failNoAccounts: func() { sendFailed(nil, "server_overloaded", noAvailableAccountsMessage) },
+		failNoAccounts: func(string) { sendFailed(nil, "server_overloaded", noAvailableAccountsMessage) },
 		fail: func(_ string, err error) {
 			info := classifyUpstreamError(err)
 			sendFailed(nil, info.Code, info.Message)

@@ -127,7 +127,7 @@ func (h *Handler) computePoolUsage() poolUsage {
 
 // costAlert is one active budget or usage alert.
 type costAlert struct {
-	Kind    string  `json:"kind"`  // global_daily | key_daily | key_credits | key_tokens | pool_usage
+	Kind    string  `json:"kind"`  // global_daily | key_daily | key_credits | key_tokens | pool_usage | account_* (account_alerts.go)
 	Level   string  `json:"level"` // warning | critical
 	Subject string  `json:"subject,omitempty"`
 	Name    string  `json:"name,omitempty"`
@@ -154,7 +154,8 @@ func alertLevel(value, limit, warn float64) string {
 	return ""
 }
 
-// computeAlerts lists the caps currently at 80 % or more (pool usage: 90 %).
+// computeAlerts lists the caps currently at 80 % or more (pool usage: 90 %)
+// and the account health events (account_alerts.go).
 func (h *Handler) computeAlerts(now time.Time) []costAlert {
 	var out []costAlert
 	add := func(kind, subject, name string, value, limit, warn float64, what string) {
@@ -177,7 +178,7 @@ func (h *Handler) computeAlerts(now time.Time) []costAlert {
 	for _, k := range config.ListApiKeys() {
 		name := k.Name
 		if name == "" {
-			name = config.MaskApiKey(k.Key)
+			name = k.KeyHint
 		}
 		add("key_daily", k.ID, name, daily.KeyCredits[k.ID], k.DailyCreditLimit, alertWarnRatio, fmt.Sprintf("API key %q daily credit budget", name))
 		add("key_credits", k.ID, name, k.CreditsUsed, k.CreditLimit, alertWarnRatio, fmt.Sprintf("API key %q credit limit", name))
@@ -185,6 +186,7 @@ func (h *Handler) computeAlerts(now time.Time) []costAlert {
 	}
 	pu := h.computePoolUsage()
 	add("pool_usage", "", "", pu.Used, pu.Limit, alertPoolWarnRatio, "account pool usage for this period")
+	out = append(out, h.computeAccountAlerts(now)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Level == "critical" && out[j].Level != "critical" })
 	return out
 }

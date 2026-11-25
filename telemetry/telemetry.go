@@ -42,6 +42,10 @@ type RequestRecord struct {
 	// model was unavailable (empty when no fallback was taken).
 	FallbackModel string `json:"fallbackModel,omitempty"`
 
+	// ConversationID is the upstream conversation id ("sess_…") the request
+	// was sent under; turns of one conversation share it.
+	ConversationID string `json:"conversationId,omitempty"`
+
 	// Optional captured bodies (only when body capture is enabled).
 	RequestBody  string `json:"requestBody,omitempty"`
 	ResponseBody string `json:"responseBody,omitempty"`

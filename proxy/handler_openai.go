@@ -524,7 +524,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 		},
-		failNoAccounts: func() {
+		failNoAccounts: func(model string) {
 			if hb.Committed() {
 				data, _ := json.Marshal(map[string]interface{}{
 					"error": openAIErrorObject("server_error", "server_overloaded", noAvailableAccountsMessage),
@@ -533,7 +533,7 @@ func (h *Handler) handleOpenAIStream(ctx context.Context, w http.ResponseWriter,
 				flusher.Flush()
 				return
 			}
-			h.sendOpenAINoAccounts(w)
+			h.sendOpenAINoAccounts(w, model)
 		},
 		fail: func(_ string, err error) {
 			if hb.Committed() {
@@ -656,7 +656,7 @@ func (h *Handler) handleOpenAINonStream(ctx context.Context, w http.ResponseWrit
 		apiKeyID:       apiKeyID,
 		cacheProfile:   cacheProfile,
 		attempt:        attempt,
-		failNoAccounts: func() { h.sendOpenAINoAccounts(w) },
+		failNoAccounts: func(model string) { h.sendOpenAINoAccounts(w, model) },
 		fail:           func(_ string, err error) { h.sendOpenAIUpstreamError(w, err) },
 	})
 }

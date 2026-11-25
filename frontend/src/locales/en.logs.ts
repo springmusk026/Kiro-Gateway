@@ -142,4 +142,33 @@ export const logsEn = {
   'logs.audit.emptyDesc': 'Changes made in this console and failed sign-ins are recorded here.',
   'logs.audit.noMatchDesc': 'Try a different search or a longer range.',
   'logs.audit.count': '{n} events',
+
+  // Conversations tab
+  'logs.c.tab': 'Conversations',
+  'logs.c.searchPlaceholder': 'Search conversation id, model or account…',
+  'logs.c.emptyTitle': 'No conversations yet',
+  'logs.c.emptyDesc': 'Requests are grouped by the conversation id they are sent to Kiro under. Older requests recorded before this version have none.',
+  'logs.c.noMatchDesc': 'No conversation matches this search in the selected range.',
+  'logs.c.colLast': 'Last active',
+  'logs.c.colConversation': 'Conversation',
+  'logs.c.colRequests': 'Requests',
+  'logs.c.colCacheRead': 'Cache read',
+  'logs.c.lasted': 'over {d}',
+  'logs.c.errors': '{n} failed',
+  'logs.c.cancelled': '{n} cancelled',
+  'logs.c.back': 'All conversations',
+  'logs.c.id': 'Conversation',
+  'logs.c.notFound': 'Conversation not found',
+  'logs.c.duration': 'Duration',
+  'logs.c.truncated': 'Showing the first {n} requests.',
+  'logs.c.attempts': '{n} attempts',
+  'logs.c.view': 'View conversation',
+
+  // Open in Playground
+  'logs.pg.open': 'Open in Playground',
+  'logs.pg.storageError': 'This request is too large to open in the Playground.',
+
+  // CSV export
+  'logs.csv.export': 'CSV',
+  'logs.csv.hint': 'Download the requests matching these filters as CSV (up to 100,000 rows, no bodies)',
 } as const
