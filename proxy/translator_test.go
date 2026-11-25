@@ -27,7 +27,7 @@ func TestExtractOpenAIMessageTextStructured(t *testing.T) {
 
 func TestParseModelAndThinkingUsesConfiguredMapping(t *testing.T) {
 	resetOfferedModels(t)
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.UpdateModelMappings([]config.ModelMapping{

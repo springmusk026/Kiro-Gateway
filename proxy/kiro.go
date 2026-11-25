@@ -175,8 +175,11 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 		// Matches the official client's 300 s converse timeout: a slow first
 		// token is still a valid answer, and aborting wastes the generation.
 		ResponseHeaderTimeout: 300 * time.Second,
-		DisableCompression:    false,
-		ForceAttemptHTTP2:     true,
+		// Kiro's clients send no Accept-Encoding (live capture); Go would add
+		// "gzip" to every request. The chat streams are binary event streams
+		// that are not compressed anyway.
+		DisableCompression: true,
+		ForceAttemptHTTP2:  true,
 		HTTP2: &http.HTTP2Config{
 			SendPingTimeout: 30 * time.Second,
 			PingTimeout:     15 * time.Second,

@@ -15,7 +15,7 @@ import (
 // and returns a handler wired to the reloaded pool.
 func setupIntegrityPathTest(t *testing.T, server *httptest.Server) *Handler {
 	t.Helper()
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{

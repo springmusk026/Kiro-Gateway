@@ -76,7 +76,7 @@ func setupPerfHandler(b *testing.B, upstream []byte) *Handler {
 	prevLevel := logger.GetLevel()
 	logger.SetLevel(logger.LevelWarn)
 	b.Cleanup(func() { logger.SetLevel(prevLevel) })
-	if err := config.Init(b.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(b, b.TempDir()+"/config.json"); err != nil {
 		b.Fatal(err)
 	}
 	if err := config.AddAccount(config.Account{ID: "bench-account", Enabled: true, AccessToken: "token",

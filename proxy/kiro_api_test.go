@@ -71,7 +71,7 @@ func TestRegionalizeURLDoesNotUseOAuthAuthenticationRegion(t *testing.T) {
 
 func TestResolveProfileArnFetchesAndCachesProfile(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(configPath); err != nil {
+	if err := config.InitForTest(t, configPath); err != nil {
 		t.Fatalf("init config: %v", err)
 	}
 	account := config.Account{
@@ -176,6 +176,11 @@ func TestResolveProfileArnSuppressesBuilderIDUnsupportedLookup(t *testing.T) {
 }
 
 func TestResolveProfileArnKeepsRefreshFallbackForBuilderIDUnsupportedLookup(t *testing.T) {
+	// The refreshed token is saved; this test must not depend on another
+	// test having loaded a config.
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
+		t.Fatal(err)
+	}
 	clearProfileArnResolutionCooldowns()
 	t.Cleanup(clearProfileArnResolutionCooldowns)
 
@@ -231,7 +236,7 @@ func TestRefreshAccountInfoDoesNotDisableBuilderIDWhenProfileLookupUnsupported(t
 	t.Cleanup(clearProfileArnResolutionCooldowns)
 
 	configPath := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(configPath); err != nil {
+	if err := config.InitForTest(t, configPath); err != nil {
 		t.Fatalf("init config: %v", err)
 	}
 	account := config.Account{
@@ -295,7 +300,7 @@ func TestRefreshAccountInfoDoesNotDisableBuilderIDWhenProfileLookupUnsupported(t
 }
 
 func TestListKiroProfilesFollowsNextTokenPagination(t *testing.T) {
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	var pages []string

@@ -24,7 +24,7 @@ func TestRefreshTokenRecordsOutcome(t *testing.T) {
 	old := socialTokenURL
 	socialTokenURL = func() string { return srv.URL }
 	defer func() { socialTokenURL = old }()
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatal(err)
 	}
 	oldClient := SetGlobalAuthClientForTest(&http.Client{Transport: &http.Transport{}})

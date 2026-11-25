@@ -240,3 +240,17 @@ func MergeMissing(src *Config) (accounts, keys int, err error) {
 	reindexApiKeysLocked()
 	return accounts, keys, Save()
 }
+
+// TestingCleanup is the part of testing.TB that InitForTest needs.
+type TestingCleanup interface {
+	Cleanup(func())
+}
+
+// InitForTest is Init for tests whose config file lives in a temporary
+// directory: pending background saves are written before the test's cleanup
+// removes that directory, so a late save cannot race the removal.
+func InitForTest(t TestingCleanup, path string) error {
+	err := Init(path)
+	t.Cleanup(Flush)
+	return err
+}

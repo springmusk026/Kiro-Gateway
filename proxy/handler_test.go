@@ -30,7 +30,7 @@ func TestThinkingSourceReasoningFirst(t *testing.T) {
 
 func TestClaudeNonStreamRetriesNextAccountAfterPreResponseFailure(t *testing.T) {
 	cfgFile := t.TempDir() + "/config.json"
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestClaudeNonStreamRetriesNextAccountAfterPreResponseFailure(t *testing.T) 
 
 func TestOpenAIHandlerPropagatesClientCancellation(t *testing.T) {
 	cfgFile := t.TempDir() + "/config.json"
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), "request-id", "client-cancel"))
@@ -534,7 +534,7 @@ func TestBuildAnthropicModelsResponseGeneratesThinkingVariants(t *testing.T) {
 }
 
 func TestHandleModelsAdvertisesConfiguredModelMapping(t *testing.T) {
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.UpdateModelMappings([]config.ModelMapping{{
@@ -634,7 +634,7 @@ func TestAppendConfiguredModelMappingsRespectsExplicitSourcesAndOverrides(t *tes
 }
 
 func TestModelMappingsAdminAPIRoundTrip(t *testing.T) {
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	h := &Handler{}
@@ -673,7 +673,7 @@ func TestModelMappingsAdminAPIRoundTrip(t *testing.T) {
 
 func TestOpenAIStreamReportsPostOutputUpstreamFailure(t *testing.T) {
 	cfgFile := t.TempDir() + "/config.json"
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{
@@ -733,7 +733,7 @@ func TestOpenAIStreamReportsPostOutputUpstreamFailure(t *testing.T) {
 
 func TestClaudeResponsePreservesUpstreamMaxTokensStopReason(t *testing.T) {
 	cfgFile := t.TempDir() + "/config.json"
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{
@@ -792,7 +792,7 @@ func TestClaudeResponsePreservesUpstreamMaxTokensStopReason(t *testing.T) {
 
 func TestOpenAIStreamPreservesUpstreamMaxTokensFinishReason(t *testing.T) {
 	cfgFile := t.TempDir() + "/config.json"
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{

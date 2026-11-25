@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/springmusk026/Kiro-Gateway/config"
+	accountpool "github.com/springmusk026/Kiro-Gateway/pool"
 )
 
 // The bytes sent to Kiro must not change when the request path is optimised:
@@ -110,5 +111,62 @@ func TestUpstreamPayloadGolden(t *testing.T) {
 					i, len(got), len(want), got[lo:min(len(got), i+80)], want[lo:min(len(want), i+80)])
 			}
 		})
+	}
+}
+
+// The API-key (Kiro CLI runtime) body: agentMode default-v2 and the native
+// thinking fields, as captured from kiro-cli. Same regeneration flag.
+func TestUpstreamPayloadGoldenAPIKey(t *testing.T) {
+	resetOfferedModels(t)
+	cfgFile := filepath.Join(t.TempDir(), "config.json")
+	if err := config.InitForTest(t, cfgFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.AddAccount(config.Account{ID: "golden-key", Enabled: true, AuthMethod: "api_key", KiroApiKey: "ksk_golden", Region: "us-east-1"}); err != nil {
+		t.Fatal(err)
+	}
+	p := accountpool.GetPool()
+	p.Reload()
+	t.Cleanup(p.Reload)
+	recordModelReasoningControls([]ModelInfo{{ModelId: "claude-sonnet-5.5", AdditionalFieldsSchema: []byte(
+		`{"properties":{"output_config":{"properties":{"effort":{"enum":["low","medium","high","xhigh","max"]}}},"thinking":{"properties":{"type":{"enum":["adaptive","between_tools"]}}}}}`)}})
+	h := &Handler{pool: p, promptCache: newPromptCacheTracker(defaultPromptCacheTTL)}
+
+	ct := &captureTransport{}
+	old := kiroHttpStore.Load()
+	kiroHttpStore.Store(&http.Client{Transport: ct})
+	defer kiroHttpStore.Store(old)
+	body := []byte(`{"model":"claude-sonnet-5.5","max_tokens":2048,"thinking":{"type":"adaptive"},"output_config":{"effort":"high"},
+		"system":"You are a careful coding assistant.","messages":[{"role":"user","content":"Explain the bug in main.go"},
+		{"role":"assistant","content":"Let me look."},{"role":"user","content":"Go ahead."}],
+		"tools":[{"name":"read_file","description":"Read a file","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	if len(ct.bodies) != 1 {
+		t.Fatalf("upstream requests = %d, want 1", len(ct.bodies))
+	}
+	got := agentContinuationID.ReplaceAll(ct.bodies[0], []byte("${1}00000000-0000-4000-8000-000000000000"))
+	for _, want := range []string{`"agentMode":"default-v2"`, `"additionalModelRequestFields":{"output_config":{"effort":"high"},"thinking":{"type":"adaptive"}}`} {
+		if !bytes.Contains(got, []byte(want)) {
+			t.Errorf("API-key body lacks %s", want)
+		}
+	}
+	file := filepath.Join("testdata", "upstream_golden", "anthropic_apikey.json")
+	if *updateGolden {
+		if err := os.WriteFile(file, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read golden (run with -update-golden to create): %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("API-key upstream payload changed:\n got: %s\nwant: %s", got, want)
 	}
 }

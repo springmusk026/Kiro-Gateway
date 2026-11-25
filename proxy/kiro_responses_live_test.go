@@ -29,7 +29,7 @@ func TestLiveResponsesTransport(t *testing.T) {
 	if cfgPath == "" {
 		cfgPath = os.ExpandEnv("$HOME/Kiro Gateway/data/config.json")
 	}
-	if err := config.Init(cfgPath); err != nil {
+	if err := config.InitForTest(t, cfgPath); err != nil {
 		t.Fatalf("config.Init(%s): %v", cfgPath, err)
 	}
 	accounts := config.GetAccounts()

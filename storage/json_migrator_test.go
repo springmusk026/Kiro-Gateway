@@ -31,7 +31,7 @@ func setupMigration(t *testing.T, db *DB, src *config.Config) *JSONMigrator {
 	cs := NewConfigStore(db)
 	config.UseStore(cs)
 	t.Cleanup(func() { config.UseStore(nil) })
-	if err := config.Init(path); err != nil {
+	if err := config.InitForTest(t, path); err != nil {
 		t.Fatal(err)
 	}
 	return &JSONMigrator{DB: db, ConfigPath: path, Reload: config.Load}

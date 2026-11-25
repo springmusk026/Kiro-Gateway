@@ -179,7 +179,7 @@ func TestNoModelFallbackOnRateLimit(t *testing.T) {
 func TestNoModelFallbackWithoutBudget(t *testing.T) {
 	ctx := withUpstreamBudget(t.Context(), 1)
 	_ = takeUpstreamAttempt(ctx)
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatal(err)
 	}
 	_ = config.UpdateModelFallbacks([]config.ModelFallback{{Model: "a", Fallbacks: []string{"b"}}})

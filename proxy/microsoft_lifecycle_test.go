@@ -598,7 +598,7 @@ func TestExternalIdpImportReturnsRotatedRefreshTokenWhenPersistFails(t *testing.
 	// Instead sabotage the active config file by making it unwritable via a directory
 	// collision on the path returned by re-init.
 	// Simplest reliable approach: re-init into a temp file, then replace it with a directory.
-	if err := config.Init(cfgPath); err != nil {
+	if err := config.InitForTest(t, cfgPath); err != nil {
 		t.Fatalf("re-init config: %v", err)
 	}
 	if err := os.Remove(cfgPath); err != nil {

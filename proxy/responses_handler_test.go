@@ -60,7 +60,7 @@ func TestResponsesParseArrayInput(t *testing.T) {
 
 func TestResponsesStoreAndLoad(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestResponsesPreviousResponseIDExpands(t *testing.T) {
 // (B) was emitted, dropping A entirely.
 func TestResponsesPreviousResponseIDExpandsFullChain(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 
@@ -332,7 +332,7 @@ func TestResponsesContinuationKeepsNewInstructions(t *testing.T) {
 func setupResponsesTestHandler(t *testing.T) (*Handler, func()) {
 	t.Helper()
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{

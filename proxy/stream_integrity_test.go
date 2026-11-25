@@ -82,7 +82,7 @@ func TestClassifyStreamIntegrity(t *testing.T) {
 // and returns a restore func. Mirrors the fixture used by handler tests.
 func setupIntegrityTestUpstream(t *testing.T, server *httptest.Server) func() {
 	t.Helper()
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.UpdatePreferredEndpoint("kiro"); err != nil {
@@ -110,6 +110,11 @@ func setupIntegrityTestUpstream(t *testing.T, server *httptest.Server) func() {
 func integrityTestAccount(t *testing.T) *config.Account {
 	t.Helper()
 	id := "acc-" + t.Name()
+	// The observed-stop-reason memory is global; a repeated run (-count)
+	// must start from an unobserved account.
+	key := stopReasonObservationKey(&config.Account{ID: id})
+	accountsSeenSendingStopReason.Delete(key)
+	t.Cleanup(func() { accountsSeenSendingStopReason.Delete(key) })
 	return &config.Account{
 		ID:          id,
 		Email:       id + "@test",

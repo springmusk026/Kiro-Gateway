@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -131,5 +132,23 @@ func TestConversationIDShape(t *testing.T) {
 	}
 	if !strings.HasPrefix(a, "sess_") || len(a) != len("sess_")+36 || a[len("sess_")+14] != '4' {
 		t.Fatalf("id %q is not sess_<uuid v4>", a)
+	}
+}
+
+// Kiro's clients send no Accept-Encoding; Go adds "gzip" unless compression
+// is disabled on the transport.
+func TestKiroTransportSendsNoAcceptEncoding(t *testing.T) {
+	got := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.Header.Get("Accept-Encoding")
+	}))
+	defer srv.Close()
+	resp, err := (&http.Client{Transport: buildKiroTransport("")}).Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if ae := <-got; ae != "" {
+		t.Fatalf("Accept-Encoding = %q, want none", ae)
 	}
 }

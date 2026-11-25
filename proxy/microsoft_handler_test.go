@@ -493,7 +493,7 @@ func TestExternalIdpJSONImportRefreshesAndRoundTripsCompleteFields(t *testing.T)
 func newMicrosoftHandlerForTest(t *testing.T) *Handler {
 	t.Helper()
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	p := accountpool.GetPool()

@@ -37,7 +37,7 @@ type executorCall struct {
 
 func newExecutorHarness(t *testing.T, accounts ...string) *executorHarness {
 	t.Helper()
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	list := make([]config.Account, 0, len(accounts))

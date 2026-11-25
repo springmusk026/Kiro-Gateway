@@ -771,7 +771,7 @@ func TestParseMicrosoftIssuerAndDiscoveredEndpointValidation(t *testing.T) {
 
 func resetMicrosoftSSOSessionsForTest(t *testing.T) {
 	t.Helper()
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatalf("initialize test config: %v", err)
 	}
 	clearSessions := func() {

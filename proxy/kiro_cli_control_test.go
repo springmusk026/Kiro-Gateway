@@ -26,7 +26,7 @@ type capturedControlCall struct {
 // answer maps an x-amz-target to the JSON response body.
 func installControlServer(t *testing.T, answer map[string]string) (calls func() []capturedControlCall) {
 	t.Helper()
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatal(err)
 	}
 	var mu sync.Mutex

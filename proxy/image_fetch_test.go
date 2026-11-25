@@ -19,7 +19,7 @@ var testPNG = append([]byte("\x89PNG\r\n\x1a\n"), []byte("not-a-real-image-but-s
 // loopback) for the duration of a test.
 func allowTestFetch(t *testing.T) {
 	t.Helper()
-	if err := config.Init(t.TempDir() + "/config.json"); err != nil {
+	if err := config.InitForTest(t, t.TempDir()+"/config.json"); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	t.Setenv("KIRO_FETCH_ALLOW_HTTP", "1")

@@ -19,7 +19,7 @@ import (
 // private pool over them.
 func accountAlertHandler(t *testing.T, accounts ...config.Account) *Handler {
 	t.Helper()
-	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
+	if err := config.InitForTest(t, filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatal(err)
 	}
 	for _, a := range accounts {

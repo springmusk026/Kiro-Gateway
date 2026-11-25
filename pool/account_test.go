@@ -216,7 +216,7 @@ func TestGetNextForModelExcludingReturnsNilOnEmptyPool(t *testing.T) {
 func TestDisableAccountSetsCooldown(t *testing.T) {
 	// Initialize a temporary config so SetAccountBanStatus can persist safely.
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestGetNextForModelExcludingSkipsExcludedAccount(t *testing.T) {
 
 func TestReloadKeepsOverQuotaAccountWhenAllowOverUsage(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{
@@ -306,7 +306,7 @@ func TestReloadKeepsOverQuotaAccountWhenAllowOverUsage(t *testing.T) {
 
 func TestReloadDropsOverQuotaAccountWhenAllowOverUsageDisabled(t *testing.T) {
 	cfgFile := filepath.Join(t.TempDir(), "config.json")
-	if err := config.Init(cfgFile); err != nil {
+	if err := config.InitForTest(t, cfgFile); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
 	if err := config.AddAccount(config.Account{
