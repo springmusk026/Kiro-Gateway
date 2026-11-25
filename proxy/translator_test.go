@@ -26,6 +26,7 @@ func TestExtractOpenAIMessageTextStructured(t *testing.T) {
 }
 
 func TestParseModelAndThinkingUsesConfiguredMapping(t *testing.T) {
+	resetOfferedModels(t)
 	if err := config.Init(filepath.Join(t.TempDir(), "config.json")); err != nil {
 		t.Fatalf("config.Init: %v", err)
 	}
@@ -593,6 +594,7 @@ func schemaContainsKey(value interface{}, key string) bool {
 }
 
 func TestParseModelAndThinking(t *testing.T) {
+	resetOfferedModels(t)
 	tests := []struct {
 		name         string
 		input        string
@@ -652,6 +654,7 @@ func TestParseModelAndThinking(t *testing.T) {
 }
 
 func TestParseModelAndThinkingDoesNotRewriteDatedSnapshotMinor(t *testing.T) {
+	resetOfferedModels(t)
 	// Guards the \b boundary in claudeVersionPattern: without it, the regex would
 	// rewrite "claude-sonnet-4-20250514" to "claude-sonnet-4.20250514" before the
 	// alias table could redirect it.

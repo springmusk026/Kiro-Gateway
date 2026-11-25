@@ -31,6 +31,14 @@ It corrects parts of the static analysis below:
   `thinking.type` the 5.5 models return no reasoning.
 - The CLI sent effort `medium` even when started with `--effort high`.
 
+- **Caching:** no request in a multi-turn CLI session (including a tool call and `--resume`) carries any cache
+  field. Kiro caches by prompt prefix on its own; follow-up turns are metered at about 12% of a cold turn. See
+  [architecture.md](architecture.md#caching-and-cost) for the measurements.
+- **Session title:** the first turn of each session makes an extra `agentMode: "session-title"` call on
+  `modelId: "simple-task"` that cost 0.0084 credits, more than the answer itself (0.0024).
+- **Refusal:** `metadataEvent {"stopReason":"CONTENT_FILTERED","stopDetails":{"refusal":{"category":…,
+  "explanation":…}}}` with no content, and no metering event.
+
 Kiro Gateway now sends the same body fields and mode for API-key accounts (`proxy/kiro.go`, `cliRuntimeBody`).
 
 ## 0. Sources, notation, and caveats

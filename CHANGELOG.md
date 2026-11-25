@@ -59,6 +59,15 @@
   thinking lets the model skip reasoning on trivial prompts, especially at low effort.
 - API-key accounts identify as Kiro CLI 3.6.0 (KAS 0.66.127), the current release, with the SDK user-agent
   flags (`m/N,E`) it sends on every call.
+- Claude Code's default model names (`claude-haiku-4-5-20251001`, `claude-sonnet-4-5-20250929`, …) work again on
+  accounts that only offer the newer generation: snapshot dates are dropped and a Claude model no account
+  offers is served by the newest offered model of the same family. Model mappings and disabled models are
+  respected.
+- Kiro refusals (`CONTENT_FILTERED`) are returned as `stop_reason: "refusal"` / `finish_reason:
+  "content_filter"` instead of being retried and failing with HTTP 500.
+- Lower cost for long conversations: when history must be truncated, old turns are dropped at fixed points so
+  Kiro's prompt cache keeps hitting (a cached prefix costs about 12% of an uncached one) instead of missing on
+  every turn.
 - An unknown model now returns 404 (`not_found_error` / `model_not_found`) instead of 529 "No available
   accounts", so clients stop retrying it.
 

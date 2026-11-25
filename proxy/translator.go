@@ -140,19 +140,23 @@ func ParseModelAndThinking(model string, thinkingSuffix string) (string, bool) {
 	// 3) Explicit aliases: dated snapshots, cross-family legacy IDs, non-Anthropic fallbacks.
 	for _, m := range modelAliases {
 		if strings.Contains(lower, m.key) {
-			return m.value, thinking
+			return upgradeClaudeFamily(m.value), thinking
 		}
 	}
 
-	// 4) Format normalization: claude-{family}-N-M → claude-{family}-N.M.
-	//    New versions (claude-opus-4-8, etc.) flow through here without code changes.
+	// 4) Format normalization: claude-{family}-N-M → claude-{family}-N.M, and
+	//    snapshot dates dropped. New versions (claude-opus-4-8, etc.) flow
+	//    through here without code changes.
 	if claudeVersionPattern.MatchString(lower) {
-		return claudeVersionPattern.ReplaceAllString(lower, "claude-$1-$2.$3"), thinking
+		lower = claudeVersionPattern.ReplaceAllString(lower, "claude-$1-$2.$3")
+		return upgradeClaudeFamily(stripClaudeDate(lower)), thinking
 	}
 
-	// 5) Already a valid Kiro model (dot form or bare family like claude-sonnet-4): pass through.
+	// 5) Already a Kiro model name (dot form or bare family like claude-sonnet-4).
+	//    6) Either way, a Claude model no account offers becomes the newest
+	//    offered model of its family (see model_family.go).
 	if strings.HasPrefix(lower, "claude-") {
-		return model, thinking
+		return upgradeClaudeFamily(stripClaudeDate(model)), thinking
 	}
 
 	return model, thinking
@@ -2156,6 +2160,61 @@ func sanitizeKiroHistory(history []KiroHistoryMessage, currentToolResultIDs map[
 	return trimLeadingAssistantHistory(cleaned)
 }
 
+// stableTruncationCut picks how many of the oldest conversation entries to
+// drop so the rest fits in limit, never keeping fewer than
+// minRecentHistoryTurns entries.
+//
+// Kiro caches the prompt by prefix (a cached prefix costs about 12% of an
+// uncached one, measured live). Keeping "the largest suffix that fits" moves
+// the cut on every new turn, so once a conversation reaches the budget every
+// turn would miss the cache. Instead the cut is taken at fixed points, measured
+// from the start of the conversation in steps of a quarter of the budget. Those
+// points do not move as the conversation grows, so the same cut, and the same
+// prefix, is reused until roughly another quarter of the budget has been added.
+func stableTruncationCut(entrySizes []int, baseSize, limit int) int {
+	n := len(entrySizes)
+	total := 0
+	for _, sz := range entrySizes {
+		total += sz
+	}
+	if baseSize+total <= limit {
+		return 0
+	}
+	step := limit / 4
+	if step <= 0 {
+		step = 1
+	}
+	dropped, i := 0, 0
+	for k := 1; ; k++ {
+		for i < n && dropped < k*step {
+			dropped += entrySizes[i]
+			i++
+		}
+		if n-i <= minRecentHistoryTurns {
+			break
+		}
+		if baseSize+total-dropped <= limit {
+			return i
+		}
+		if i >= n {
+			break
+		}
+	}
+	// The fixed points cannot satisfy both the budget and the minimum tail:
+	// keep the largest suffix that fits, but never fewer than
+	// minRecentHistoryTurns entries.
+	keepFrom := n
+	running := baseSize
+	for j := n - 1; j >= 0; j-- {
+		running += entrySizes[j]
+		if running > limit && n-j > minRecentHistoryTurns {
+			break
+		}
+		keepFrom = j
+	}
+	return keepFrom
+}
+
 // truncatePayloadToLimit drops the oldest conversation history turns until the
 // serialized payload fits within maxPayloadBytes. It preserves, in order:
 //   - the system priming pair (if present) at the front of history,
@@ -2207,18 +2266,7 @@ func truncatePayloadToLimit(payload *KiroPayload, hasPriming bool) {
 	payload.ConversationState.History = priming
 	baseSize := payloadByteSize(payload) + historyEntryByteSize(placeholderEntry)
 
-	// Keep the largest suffix of the conversation that fits, but never fewer than
-	// minRecentHistoryTurns entries (so recent context is preserved).
-	keepFrom := len(conversation)
-	running := baseSize
-	for i := len(conversation) - 1; i >= 0; i-- {
-		running += entrySizes[i]
-		kept := len(conversation) - i
-		if running > limit && kept > minRecentHistoryTurns {
-			break
-		}
-		keepFrom = i
-	}
+	keepFrom := stableTruncationCut(entrySizes, baseSize, limit)
 
 	tail := conversation[keepFrom:]
 	tail = dropLeadingAssistant(tail)

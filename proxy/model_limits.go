@@ -28,6 +28,7 @@ var modelInputTokenLimits sync.Map
 func recordModelTokenLimits(models []ModelInfo) {
 	recordModelReasoningControls(models)
 	recordModelPromptCaching(models)
+	recordOfferedModels(models)
 	for _, m := range models {
 		if m.TokenLimits == nil || m.TokenLimits.MaxInputTokens <= 0 {
 			continue

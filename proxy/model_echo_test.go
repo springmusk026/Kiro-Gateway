@@ -13,6 +13,7 @@ import (
 const echoTestModel = "claude-sonnet-4-5-20250929"
 
 func TestEchoModelAnthropic(t *testing.T) {
+	resetOfferedModels(t)
 	if got := MapModel(echoTestModel); got == echoTestModel {
 		t.Fatalf("test needs a model name that resolves to another id, got %q", got)
 	}

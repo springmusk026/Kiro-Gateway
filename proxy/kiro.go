@@ -910,7 +910,23 @@ func parseEventStreamTracked(body io.Reader, callback *KiroStreamCallback) (emit
 			// stopReason rides inside metadataEvent on the wire; there is no
 			// standalone stop reason event type. Its absence after content is
 			// how callers detect a truncated stream.
-			if reason := firstStringField(event, "stopReason", "stop_reason"); reason != "" && callback.OnStopReason != nil {
+			reason := firstStringField(event, "stopReason", "stop_reason")
+			// A refusal (seen live: stopReason CONTENT_FILTERED with
+			// stopDetails.refusal, and no content) is a complete answer, not
+			// a cut-off stream; retrying returns the same refusal.
+			if details, ok := event["stopDetails"].(map[string]interface{}); ok {
+				if refusal, ok := details["refusal"].(map[string]interface{}); ok {
+					if reason == "" {
+						reason = "REFUSAL"
+					}
+					logger.Infof("[KiroAPI] Model refused: category=%v", refusal["category"])
+				}
+			}
+			switch strings.ToUpper(reason) {
+			case "REFUSAL", "CONTENT_FILTERED", "CONTENT_FILTER", "GUARDRAIL_INTERVENED":
+				sawOutput = true
+			}
+			if reason != "" && callback.OnStopReason != nil {
 				callback.OnStopReason(reason)
 			}
 			// The runtime service reports its own prompt-cache accounting in

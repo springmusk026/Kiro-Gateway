@@ -109,13 +109,35 @@ are matched across chunk boundaries and cancel the upstream call when hit.
 
 ## Caching and cost
 
-- Kiro caches prompt prefixes **server-side, per account**; the official clients do not send cache markers.
-  `KIRO_CACHE_POINTS=1` adds experimental (unverified) cache points to `generateAssistantResponse` requests
-  (`proxy/cache_points.go`).
-  Conversation affinity and byte-stable prompts (deterministic ids, nothing time-based injected) are what
-  make those caches hit. Cache read/write tokens are recorded per request when Kiro reports them.
+- Kiro caches prompt prefixes **server-side and automatically**; the official CLI sends no cache markers.
+  Measured live on Kiro CLI 3.6 and the gateway (haiku-5.5, an 11.6k-token prompt):
+
+  | Request | Credits |
+  |---|---|
+  | New prompt (cold) | 0.0114 |
+  | Next turn of the same conversation | 0.0014 |
+  | Different conversation id, same prompt prefix | 0.0014 |
+  | Same prompt again after 6 minutes idle | 0.0114 |
+
+  So a cached prefix costs about **12%** of an uncached one, the cache is keyed by **content, not
+  conversation id**, and it lasts about **5 minutes** without use. What keeps it hitting:
+  - **Byte-stable prompts.** Nothing time-based or random is injected; ids are deterministic.
+  - **Stable truncation.** When a conversation outgrows the payload budget, old turns are dropped at fixed
+    points (quarter-budget steps from the start), so the cut and the prefix stay the same for many turns
+    instead of moving every turn (`stableTruncationCut`).
+  - **Conversation affinity.** Turns stay on one account, since the cache is presumably per account.
+
+  `KIRO_CACHE_POINTS=1` adds experimental cache points to `generateAssistantResponse` requests
+  (`proxy/cache_points.go`). Caching works without them, and the official client does not send them, so
+  leave it off.
 - Billing is in credits per request, scaled by the model's multiplier (shown on the Models page).
-- Local answers cost nothing upstream: `count_tokens`, Claude Code's start-up probe, model lists.
+- Local answers cost nothing upstream: `count_tokens`, Claude Code's start-up probe, model lists. The
+  gateway also skips the session-title request Kiro CLI makes at the start of every session, which costs
+  more than a short answer (0.0084 credits, measured).
+- Claude Code's default model names (`claude-haiku-4-5-…`, `claude-sonnet-4-5-…`) are mapped to the newest
+  offered model of the same family when the account doesn't offer them, so its many small background calls
+  run on Haiku (0.06×) instead of failing. Explicit model mappings take precedence.
+- Refusals (`stopReason: CONTENT_FILTERED`) are final answers and are never retried.
 - Large tool results are compressed before being sent (`KIRO_GO_RTK`).
 
 ## Request recording

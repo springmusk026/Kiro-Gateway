@@ -921,3 +921,27 @@ func kiroStreamTestResponse(body io.Reader) *http.Response {
 		Header:     make(http.Header),
 	}
 }
+
+// Captured live: a refusal is a metadataEvent with stopDetails.refusal and no
+// stopReason. It must surface as a stop reason, not look like a cut-off stream.
+func TestParseEventStreamRefusalStopDetails(t *testing.T) {
+	var stream bytes.Buffer
+	stream.Write(awsEventStreamFrame(t, "metadataEvent", map[string]interface{}{
+		"stopDetails": map[string]interface{}{"refusal": map[string]interface{}{
+			"category": "BIO", "explanation": "The selected model cannot continue this conversation."}},
+		"stopReason": "CONTENT_FILTERED",
+	}))
+	var got string
+	err := parseEventStream(bytes.NewReader(stream.Bytes()), &KiroStreamCallback{
+		OnStopReason: func(r string) { got = r },
+	})
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if got != "CONTENT_FILTERED" {
+		t.Fatalf("stop reason = %q, want CONTENT_FILTERED", got)
+	}
+	if mapClaudeStopReason(got, 0) != "refusal" {
+		t.Fatalf("anthropic stop_reason = %q", mapClaudeStopReason(got, 0))
+	}
+}

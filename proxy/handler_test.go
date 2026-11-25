@@ -258,6 +258,7 @@ func TestValidateClaudeRequestShapeRejectsAssistantPrefill(t *testing.T) {
 }
 
 func TestResolveClaudeThinkingModeHonorsRequestThinking(t *testing.T) {
+	resetOfferedModels(t)
 	tests := []struct {
 		name         string
 		model        string

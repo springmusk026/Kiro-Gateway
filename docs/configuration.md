@@ -41,7 +41,7 @@ The listen host and port are console settings (`host`, `port`; default `0.0.0.0:
 | `KIRO_SESSION_AFFINITY` | `1` additionally pins each API key to the account that last served it. | off |
 | `KIRO_LOCAL_PROBES` | `0` forwards Claude Code's start-up quota probe upstream instead of answering it locally. | on |
 | `KIRO_USAGE_THRESHOLD` | Share of an account's usage limit (0–1) from which routing uses it only as a last resort. Overrides the console setting. | `0.97` |
-| `KIRO_CACHE_POINTS` | `1` adds experimental prompt-cache points to `generateAssistantResponse` requests (see [Prompt-cache points](#prompt-cache-points-experimental)). Unverified against Kiro. | off |
+| `KIRO_CACHE_POINTS` | `1` adds experimental prompt-cache points to `generateAssistantResponse` requests (see [Prompt-cache points](#prompt-cache-points-experimental)). Not needed: Kiro caches prompt prefixes automatically (see [architecture.md](architecture.md#caching-and-cost)). | off |
 
 ### Requests and payloads
 
