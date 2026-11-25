@@ -166,11 +166,18 @@ type ModelMapping struct {
 type ApiKeyEntry struct {
 	ID         string `json:"id"`                 // Unique identifier (UUID)
 	Name       string `json:"name,omitempty"`     // Human-readable label
-	Key        string `json:"key"`                // The actual key value clients send
+	Key        string `json:"key,omitempty"`      // Plaintext key: transient only, never stored (see KeyHash)
 	Enabled    bool   `json:"enabled"`            // Whether this key may authenticate
 	Migrated   bool   `json:"migrated,omitempty"` // True if migrated from legacy single ApiKey field
 	CreatedAt  int64  `json:"createdAt"`          // Creation timestamp (Unix seconds)
 	LastUsedAt int64  `json:"lastUsedAt,omitempty"`
+
+	// ---- Hashed key storage (show-once keys, see apikeys.go) ----
+	// Stored entries carry only the hash and a display hint; Key is set only
+	// for a new key before it is stored or a pre-hashing config being migrated.
+	KeyHash string `json:"keyHash,omitempty"` // hex SHA-256 of the key value
+	KeyHint string `json:"keyHint,omitempty"` // display hint, e.g. "sk-ab12…9f3c"
+	// ---- end hashed key storage ----
 
 	// Limits (0 = unlimited)
 	TokenLimit  int64   `json:"tokenLimit,omitempty"`
@@ -376,9 +383,16 @@ func Load() error {
 			Migrated:  true,
 			CreatedAt: time.Now().Unix(),
 		})
+	}
+	// Migration: API keys are stored as SHA-256 hashes only. Plaintext (or
+	// encrypted, already decrypted by the store) key values are hashed and the
+	// legacy single-key field is cleared, then the result is saved so no key
+	// value remains at rest.
+	if migrateApiKeysLocked() {
 		if err := saveLocked(); err != nil {
 			return err
 		}
+		fmt.Fprintln(os.Stderr, "config: API keys are now stored as hashes; key values can no longer be displayed")
 	}
 
 	// Migration: per-account AllowOverage → OverageStatus.
@@ -1023,7 +1037,7 @@ func UpdateSettings(apiKey string, requireApiKey bool, password string) error {
 			return err
 		}
 	}
-	cfg.ApiKey = apiKey
+	setLegacyApiKeyLocked(apiKey)
 	cfg.RequireApiKey = requireApiKey
 	if password != "" {
 		cfg.Password = password
@@ -1040,7 +1054,7 @@ func UpdateSettingsPatch(apiKey *string, requireApiKey *bool, password string) e
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
 	if apiKey != nil {
-		cfg.ApiKey = *apiKey
+		setLegacyApiKeyLocked(*apiKey)
 	}
 	if requireApiKey != nil {
 		cfg.RequireApiKey = *requireApiKey

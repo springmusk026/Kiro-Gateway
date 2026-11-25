@@ -107,6 +107,8 @@ export interface ApiKeyInput {
   rpmLimit?: number
   expiresAt?: number
   dailyCreditLimit?: number
+  /** Replace the key with a new random one; the response carries it once. */
+  regenerate?: boolean
 }
 
 export function useApiKeys() {
@@ -128,7 +130,7 @@ export function useUpdateApiKey() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: ApiKeyInput }) =>
-      put<{ success: true; apiKey: ApiKeyView }>(`/api-keys/${encodeURIComponent(id)}`, patch),
+      put<{ success: true; apiKey: ApiKeyView; key?: string }>(`/api-keys/${encodeURIComponent(id)}`, patch),
     onMutate: async ({ id, patch }) => {
       await qc.cancelQueries({ queryKey: qk.apiKeys })
       const prev = qc.getQueryData<ApiKeyView[]>(qk.apiKeys)

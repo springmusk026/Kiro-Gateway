@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { KeyRound, MoreHorizontal, Pencil, Plus, RotateCcw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
+import { KeyRound, MoreHorizontal, Pencil, Plus, RefreshCw, RotateCcw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react'
 import { TablePagination } from '@/components/app/table-pagination'
 import { usePagination } from '@/hooks/use-pagination'
 import { useState } from 'react'
@@ -59,7 +59,7 @@ function UsageMeter({ label, used, limit, format }: { label: string; used: numbe
   )
 }
 
-function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
+function KeyRow({ k, onEdit, onRegenerated }: { k: ApiKeyView; onEdit: () => void; onRegenerated: (plaintext: string) => void }) {
   const { t, lang } = useI18n()
   const confirm = useConfirm()
   const update = useUpdateApiKey()
@@ -109,7 +109,7 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
             )}
             <RestrictionBadges k={k} />
           </div>
-          <code className="mt-0.5 block truncate font-mono text-[12.5px] text-muted-foreground">{k.keyMasked}</code>
+          <code className="mt-0.5 block truncate font-mono text-[12.5px] text-muted-foreground">{k.keyHint}</code>
           <p className="mt-1 text-xs text-muted-foreground">
             <Tooltip>
               <TooltipTrigger className="cursor-default">{t('keys.createdAgo', { when: timeAgo(k.createdAt, lang) })}</TooltipTrigger>
@@ -177,6 +177,25 @@ function KeyRow({ k, onEdit }: { k: ApiKeyView; onEdit: () => void }) {
             >
               <RotateCcw />
               {t('keys.resetUsage')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={async () => {
+                if (
+                  await confirm({
+                    title: t('keys.regenerateTitle', { name }),
+                    description: t('keys.regenerateBody'),
+                    confirmLabel: t('keys.regenerate'),
+                    destructive: true,
+                  })
+                )
+                  act(async () => {
+                    const r = await update.mutateAsync({ id: k.id, patch: { regenerate: true } })
+                    if (r.key) onRegenerated(r.key)
+                  }, t('keys.regenerated'))
+              }}
+            >
+              <RefreshCw />
+              {t('keys.regenerate')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -289,7 +308,15 @@ export function ApiKeysCard({ onKeyCreated }: { onKeyCreated: (plaintext: string
         <>
           <ul className="stagger divide-y">
             {pg.pageItems.map((k) => (
-              <KeyRow key={k.id} k={k} onEdit={() => setDialog({ open: true, editing: k })} />
+              <KeyRow
+                key={k.id}
+                k={k}
+                onEdit={() => setDialog({ open: true, editing: k })}
+                onRegenerated={(plain) => {
+                  setRevealed(plain)
+                  onKeyCreated(plain)
+                }}
+              />
             ))}
           </ul>
           <TablePagination page={pg.page} pageCount={pg.pageCount} pageSize={pg.pageSize} total={pg.total} onPage={pg.setPage} onPageSize={pg.setPageSize} />

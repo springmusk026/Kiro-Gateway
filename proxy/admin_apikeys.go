@@ -4,15 +4,16 @@ import (
 	"encoding/json"
 	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
+	"strings"
 	"time"
 )
 
-// apiKeyView is the response payload for listing/inspecting API keys. The Key field
-// is masked so admins can identify entries without exposing the secret.
+// apiKeyView is the response payload for listing/inspecting API keys. Keys are
+// stored hashed, so a view only carries a short hint (prefix and last 4).
 type apiKeyView struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name,omitempty"`
-	KeyMasked   string  `json:"keyMasked"`
+	KeyHint     string  `json:"keyHint"`
 	Enabled     bool    `json:"enabled"`
 	Migrated    bool    `json:"migrated,omitempty"`
 	CreatedAt   int64   `json:"createdAt"`
@@ -37,7 +38,7 @@ func toApiKeyView(e config.ApiKeyEntry) apiKeyView {
 	return apiKeyView{
 		ID:               e.ID,
 		Name:             e.Name,
-		KeyMasked:        config.MaskApiKey(e.Key),
+		KeyHint:          e.KeyHint,
 		Enabled:          e.Enabled,
 		Migrated:         e.Migrated,
 		CreatedAt:        e.CreatedAt,
@@ -129,11 +130,12 @@ func (h *Handler) apiCreateApiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the cleartext key exactly once on creation so the operator can copy it.
+	// Return the cleartext key exactly once on creation so the operator can copy
+	// it; only its hash is stored.
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"id":      entry.ID,
-		"key":     entry.Key,
+		"key":     strings.TrimSpace(keyValue),
 		"apiKey":  toApiKeyView(entry),
 	})
 }
@@ -151,6 +153,9 @@ type apiKeyUpdateRequest struct {
 	ExpiresAt     *int64    `json:"expiresAt,omitempty"`
 
 	DailyCreditLimit *float64 `json:"dailyCreditLimit,omitempty"`
+
+	// Regenerate replaces the key with a new random one, returned once.
+	Regenerate bool `json:"regenerate,omitempty"`
 }
 
 func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id string) {
@@ -174,6 +179,9 @@ func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id str
 	}
 	if req.Key != nil {
 		patch.Key = *req.Key
+	}
+	if req.Regenerate {
+		patch.Key = config.GenerateApiKeyValue()
 	}
 	if req.Enabled != nil {
 		patch.Enabled = *req.Enabled
@@ -214,10 +222,14 @@ func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id str
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to reload entry"})
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"success": true,
 		"apiKey":  toApiKeyView(*updated),
-	})
+	}
+	if req.Regenerate {
+		resp["key"] = patch.Key // shown once
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) apiDeleteApiKey(w http.ResponseWriter, r *http.Request, id string) {

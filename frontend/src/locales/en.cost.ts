@@ -55,7 +55,7 @@ export const costEn = {
   'cost.noAlerts': 'Nothing over 80% right now.',
 
   // Banner
-  'cost.bannerTitle': 'Budget alerts',
+  'cost.bannerTitle': 'Alerts',
   'cost.bannerCritical': '{n} limit(s) reached',
   'cost.bannerWarning': '{n} limit(s) close to their cap',
   'cost.manage': 'Manage budgets',

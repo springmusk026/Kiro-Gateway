@@ -215,7 +215,8 @@ export interface CredentialImport {
 export interface ApiKeyView {
   id: string
   name?: string
-  keyMasked: string
+  /** Display hint (prefix and last 4); the key itself is only shown once. */
+  keyHint: string
   enabled: boolean
   migrated?: boolean
   createdAt: number

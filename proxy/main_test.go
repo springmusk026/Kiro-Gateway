@@ -19,5 +19,6 @@ func TestMain(m *testing.M) {
 	}
 	// Adding fake accounts in tests must never call the real Kiro model API.
 	modelPrefetchDisabled = true
+	featureConfigPrefetchDisabled = true
 	os.Exit(m.Run())
 }

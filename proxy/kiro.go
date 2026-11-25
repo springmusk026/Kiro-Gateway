@@ -428,6 +428,9 @@ func CallKiroAPI(account *config.Account, payload *KiroPayload, callback *KiroSt
 
 // CallKiroAPIContext calls Kiro while respecting cancellation from the client request.
 func CallKiroAPIContext(ctx context.Context, account *config.Account, payload *KiroPayload, callback *KiroStreamCallback) error {
+	// API-key accounts fetch the CLI's feature configuration like a CLI
+	// session does; asynchronous and at most every 15 minutes per account.
+	prefetchFeatureConfiguration(account)
 	return callKiroWithProtocolSelection(ctx, account, payload, callback)
 }
 

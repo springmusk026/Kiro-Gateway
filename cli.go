@@ -141,11 +141,11 @@ func runCommand(cmd string, args []string, configPath string) int {
 		}
 		switch {
 		case *decrypt:
-			fmt.Printf("Exported %d accounts and %d API keys to %s with credentials in PLAINTEXT — keep it private.\n", len(c.Accounts), len(c.ApiKeys), *out)
+			fmt.Printf("Exported %d accounts and %d API key hashes to %s with credentials in PLAINTEXT — keep it private.\n", len(c.Accounts), len(c.ApiKeys), *out)
 		case config.EncryptionEnabled():
-			fmt.Printf("Exported %d accounts and %d API keys to %s (credentials encrypted; loading it needs the same %s).\n", len(c.Accounts), len(c.ApiKeys), *out, config.EncryptionKeyEnv)
+			fmt.Printf("Exported %d accounts and %d API key hashes to %s (credentials encrypted; loading it needs the same %s).\n", len(c.Accounts), len(c.ApiKeys), *out, config.EncryptionKeyEnv)
 		default:
-			fmt.Printf("Exported %d accounts and %d API keys to %s (contains secrets — keep it private).\n", len(c.Accounts), len(c.ApiKeys), *out)
+			fmt.Printf("Exported %d accounts and %d API key hashes to %s (contains secrets — keep it private).\n", len(c.Accounts), len(c.ApiKeys), *out)
 		}
 		return 0
 	case "help", "-h", "--help":
@@ -155,7 +155,8 @@ func runCommand(cmd string, args []string, configPath string) int {
                                 copy config.json and stored responses into PostgreSQL
   kiro-gateway export  [--from postgres://…] [--out file.json] [--decrypt]
                                 write the database configuration back to a JSON file
-                                (encrypted credentials stay encrypted unless --decrypt)
+                                (encrypted credentials stay encrypted unless --decrypt;
+                                 API keys are exported as hashes, never as key values)
 
 Environment: CONFIG_PATH (default data/config.json), DATABASE_URL (enables PostgreSQL),
 KIRO_ENCRYPTION_KEY (encrypts credentials at rest).`)

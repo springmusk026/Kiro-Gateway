@@ -62,7 +62,7 @@ func TestConfigStoreRoundTripAndDiff(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatal(err)
 	}
-	if len(got.Accounts) != 2 || got.Accounts[0].ID != "a1" || got.Accounts[1].ID != "a2" || got.ApiKeys[0].Key != "sk-1" ||
+	if len(got.Accounts) != 2 || got.Accounts[0].ID != "a1" || got.Accounts[1].ID != "a2" || got.ApiKeys[0].Key != "" || got.ApiKeys[0].KeyHash != config.HashApiKey("sk-1") ||
 		got.Password != "pw-12345678" || got.ModelMappings[0].Target != "claude-haiku-4.5" || got.Accounts[0].RefreshToken != "r1" {
 		t.Fatalf("round trip mismatch: %+v", got)
 	}

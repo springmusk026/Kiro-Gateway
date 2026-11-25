@@ -19,7 +19,9 @@ Security fixes are made on the latest release and the `main` branch. Please upgr
 Kiro Gateway holds credentials for your Kiro accounts. When you run it:
 
 - **Require API keys** (Settings → Security → *Require an API key*) before the gateway is reachable from other
-  machines, and give each person or tool its own key with sensible limits.
+  machines, and give each person or tool its own key with sensible limits. Keys are stored only as SHA-256
+  hashes and shown once when created or regenerated; hand them out over a private channel and regenerate
+  a key that may have leaked.
 - **Use HTTPS** through a reverse proxy, and forward `X-Forwarded-Proto` so admin cookies are marked secure.
 - **Set a strong admin password** (`ADMIN_PASSWORD`). Admin sign-in uses HttpOnly, SameSite=Strict session
   cookies and is rate-limited.

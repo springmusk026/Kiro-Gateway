@@ -140,6 +140,18 @@ each account's credits left and the pool's credits remaining this period.
   (`GET /admin/api/alerts`). With `alertWebhookURL` set, each alert level is posted once per budget day as
   JSON `{"text", "kind", "level", "value", "limit"}` (`text` works for Slack; `content` repeats it for
   Discord), from a background loop with a 10 s timeout.
+- **Account health alerts** use the same banner, endpoint, webhook and once-per-day-and-level rule (`subject`
+  is the account id). They are evaluated every 30 s from in-memory state, with no upstream calls:
+
+  | `kind` | Level | When |
+  |---|---|---|
+  | `account_token_expiring` | warning; critical once expired | an OAuth token expires within 24 h and the last refresh attempt failed (or the account has no refresh token) |
+  | `account_refresh_failing` | critical | 3 or more token refreshes in a row failed |
+  | `account_banned` | critical | the account's ban status is `BANNED` / `SUSPENDED` |
+  | `account_cooling` | warning | the account is cooling down or parked for more than another hour |
+  | `accounts_unavailable` | critical | no account can take a request (all disabled, banned, out of quota or cooling down) |
+
+  Refresh outcomes are counted since start-up, so a restart clears the failure streak.
 
 ### Prompt-cache points (experimental)
 
@@ -207,6 +219,21 @@ are batch-inserted by a background writer; if the database is slow or down, reco
 
 ## Security
 
+### API keys are stored hashed
+
+Kiro Gateway stores only the SHA-256 hash of each API key and a short hint for display (the first 7 and
+last 4 characters, `sk-ab12…9f3c`; shorter custom keys show only their last characters). The full key is
+returned once — in the response to `POST /admin/api/api-keys` and to `PUT /admin/api/api-keys/{id}` with
+`{"regenerate": true}` — and the console shows it in a one-time dialog. It cannot be displayed again; if it
+is lost, regenerate it (the old key stops working, limits and usage are kept). Custom keys you type in are
+hashed the same way. Requests are authenticated by hashing the presented key and looking the hash up, so
+the time taken does not depend on which key matched.
+
+Key views in the admin API carry `keyHint` instead of the key. Upgrading hashes existing keys on first
+start (see [upgrading.md](upgrading.md#api-keys-are-hashed)). The deprecated single `apiKey` setting is
+converted into a hashed key entry. Because only the hash is stored, `KIRO_ENCRYPTION_KEY` does not apply to
+API keys.
+
 ### API key restrictions
 
 Each API key (API & Keys → create or edit a key → *Access restrictions*) can be limited further. All checks
@@ -231,7 +258,7 @@ echo "KIRO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env   # and pass it to
 ```
 
 With the key set, account access and refresh tokens, OIDC client secrets, Kiro API keys, per-account and
-global proxy URLs (they may contain credentials), API key values and the admin password are encrypted with
+global proxy URLs (they may contain credentials) and the admin password are encrypted with
 AES-256-GCM wherever the configuration is stored — `config.json` or the PostgreSQL rows — as
 `enc:v1:<base64(nonce|ciphertext)>`. Decryption happens once at load; the running gateway works on the
 in-memory copy, so lookups cost nothing extra.
@@ -335,5 +362,7 @@ kiro-gateway help
 ```
 
 `export` copies encrypted credentials as they are (and encrypts any remaining plaintext when
-`KIRO_ENCRYPTION_KEY` is set); `--decrypt` writes them in plaintext and needs the key. There is no backup
+`KIRO_ENCRYPTION_KEY` is set); `--decrypt` writes them in plaintext and needs the key. API keys are exported
+as their hashes and hints (`keyHash`, `keyHint`), never as key values, with or without `--decrypt`; a
+configuration loaded from such an export keeps accepting the same keys. There is no backup
 subcommand: the application image has no `pg_dump`; use the compose `backup` service or `pg_dump` directly.

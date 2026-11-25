@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,8 +40,14 @@ func TestApiKeyMigrationFromLegacyField(t *testing.T) {
 		t.Fatalf("expected one migrated key, got %d", len(keys))
 	}
 	migrated := keys[0]
-	if migrated.Key != "legacy-secret" {
-		t.Fatalf("expected migrated key value, got %q", migrated.Key)
+	if migrated.Key != "" || migrated.KeyHash != HashApiKey("legacy-secret") {
+		t.Fatalf("expected migrated key to be stored hashed, got %+v", migrated)
+	}
+	if FindApiKeyByValue("legacy-secret") == nil {
+		t.Fatal("migrated legacy key does not authenticate")
+	}
+	if data, _ := os.ReadFile(cfgFile); strings.Contains(string(data), "legacy-secret") {
+		t.Fatalf("legacy key value still stored:\n%s", data)
 	}
 	if !migrated.Migrated {
 		t.Fatalf("expected migrated flag to be true")
@@ -146,8 +153,8 @@ func TestApiKeyCRUD(t *testing.T) {
 	if got.TokenLimit != 2000 || got.CreditLimit != 5.5 {
 		t.Fatalf("expected limits to be updated, got token=%d credit=%v", got.TokenLimit, got.CreditLimit)
 	}
-	if got.Key != "sk-alpha" {
-		t.Fatalf("expected key value to remain unchanged when patch.Key is empty, got %q", got.Key)
+	if got.Key != "" || got.KeyHash != HashApiKey("sk-alpha") {
+		t.Fatalf("expected key hash to remain unchanged when patch.Key is empty, got %+v", got)
 	}
 
 	if found := FindApiKeyByValue("sk-alpha"); found == nil || found.ID != created.ID {
@@ -267,18 +274,20 @@ func TestApiKeyOverLimit(t *testing.T) {
 	}
 }
 
-func TestMaskApiKey(t *testing.T) {
+func TestApiKeyHint(t *testing.T) {
 	tests := []struct {
 		in   string
 		want string
 	}{
 		{"", ""},
-		{"short", "short"},
-		{"sk-1234567890", "sk-123****7890"},
+		{"short", "…"},
+		{"custom-1", "…-1"},
+		{"sk-1234567890", "…7890"},
+		{"sk-ab12cdef0123456789abcdef9f3c", "sk-ab12…9f3c"},
 	}
 	for _, tc := range tests {
-		if got := MaskApiKey(tc.in); got != tc.want {
-			t.Fatalf("MaskApiKey(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := ApiKeyHint(tc.in); got != tc.want {
+			t.Fatalf("ApiKeyHint(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

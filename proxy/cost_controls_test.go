@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/springmusk026/Kiro-Gateway/config"
+	accountpool "github.com/springmusk026/Kiro-Gateway/pool"
 )
 
 // ---- Model fallback ----
@@ -229,7 +230,7 @@ func TestPerKeyDailyBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, _ := config.AddApiKey(config.ApiKeyEntry{Name: "other", Key: "sk-budget-other", Enabled: true})
+	_, _ = config.AddApiKey(config.ApiKeyEntry{Name: "other", Key: "sk-budget-other", Enabled: true})
 	if err := config.UpdateSettingsPatch(nil, boolPtr(true), ""); err != nil {
 		t.Fatal(err)
 	}
@@ -242,10 +243,10 @@ func TestPerKeyDailyBudget(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	if rec := send(key.Key); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "API key's daily credit budget") {
+	if rec := send("sk-budget-test"); rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "API key's daily credit budget") {
 		t.Fatalf("capped key: status %d body %s", rec.Code, rec.Body.String())
 	}
-	if rec := send(other.Key); rec.Code == http.StatusTooManyRequests {
+	if rec := send("sk-budget-other"); rec.Code == http.StatusTooManyRequests {
 		t.Fatalf("uncapped key must not be rejected: %s", rec.Body.String())
 	}
 }
@@ -255,6 +256,9 @@ func TestPerKeyDailyBudget(t *testing.T) {
 func TestAlertsPostOncePerThresholdPerDay(t *testing.T) {
 	h, cleanup := setupResponsesTestHandler(t)
 	defer cleanup()
+	// A fresh pool: the shared one may carry cooldowns from other tests,
+	// which would raise account alerts here.
+	h.pool = accountpool.NewTestPool(config.GetEnabledAccounts())
 	var mu sync.Mutex
 	var got []map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

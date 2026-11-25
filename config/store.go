@@ -219,18 +219,24 @@ func MergeMissing(src *Config) (accounts, keys int, err error) {
 	haveKey := make(map[string]bool, 2*len(cfg.ApiKeys))
 	for _, k := range cfg.ApiKeys {
 		haveKey["id:"+k.ID] = true
-		haveKey["key:"+k.Key] = true
+		haveKey["key:"+ApiKeyDigest(k)] = true
 	}
 	for _, k := range src.ApiKeys {
-		if k.Key == "" || haveKey["id:"+k.ID] || haveKey["key:"+k.Key] {
+		digest := ApiKeyDigest(k)
+		if digest == "" || haveKey["id:"+k.ID] || haveKey["key:"+digest] {
 			continue
 		}
+		hashApiKeyEntry(&k)
+		if k.ID == "" {
+			k.ID = newUUID()
+		}
 		cfg.ApiKeys = append(cfg.ApiKeys, k)
-		haveKey["id:"+k.ID], haveKey["key:"+k.Key] = true, true
+		haveKey["id:"+k.ID], haveKey["key:"+digest] = true, true
 		keys++
 	}
 	if accounts == 0 && keys == 0 {
 		return 0, 0, nil
 	}
+	reindexApiKeysLocked()
 	return accounts, keys, Save()
 }
