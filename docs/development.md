@@ -77,5 +77,27 @@ gofmt -l $(git ls-files '*.go'); go vet ./... && go test ./... && go test -race 
 ## Releases
 
 Pushing to `main` builds and publishes `ghcr.io/springmusk026/kiro-gateway:latest` (amd64 + arm64) through
-`.github/workflows/docker.yml`. Tag `vX.Y.Z` to publish versioned images; bump `config.Version`,
-`version.json` and `CHANGELOG.md` together.
+`.github/workflows/docker.yml`, which also publishes versioned images for each tag.
+
+To release version X.Y.Z:
+
+1. Bump `config.Version` and `version.json`, and rename the `## Unreleased` section of `CHANGELOG.md` to
+   `## X.Y.Z — <title>` (keep an empty `## Unreleased` above it). Commit.
+2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+`.github/workflows/release.yml` then:
+
+- takes the release notes from the `## X.Y.Z` section of `CHANGELOG.md` and **fails** if that section is
+  missing or empty (fix the changelog, delete the tag and push it again);
+- builds the console (`npm run build:only`) and the binaries with `CGO_ENABLED=0` for linux/amd64,
+  linux/arm64, darwin/arm64 and windows/amd64;
+- publishes a GitHub Release (a prerelease for tags such as `v2.2.0-rc.1`) with one archive per platform
+  (`.tar.gz`, `.zip` for Windows) and `SHA256SUMS.txt`.
+
+Each archive holds the binary, the console in `web/`, `README.md`, `LICENSE` and `CHANGELOG.md`. The binary
+serves the console from `./web` relative to its working directory (the console is not embedded, so the
+Docker image and source builds behave as before): extract the archive and start the binary from that
+folder, e.g. `cd kiro-gateway-vX.Y.Z-linux-amd64 && ADMIN_PASSWORD=… ./kiro-gateway`.
+
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests for Go modules, the console's npm
+packages and GitHub Actions, with minor and patch updates grouped into one pull request per ecosystem.

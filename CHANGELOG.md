@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Project
+- Release automation: tagging `vX.Y.Z` publishes a GitHub Release with the matching CHANGELOG section as notes
+  and archives (binary + `web/` console + README, LICENSE) for linux/amd64, linux/arm64, darwin/arm64 and
+  windows/amd64. Dependabot keeps Go modules, npm packages and GitHub Actions up to date weekly.
+
 ### Upstream
 - Kiro API-key accounts make the Kiro CLI's control-plane calls (from the wire capture): `ListAvailableModels`
   and `GetUsageLimits` as AWS JSON on `management.{region}.kiro.dev`, and `GetFeatureConfiguration` on the
