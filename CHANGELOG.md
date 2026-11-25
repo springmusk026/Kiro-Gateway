@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Console
+- Request logs → **Conversations**: requests grouped by their Kiro conversation id, with a timeline per
+  conversation; a request's detail links to its conversation.
+- **Open in Playground** from a request with a captured body (model, system prompt and text messages).
+- **CSV export** of the filtered request log (server-side, up to 100,000 rows, no bodies) and of the
+  Analytics breakdown, with spreadsheet formula injection guarded.
+- **Key usage page** at `/admin/usage` for key holders (no admin sign-in), linked from API & Keys.
+
+### API
+- `GET /v1/usage`: usage and limits of the API key that sends it.
+- `GET /admin/api/conversations`, `GET /admin/api/conversations/{id}`, `GET /admin/api/requests/export.csv`.
+
+### Storage
+- Request logs record the upstream conversation id (`conversation_id`, added on start with indexes on
+  `(conversation_id, ts)` and `(api_key_id, ts)`; no numbered migration).
+
 ## 2.1.0 — Kiro Gateway
 
 The project is now **Kiro Gateway** ([springmusk026/Kiro-Gateway](https://github.com/springmusk026/Kiro-Gateway)).

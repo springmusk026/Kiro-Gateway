@@ -119,6 +119,12 @@ curl http://localhost:8080/v1/chat/completions \
   -d '{"model":"claude-sonnet-4.5","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
+## Checking a key's usage
+
+Anyone with a key can see its usage, limits, a 14-day chart and the last 20 requests at
+`http://<gateway>/admin/usage` — no admin password needed (API & Keys → *Share with key holders* links to it).
+Scripts can call `GET /v1/usage` with the key; see [api.md](api.md#key-usage).
+
 ## Legacy thinking suffix
 
 Clients that can't send thinking parameters can append the suffix (default `-thinking`) to the model name,

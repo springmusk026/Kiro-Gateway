@@ -204,6 +204,18 @@ are batch-inserted by a background writer; if the database is slow or down, reco
   competes with the request recorder.
 - The **Request logs** page filters by status, endpoint, model, account, key and free text, and shows each
   request's timing, routing, usage and bodies. Without a database the page shows the in-memory log.
+- **Conversations**: each request records the conversation id it was sent to Kiro under (`sess_…`, stable
+  across the turns of one conversation; requests that fail before reaching Kiro have none). Request logs →
+  Conversations lists one row per conversation (requests, models, accounts, keys, tokens, credits, failures)
+  and opens its timeline (`GET /admin/api/conversations`, `GET /admin/api/conversations/{id}`). Rows recorded
+  before this version have no conversation id.
+- **CSV export**: Request logs → CSV downloads the rows matching the current filters
+  (`GET /admin/api/requests/export.csv` with the same query parameters as `/admin/api/requests`), newest
+  first, at most 100,000 rows and never bodies. Analytics → Breakdown → CSV saves the breakdown shown.
+  Text cells that start with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'` so spreadsheets
+  don't run them as formulas.
+- **Open in Playground**: when a request's body was captured, its detail view can open the conversation in
+  the Playground (model, system prompt and text messages; images, documents and tool calls are left out).
 
 ## Security
 
