@@ -197,6 +197,13 @@ type ApiKeyEntry struct {
 	AllowedModels []string `json:"allowedModels,omitempty"`
 	RPMLimit      int      `json:"rpmLimit,omitempty"`
 	ExpiresAt     int64    `json:"expiresAt,omitempty"`
+
+	// ---- Routing rules (see apikey_routing.go) ----
+	// AccountIDs pins the key to these accounts (empty = every account).
+	// ModelMap maps a client model name (case-insensitive) to the model used.
+	AccountIDs []string          `json:"accountIds,omitempty"`
+	ModelMap   map[string]string `json:"modelMap,omitempty"`
+	// ---- end routing rules ----
 }
 
 // Config represents the global application configuration.

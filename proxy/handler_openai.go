@@ -39,6 +39,7 @@ func (h *Handler) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	}
 	// Responses echo the client's model name; routing uses the resolved id.
 	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
+	req.Model = mapKeyModel(r.Context(), req.Model) // per-key routing rule
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()

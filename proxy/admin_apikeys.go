@@ -32,6 +32,10 @@ type apiKeyView struct {
 	RPMLimit      int      `json:"rpmLimit,omitempty"`
 	ExpiresAt     int64    `json:"expiresAt,omitempty"`
 	Expired       bool     `json:"expired,omitempty"`
+
+	// Routing rules (apikey_routing.go).
+	AccountIDs []string          `json:"accountIds,omitempty"`
+	ModelMap   map[string]string `json:"modelMap,omitempty"`
 }
 
 func toApiKeyView(e config.ApiKeyEntry) apiKeyView {
@@ -54,6 +58,8 @@ func toApiKeyView(e config.ApiKeyEntry) apiKeyView {
 		RPMLimit:         e.RPMLimit,
 		ExpiresAt:        e.ExpiresAt,
 		Expired:          config.ApiKeyExpired(e, time.Now()),
+		AccountIDs:       e.AccountIDs,
+		ModelMap:         e.ModelMap,
 	}
 }
 
@@ -87,6 +93,9 @@ type apiKeyCreateRequest struct {
 	AllowedModels []string `json:"allowedModels,omitempty"`
 	RPMLimit      int      `json:"rpmLimit,omitempty"`
 	ExpiresAt     int64    `json:"expiresAt,omitempty"`
+
+	AccountIDs []string          `json:"accountIds,omitempty"`
+	ModelMap   map[string]string `json:"modelMap,omitempty"`
 }
 
 func (h *Handler) apiCreateApiKey(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +126,13 @@ func (h *Handler) apiCreateApiKey(w http.ResponseWriter, r *http.Request) {
 		RPMLimit:         req.RPMLimit,
 		ExpiresAt:        req.ExpiresAt,
 		DailyCreditLimit: req.DailyCreditLimit,
+		AccountIDs:       req.AccountIDs,
+		ModelMap:         req.ModelMap,
+	}
+	if err := validateApiKeyRouting(newEntry); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
 	}
 	if err := config.ValidateApiKeyRestrictions(newEntry); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -153,6 +169,10 @@ type apiKeyUpdateRequest struct {
 	ExpiresAt     *int64    `json:"expiresAt,omitempty"`
 
 	DailyCreditLimit *float64 `json:"dailyCreditLimit,omitempty"`
+
+	// Routing rules: omitted = unchanged; [] / {} clear them.
+	AccountIDs *[]string          `json:"accountIds,omitempty"`
+	ModelMap   *map[string]string `json:"modelMap,omitempty"`
 
 	// Regenerate replaces the key with a new random one, returned once.
 	Regenerate bool `json:"regenerate,omitempty"`
@@ -200,6 +220,17 @@ func (h *Handler) apiUpdateApiKey(w http.ResponseWriter, r *http.Request, id str
 	}
 	if req.ExpiresAt != nil {
 		patch.ExpiresAt = *req.ExpiresAt
+	}
+	if req.AccountIDs != nil {
+		patch.AccountIDs = *req.AccountIDs
+	}
+	if req.ModelMap != nil {
+		patch.ModelMap = *req.ModelMap
+	}
+	if err := validateApiKeyRouting(patch); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
 	}
 	if err := config.ValidateApiKeyRestrictions(patch); err != nil {
 		w.WriteHeader(http.StatusBadRequest)

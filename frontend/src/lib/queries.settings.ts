@@ -107,6 +107,9 @@ export interface ApiKeyInput {
   rpmLimit?: number
   expiresAt?: number
   dailyCreditLimit?: number
+  // Routing rules
+  accountIds?: string[]
+  modelMap?: Record<string, string>
   /** Replace the key with a new random one; the response carries it once. */
   regenerate?: boolean
 }

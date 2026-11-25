@@ -45,6 +45,7 @@ func (h *Handler) handleOpenAIResponses(w http.ResponseWriter, r *http.Request) 
 	// Responses (and stored responses) echo the client's model name; routing
 	// and request logs use the resolved id.
 	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
+	req.Model = mapKeyModel(r.Context(), req.Model) // per-key routing rule
 
 	storedInputCopy := append(json.RawMessage(nil), req.Input...)
 

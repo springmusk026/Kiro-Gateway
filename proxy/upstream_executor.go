@@ -215,8 +215,3 @@ func resolveInputTokens(realInputTokens, upstreamInputTokens, estimated int) int
 	}
 	return upstreamInputTokens
 }
-
-// routingExclusions returns the starting exclusion set for a request.
-func (h *Handler) routingExclusions(apiKeyID string) map[string]bool {
-	return make(map[string]bool)
-}

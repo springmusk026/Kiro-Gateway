@@ -12,6 +12,7 @@ import { useI18n } from '@/lib/i18n'
 import { useCreateApiKey, useUpdateApiKey, type ApiKeyInput } from '@/lib/queries.settings'
 import type { ApiKeyView } from '@/lib/types'
 import { KeyRestrictionsFields, blankRestrictions, restrictionsBody, restrictionsError, restrictionsFromKey, type RestrictionsForm } from './key-restrictions'
+import { KeyRoutingFields, blankRouting, routingBody, routingError, routingFromKey, type RoutingForm } from './key-routing'
 
 type Form = { name: string; key: string; enabled: boolean; tokenLimit: string; creditLimit: string; dailyCreditLimit: string }
 const blank: Form = { name: '', key: '', enabled: true, tokenLimit: '', creditLimit: '', dailyCreditLimit: '' }
@@ -39,6 +40,12 @@ export function KeyDialog({
     if (open) setRestrict(restrictionsFromKey(editing))
   }, [open, editing])
   const restrictErr = restrictionsError(restrict, t)
+  // Routing rules (pinned accounts, model map) — their own state block too.
+  const [routing, setRouting] = useState<RoutingForm>(blankRouting)
+  useEffect(() => {
+    if (open) setRouting(routingFromKey(editing))
+  }, [open, editing])
+  const routingErr = routingError(routing, t)
   useEffect(() => {
     if (!open) return
     setError(null)
@@ -65,7 +72,7 @@ export function KeyDialog({
       : null
   const keyErr = f.key !== '' && /\s/.test(f.key) ? t('keys.keyWhitespace') : f.key !== '' && f.key.length < 8 ? t('keys.keyShort') : null
   const pending = create.isPending || update.isPending
-  const invalid = !!(tokErr || credErr || dailyErr || keyErr || restrictErr)
+  const invalid = !!(tokErr || credErr || dailyErr || keyErr || restrictErr || routingErr)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -78,6 +85,7 @@ export function KeyDialog({
       creditLimit: f.creditLimit ? parseFloat(f.creditLimit) : 0,
       dailyCreditLimit: f.dailyCreditLimit ? parseFloat(f.dailyCreditLimit) : 0,
       ...restrictionsBody(restrict),
+      ...routingBody(routing),
     }
     try {
       if (editing) {
@@ -179,6 +187,7 @@ export function KeyDialog({
           </div>
           {/* Access restrictions */}
           <KeyRestrictionsFields value={restrict} onChange={setRestrict} />
+          <KeyRoutingFields value={routing} onChange={setRouting} />
           <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
             <Label htmlFor="k-enabled">{t('common.enabled')}</Label>
             <Switch id="k-enabled" checked={f.enabled} onCheckedChange={(v) => setF({ ...f, enabled: v })} />

@@ -234,6 +234,9 @@ export interface ApiKeyView {
   rpmLimit?: number
   expiresAt?: number
   expired?: boolean
+  // Routing rules
+  accountIds?: string[]
+  modelMap?: Record<string, string>
 }
 
 export interface RequestLog {

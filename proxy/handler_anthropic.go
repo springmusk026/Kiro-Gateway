@@ -37,6 +37,7 @@ func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Model = mapKeyModel(r.Context(), req.Model) // per-key routing rule
 	thinkingCfg := config.GetThinkingConfig()
 	actualModel, thinkingSpec := resolveClaudeThinking(&req, thinkingCfg)
 	thinking := thinkingSpec.Enabled
@@ -82,6 +83,7 @@ func (h *Handler) handleClaudeMessagesInternal(w http.ResponseWriter, r *http.Re
 	}
 	// Responses echo the client's model name; routing uses the resolved id.
 	r = r.WithContext(withRequestedModel(r.Context(), req.Model))
+	req.Model = mapKeyModel(r.Context(), req.Model) // per-key routing rule
 
 	// 解析模型和 thinking 模式
 	thinkingCfg := config.GetThinkingConfig()

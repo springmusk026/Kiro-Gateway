@@ -48,6 +48,7 @@ func applyApiKeyRestrictions(dst *ApiKeyEntry, src ApiKeyEntry) {
 	dst.AllowedModels = NormalizeAllowedModels(src.AllowedModels)
 	dst.RPMLimit = max(src.RPMLimit, 0)
 	dst.ExpiresAt = max(src.ExpiresAt, 0)
+	applyApiKeyRouting(dst, src)
 }
 
 // ApiKeyExpired reports whether the entry has an expiry in the past.
