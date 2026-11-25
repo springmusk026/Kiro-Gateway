@@ -271,7 +271,7 @@ func callMcpAPI(account *config.Account, mcpReq *McpRequest) (*McpResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugf("[MCP] Request: %s", string(reqBody))
+	logger.Debugf("[MCP] Request: %s", reqBody)
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(reqBody))
 	if err != nil {
@@ -305,7 +305,7 @@ func callMcpAPI(account *config.Account, mcpReq *McpRequest) (*McpResponse, erro
 	if err != nil {
 		return nil, err
 	}
-	logger.Debugf("[MCP] Response (%d): %s", resp.StatusCode, string(body))
+	logger.Debugf("[MCP] Response (%d): %s", resp.StatusCode, body)
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("MCP request failed: HTTP %d: %s", resp.StatusCode, string(body))

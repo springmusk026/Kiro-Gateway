@@ -2256,11 +2256,11 @@ func truncatePayloadToLimit(payload *KiroPayload, hasPriming bool) {
 // per-item limits (see documents.go / image_fetch.go). Counting a 4 MB PDF
 // against a 900 KB text budget would discard the whole conversation.
 func historyEntryByteSize(entry KiroHistoryMessage) int {
-	raw, err := json.Marshal(entry)
+	size, err := jsonSize(entry)
 	if err != nil {
 		return 0
 	}
-	return len(raw) + 1 - mediaBytes(entry.UserInputMessage)
+	return size + 1 - mediaBytes(entry.UserInputMessage)
 }
 
 // dropLeadingAssistant removes a leading assistant message from a history tail so
@@ -2275,11 +2275,11 @@ func dropLeadingAssistant(tail []KiroHistoryMessage) []KiroHistoryMessage {
 // payloadByteSize returns the serialized size of the payload in bytes.
 // Inline media bytes are excluded, as in historyEntryByteSize.
 func payloadByteSize(payload *KiroPayload) int {
-	raw, err := json.Marshal(payload)
+	size, err := jsonSize(payload)
 	if err != nil {
 		return 0
 	}
-	n := len(raw) - mediaBytes(&payload.ConversationState.CurrentMessage.UserInputMessage)
+	n := size - mediaBytes(&payload.ConversationState.CurrentMessage.UserInputMessage)
 	for i := range payload.ConversationState.History {
 		n -= mediaBytes(payload.ConversationState.History[i].UserInputMessage)
 	}

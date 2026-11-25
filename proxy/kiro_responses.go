@@ -415,7 +415,9 @@ func callKiroResponsesAPIContext(ctx context.Context, account *config.Account, p
 	if err != nil {
 		return err
 	}
-	logger.Debugf("[ResponsesAPI] Request payload: %s", string(reqBody))
+	if logger.DebugEnabled() {
+		logger.Debugf("[ResponsesAPI] Request payload: %s", reqBody)
+	}
 
 	host := ""
 	if parsed, parseErr := url.Parse(endpoint); parseErr == nil {

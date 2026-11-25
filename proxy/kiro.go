@@ -236,14 +236,30 @@ type UserInputMessageContext struct {
 }
 
 type KiroToolWrapper struct {
-	ToolSpecification struct {
-		Name        string      `json:"name"`
-		Description string      `json:"description"`
-		InputSchema InputSchema `json:"inputSchema"`
-	} `json:"toolSpecification"`
+	ToolSpecification KiroToolSpecification `json:"toolSpecification,omitzero"`
 	// CachePoint makes this entry the {cachePoint} member of the Tool union
 	// (cache_points.go); ToolSpecification is then not sent.
 	CachePoint *KiroCachePoint `json:"cachePoint,omitempty"`
+}
+
+// KiroToolSpecification is the toolSpecification member of the Tool union.
+type KiroToolSpecification struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	InputSchema InputSchema `json:"inputSchema"`
+}
+
+// cachePointOnlySpec is the placeholder schema of a cache-point entry, whose
+// toolSpecification is not sent.
+type cachePointOnlyMarker struct{}
+
+var cachePointOnlySpec = &cachePointOnlyMarker{}
+
+// IsZero makes `omitzero` leave out only a cache-point entry's placeholder
+// spec; every real tool keeps its toolSpecification, empty or not.
+func (s KiroToolSpecification) IsZero() bool {
+	m, ok := s.InputSchema.JSON.(*cachePointOnlyMarker)
+	return ok && m == cachePointOnlySpec
 }
 
 type InputSchema struct {
@@ -433,13 +449,13 @@ func callKiroLegacyAPIContext(ctx context.Context, account *config.Account, payl
 	}
 	setPayloadProfileArnForAccount(payload, account)
 
-	if _, err := json.Marshal(payload); err != nil {
-		return err
-	}
-
-	// Debug: dump full payload for troubleshooting upstream rejections
-	if payloadJSON, err := json.Marshal(payload); err == nil {
-		logger.Debugf("[KiroAPI] Request payload: %s", string(payloadJSON))
+	// Debug: dump full payload for troubleshooting upstream rejections. The
+	// body is serialized (and any encoding error returned) per endpoint
+	// below; this extra copy is only made when debug logging is on.
+	if logger.DebugEnabled() {
+		if payloadJSON, err := json.Marshal(payload); err == nil {
+			logger.Debugf("[KiroAPI] Request payload: %s", payloadJSON)
+		}
 	}
 
 	// Wrap OnToolUse to restore original tool names for the client.
@@ -480,7 +496,10 @@ endpointLoop:
 			epURL = cliRuntimeURL(account)
 		}
 
-		reqBody, _ := json.Marshal(withCachePoints(payload))
+		reqBody, err := json.Marshal(withCachePoints(payload))
+		if err != nil {
+			return err
+		}
 		// The serialized body size is the only number that can be compared
 		// against an upstream CONTENT_LENGTH_EXCEEDS_THRESHOLD rejection. It was
 		// previously computed only inside the truncation path and never logged,

@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -50,16 +49,15 @@ func cachePointsEnabled() bool {
 	return v == "1" || strings.EqualFold(v, "true")
 }
 
-// MarshalJSON renders a cache point tool entry as the {cachePoint} member of
-// the Tool union and every other entry unchanged.
-func (t KiroToolWrapper) MarshalJSON() ([]byte, error) {
-	if t.CachePoint != nil {
-		return json.Marshal(struct {
-			CachePoint *KiroCachePoint `json:"cachePoint"`
-		}{t.CachePoint})
+// newCachePointTool is a cache point tool entry: the {cachePoint} member of
+// the Tool union, serialized without a toolSpecification. (A plain struct
+// encoding, rather than a MarshalJSON method, keeps the per-tool encoding
+// and re-validation off the request path.)
+func newCachePointTool() KiroToolWrapper {
+	return KiroToolWrapper{
+		ToolSpecification: KiroToolSpecification{InputSchema: InputSchema{JSON: cachePointOnlySpec}},
+		CachePoint:        &KiroCachePoint{Type: cachePointTypeDefault},
 	}
-	type plain KiroToolWrapper
-	return json.Marshal(plain(t))
 }
 
 // promptCachingInfo is a model's prompt-cache capability from the catalog.
@@ -148,7 +146,7 @@ func addCachePoints(p *KiroPayload) *KiroPayload {
 	if markTools {
 		c := *ctx
 		c.Tools = append(append(make([]KiroToolWrapper, 0, len(ctx.Tools)+1), ctx.Tools...),
-			KiroToolWrapper{CachePoint: &KiroCachePoint{Type: cachePointTypeDefault}})
+			newCachePointTool())
 		out.ConversationState.CurrentMessage.UserInputMessage.UserInputMessageContext = &c
 	}
 	return &out

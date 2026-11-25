@@ -54,6 +54,8 @@ func captureUpstreamBody(t *testing.T, protocol, path string, body []byte) []byt
 	if err := config.UpdateUpstreamProtocol(protocol); err != nil {
 		t.Fatal(err)
 	}
+	// The stored protocol outlives this test's config file.
+	t.Cleanup(func() { _ = config.UpdateUpstreamProtocol("") })
 	ct := &captureTransport{}
 	old := kiroHttpStore.Load()
 	kiroHttpStore.Store(&http.Client{Transport: ct})
