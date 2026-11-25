@@ -96,6 +96,7 @@ func (h *Handler) apiUpdateBudgets(w http.ResponseWriter, r *http.Request) {
 		BudgetTimeZone        *string  `json:"budgetTimeZone"`
 		AlertWebhookURL       *string  `json:"alertWebhookURL"`
 		UsageRoutingThreshold *float64 `json:"usageRoutingThreshold"`
+		CreditPriceUSD        *float64 `json:"creditPriceUsd"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeCostJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON"})
@@ -110,6 +111,9 @@ func (h *Handler) apiUpdateBudgets(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.AlertWebhookURL != nil {
 		s.AlertWebhookURL = *req.AlertWebhookURL
+	}
+	if req.CreditPriceUSD != nil {
+		s.CreditPriceUSD = *req.CreditPriceUSD
 	}
 	if err := config.UpdateBudgetSettings(s); err != nil {
 		writeCostJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

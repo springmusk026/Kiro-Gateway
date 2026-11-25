@@ -139,6 +139,7 @@ ALTER TABLE kiro_request_logs ADD COLUMN IF NOT EXISTS fallback_model TEXT NOT N
 var idempotentSchemas = []struct{ name, sql string }{
 	{"admin sessions", adminSessionsSchema},
 	{"request conversation ids", requestConversationSchema},
+	{"request list-price cost", requestCostSchema},
 }
 
 func (db *DB) migrate(ctx context.Context) error {

@@ -10,33 +10,36 @@ import (
 
 // RequestRecord is one client request as seen by the gateway.
 type RequestRecord struct {
-	ID            string    `json:"id"`
-	Time          time.Time `json:"time"`
-	Method        string    `json:"method"`
-	Path          string    `json:"path"`
-	Endpoint      string    `json:"endpoint"` // claude | openai | responses | count_tokens | models | admin
-	Model         string    `json:"model,omitempty"`
-	AccountID     string    `json:"accountId,omitempty"`
-	AccountEmail  string    `json:"accountEmail,omitempty"`
-	APIKeyID      string    `json:"apiKeyId,omitempty"`
-	ClientIP      string    `json:"clientIp,omitempty"`
-	UserAgent     string    `json:"userAgent,omitempty"`
-	Stream        bool      `json:"stream"`
-	Protocol      string    `json:"protocol,omitempty"` // upstream protocol actually used
-	Status        string    `json:"status"`             // success | error
-	HTTPStatus    int       `json:"httpStatus"`
-	Error         string    `json:"error,omitempty"`
-	ErrorType     string    `json:"errorType,omitempty"`
-	InputTokens   int       `json:"inputTokens"`
-	OutputTokens  int       `json:"outputTokens"`
-	CacheRead     int       `json:"cacheReadTokens"`  // upstream prompt-cache hits
-	CacheWrite    int       `json:"cacheWriteTokens"` // upstream prompt-cache writes
-	Credits       float64   `json:"credits"`
-	DurationMs    int64     `json:"durationMs"`
-	TTFBMs        int64     `json:"ttfbMs"` // time to first byte written to the client
-	Attempts      int       `json:"attempts"`
-	RequestBytes  int64     `json:"requestBytes"`
-	ResponseBytes int64     `json:"responseBytes"`
+	ID           string    `json:"id"`
+	Time         time.Time `json:"time"`
+	Method       string    `json:"method"`
+	Path         string    `json:"path"`
+	Endpoint     string    `json:"endpoint"` // claude | openai | responses | count_tokens | models | admin
+	Model        string    `json:"model,omitempty"`
+	AccountID    string    `json:"accountId,omitempty"`
+	AccountEmail string    `json:"accountEmail,omitempty"`
+	APIKeyID     string    `json:"apiKeyId,omitempty"`
+	ClientIP     string    `json:"clientIp,omitempty"`
+	UserAgent    string    `json:"userAgent,omitempty"`
+	Stream       bool      `json:"stream"`
+	Protocol     string    `json:"protocol,omitempty"` // upstream protocol actually used
+	Status       string    `json:"status"`             // success | error
+	HTTPStatus   int       `json:"httpStatus"`
+	Error        string    `json:"error,omitempty"`
+	ErrorType    string    `json:"errorType,omitempty"`
+	InputTokens  int       `json:"inputTokens"`
+	OutputTokens int       `json:"outputTokens"`
+	CacheRead    int       `json:"cacheReadTokens"`  // upstream prompt-cache hits
+	CacheWrite   int       `json:"cacheWriteTokens"` // upstream prompt-cache writes
+	Credits      float64   `json:"credits"`
+	// CostUSD is what the request would have cost at the model vendor's API
+	// list price (models.dev), 0 when the model's price is unknown.
+	CostUSD       float64 `json:"costUsd"`
+	DurationMs    int64   `json:"durationMs"`
+	TTFBMs        int64   `json:"ttfbMs"` // time to first byte written to the client
+	Attempts      int     `json:"attempts"`
+	RequestBytes  int64   `json:"requestBytes"`
+	ResponseBytes int64   `json:"responseBytes"`
 
 	// FallbackModel is the model the request was retried on after its own
 	// model was unavailable (empty when no fallback was taken).
@@ -199,6 +202,7 @@ type AnalyticsSummary struct {
 	CacheRead      int64   `json:"cacheReadTokens"`
 	CacheWrite     int64   `json:"cacheWriteTokens"`
 	Credits        float64 `json:"credits"`
+	CostUSD        float64 `json:"costUsd"` // API list-price equivalent
 	AvgLatencyMs   float64 `json:"avgLatencyMs"`
 	P50LatencyMs   float64 `json:"p50LatencyMs"`
 	P95LatencyMs   float64 `json:"p95LatencyMs"`
@@ -228,6 +232,7 @@ type AnalyticsPoint struct {
 	CacheRead    int64     `json:"cacheReadTokens"`
 	CacheWrite   int64     `json:"cacheWriteTokens"`
 	Credits      float64   `json:"credits"`
+	CostUSD      float64   `json:"costUsd"` // API list-price equivalent
 	P50LatencyMs float64   `json:"p50LatencyMs"`
 	P95LatencyMs float64   `json:"p95LatencyMs"`
 	P50TTFBMs    float64   `json:"p50TtfbMs"`
@@ -245,6 +250,7 @@ type AnalyticsGroup struct {
 	CacheRead    int64     `json:"cacheReadTokens"`
 	CacheWrite   int64     `json:"cacheWriteTokens"`
 	Credits      float64   `json:"credits"`
+	CostUSD      float64   `json:"costUsd"` // API list-price equivalent
 	P50LatencyMs float64   `json:"p50LatencyMs"`
 	P95LatencyMs float64   `json:"p95LatencyMs"`
 	P50TTFBMs    float64   `json:"p50TtfbMs"`
@@ -294,6 +300,10 @@ type AnalyticsReport struct {
 	Errors     []AnalyticsError            `json:"errors"`
 	Heatmap    []AnalyticsHeatCell         `json:"heatmap"`
 	Slowest    []AnalyticsSlow             `json:"slowest"`
+	// Set by the API layer: the price of a Kiro credit and the list-price
+	// catalogue the costUsd figures come from.
+	CreditPriceUSD float64     `json:"creditPriceUsd"`
+	Pricing        interface{} `json:"pricing,omitempty"`
 }
 
 // AnalyticsReader is implemented by backends that can aggregate history.

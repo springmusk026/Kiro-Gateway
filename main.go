@@ -20,6 +20,7 @@ import (
 	"github.com/springmusk026/Kiro-Gateway/config"
 	"github.com/springmusk026/Kiro-Gateway/logger"
 	"github.com/springmusk026/Kiro-Gateway/pool"
+	"github.com/springmusk026/Kiro-Gateway/pricing"
 	"github.com/springmusk026/Kiro-Gateway/proxy"
 	"github.com/springmusk026/Kiro-Gateway/storage"
 	"log"
@@ -121,6 +122,23 @@ func main() {
 		logger.Infof("Storage: %s (set DATABASE_URL to use PostgreSQL with request history)", config.CurrentStore().Name())
 	}
 
+	// API list prices (models.dev) for the cost analytics; old request logs
+	// are priced once prices are available.
+	go pricing.Run(context.Background(), config.GetConfigDir(),
+		&http.Client{Timeout: 3 * time.Minute, Transport: &http.Transport{Proxy: http.ProxyFromEnvironment}},
+		pricingLog{}, func() {
+			if recorder == nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if n, err := recorder.BackfillCosts(ctx); err != nil {
+				logger.Warnf("[Pricing] Could not price older request logs: %v", err)
+			} else if n > 0 {
+				logger.Infof("[Pricing] Priced %d older request logs", n)
+			}
+		})
+
 	// 启动服务器
 	addr := fmt.Sprintf("%s:%d", config.GetHost(), config.GetPort())
 	logger.Infof("Kiro Gateway starting on http://%s (log level: %s)", addr, logger.LevelName(logger.GetLevel()))
@@ -187,3 +205,9 @@ func reloadConfig() error {
 	pool.GetPool().Reload()
 	return nil
 }
+
+// pricingLog adapts the logger package to pricing.Logger.
+type pricingLog struct{}
+
+func (pricingLog) Infof(format string, args ...interface{}) { logger.Infof(format, args...) }
+func (pricingLog) Warnf(format string, args ...interface{}) { logger.Warnf(format, args...) }

@@ -59,7 +59,7 @@ func (r *Recorder) QueryConversations(ctx context.Context, f telemetry.Conversat
 		COALESCE(array_agg(DISTINCT l.api_key_id) FILTER (WHERE l.api_key_id <> ''), '{}'),
 		COALESCE((array_agg(l.user_agent ORDER BY l.ts))[1], ''),
 		COALESCE(sum(l.input_tokens), 0), COALESCE(sum(l.output_tokens), 0), COALESCE(sum(l.cache_read_tokens), 0),
-		COALESCE(sum(l.credits), 0),
+		COALESCE(sum(l.credits), 0), COALESCE(sum(l.cost_usd), 0),
 		count(*) FILTER (WHERE l.status = 'error'), count(*) FILTER (WHERE l.status = 'cancelled')
 		FROM kiro_request_logs l WHERE ` + strings.Join(where, " AND ") + ` GROUP BY l.conversation_id`
 	if len(having) > 0 {
@@ -75,7 +75,7 @@ func (r *Recorder) QueryConversations(ctx context.Context, f telemetry.Conversat
 	for rows.Next() {
 		var c telemetry.ConversationSummary
 		if err := rows.Scan(&c.ID, &c.FirstSeen, &c.LastSeen, &c.Requests, &c.Models, &c.Accounts, &c.APIKeys, &c.UserAgent,
-			&c.InputTokens, &c.OutputTokens, &c.CacheRead, &c.Credits, &c.Errors, &c.Cancelled); err != nil {
+			&c.InputTokens, &c.OutputTokens, &c.CacheRead, &c.Credits, &c.CostUSD, &c.Errors, &c.Cancelled); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -112,7 +112,7 @@ func (r *Recorder) KeyDailyUsage(ctx context.Context, keyID string, since time.T
 	}
 	rows, err := r.db.Pool.Query(ctx, `SELECT to_char(ts AT TIME ZONE $3, 'YYYY-MM-DD') AS d, count(*),
 		count(*) FILTER (WHERE status = 'error'), COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0),
-		COALESCE(sum(credits), 0)
+		COALESCE(sum(credits), 0), COALESCE(sum(cost_usd), 0)
 		FROM kiro_request_logs WHERE api_key_id = $1 AND api_key_id <> '' AND ts >= $2 GROUP BY d ORDER BY d`,
 		keyID, since, loc.String())
 	if err != nil {
@@ -122,7 +122,7 @@ func (r *Recorder) KeyDailyUsage(ctx context.Context, keyID string, since time.T
 	out := []telemetry.KeyUsageDay{}
 	for rows.Next() {
 		var d telemetry.KeyUsageDay
-		if err := rows.Scan(&d.Day, &d.Requests, &d.Errors, &d.InputTokens, &d.OutputTokens, &d.Credits); err != nil {
+		if err := rows.Scan(&d.Day, &d.Requests, &d.Errors, &d.InputTokens, &d.OutputTokens, &d.Credits, &d.CostUSD); err != nil {
 			return nil, err
 		}
 		out = append(out, d)

@@ -289,6 +289,8 @@ func (h *Handler) apiAnalytics(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]string{"error": err.Error()})
 		return
 	}
+	rep.CreditPriceUSD = config.CreditPriceUSD()
+	rep.Pricing = pricingStatus()
 	writeJSON(w, rep)
 }
 

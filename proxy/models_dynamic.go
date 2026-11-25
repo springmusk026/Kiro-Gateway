@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"github.com/springmusk026/Kiro-Gateway/pricing"
 	"net/http"
 	"sort"
 	"strings"
@@ -103,6 +104,10 @@ type adminModelEntry struct {
 	DefaultEffort  string   `json:"defaultEffort,omitempty"`
 	ThinkingToggle bool     `json:"thinkingToggle,omitempty"`
 	Accounts       int      `json:"accounts"`
+	// ListPrice is the vendor's API list price (models.dev), nil when unknown.
+	ListPrice *pricing.Price `json:"listPrice,omitempty"`
+	// PriceSource is the models.dev provider and id the price came from.
+	PriceSource string `json:"priceSource,omitempty"`
 }
 
 // apiGetModels returns the live, upstream-fetched model catalog with
@@ -151,6 +156,10 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 		if rc, ok := parseReasoningControls(m.AdditionalFieldsSchema); ok {
 			e.EffortLevels, e.DefaultEffort, e.ThinkingToggle = rc.Levels, rc.DefaultLevel, rc.Toggle
 		}
+		if pm, ok := pricing.Lookup(m.ModelId); ok {
+			price := pm.Price
+			e.ListPrice, e.PriceSource = &price, pm.Provider+"/"+pm.ID
+		}
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -163,5 +172,6 @@ func (h *Handler) apiGetModels(w http.ResponseWriter, r *http.Request) {
 		"thinkingMode":   config.GetThinkingConfig().Mode,
 		"mappings":       config.GetModelMappings(),
 		"disabledModels": config.GetDisabledModels(),
+		"pricing":        pricingStatus(),
 	})
 }

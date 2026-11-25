@@ -19,6 +19,7 @@ type ConversationSummary struct {
 	OutputTokens int64     `json:"outputTokens"`
 	CacheRead    int64     `json:"cacheReadTokens"`
 	Credits      float64   `json:"credits"`
+	CostUSD      float64   `json:"costUsd"` // API list-price equivalent
 	Errors       int64     `json:"errors"`
 	Cancelled    int64     `json:"cancelled"`
 }
@@ -39,6 +40,7 @@ type KeyUsageDay struct {
 	InputTokens  int64   `json:"inputTokens"`
 	OutputTokens int64   `json:"outputTokens"`
 	Credits      float64 `json:"credits"`
+	CostUSD      float64 `json:"costUsd"` // API list-price equivalent
 }
 
 // ConversationReader lists conversations and their requests.

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/springmusk026/Kiro-Gateway/pricing"
 	"io"
 	"net/http"
 	"os"
@@ -300,6 +301,10 @@ func (h *Handler) finishTrace(t *requestTrace, tw *tracingWriter, r *http.Reques
 		DurationMs:     end.Sub(t.start).Milliseconds(),
 		RequestBytes:   atomic.LoadInt64(&t.reqBytes),
 		ResponseBytes:  tw.bytes,
+	}
+	if rec.InputTokens > 0 || rec.OutputTokens > 0 {
+		// What the same tokens cost at the vendor's API list price.
+		rec.CostUSD, _ = pricing.Cost(rec.Model, pricing.Usage{Input: rec.InputTokens, Output: rec.OutputTokens, CacheRead: rec.CacheRead, CacheWrite: rec.CacheWrite})
 	}
 	if t.reqBody != nil {
 		rec.RequestBody = t.reqBody.buf.String()

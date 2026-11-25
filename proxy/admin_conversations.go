@@ -103,7 +103,7 @@ const requestExportCap = 100000
 
 var requestCSVHeader = []string{"time", "id", "status", "http_status", "endpoint", "protocol", "stream", "model",
 	"fallback_model", "account_id", "account_email", "api_key_id", "api_key_name", "client_ip", "user_agent",
-	"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "credits", "duration_ms", "ttfb_ms",
+	"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "credits", "cost_usd", "duration_ms", "ttfb_ms",
 	"attempts", "error_type", "error", "conversation_id"}
 
 // csvSafe neutralises a text cell that a spreadsheet would read as a formula
@@ -123,7 +123,7 @@ func requestCSVRow(x *telemetry.RequestRecord, keyNames map[string]string) []str
 		csvSafe(x.FallbackModel), csvSafe(x.AccountID), csvSafe(x.AccountEmail), csvSafe(x.APIKeyID),
 		csvSafe(keyNames[x.APIKeyID]), csvSafe(x.ClientIP), csvSafe(x.UserAgent),
 		strconv.Itoa(x.InputTokens), strconv.Itoa(x.OutputTokens), strconv.Itoa(x.CacheRead), strconv.Itoa(x.CacheWrite),
-		strconv.FormatFloat(x.Credits, 'f', -1, 64), strconv.FormatInt(x.DurationMs, 10), strconv.FormatInt(x.TTFBMs, 10),
+		strconv.FormatFloat(x.Credits, 'f', -1, 64), strconv.FormatFloat(x.CostUSD, 'f', 6, 64), strconv.FormatInt(x.DurationMs, 10), strconv.FormatInt(x.TTFBMs, 10),
 		strconv.Itoa(x.Attempts), csvSafe(x.ErrorType), csvSafe(x.Error), csvSafe(x.ConversationID),
 	}
 }

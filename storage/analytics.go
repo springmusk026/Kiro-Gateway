@@ -52,7 +52,8 @@ const (
 		COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE status = 'success'), 0),
 		COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY ttfb_ms) FILTER (WHERE status = 'success' AND ttfb_ms > 0), 0)`
 	tokenAggs = `COALESCE(sum(input_tokens), 0), COALESCE(sum(output_tokens), 0),
-		COALESCE(sum(cache_read_tokens), 0), COALESCE(sum(cache_write_tokens), 0), COALESCE(sum(credits), 0)`
+		COALESCE(sum(cache_read_tokens), 0), COALESCE(sum(cache_write_tokens), 0), COALESCE(sum(credits), 0),
+		COALESCE(sum(cost_usd), 0)`
 )
 
 type analyticsWhere struct {
@@ -164,7 +165,7 @@ func (r *Recorder) analyticsSummary(ctx context.Context, w analyticsWhere, s *te
 			FILTER (WHERE status = 'success' AND output_tokens > 0 AND duration_ms > 0), 0)
 		FROM kiro_request_logs WHERE `+w.sql, w.args...).Scan(
 		&s.Requests, &s.Errors, &s.Cancelled, &s.ClientErrors, &s.Throttled,
-		&s.InputTokens, &s.OutputTokens, &s.CacheRead, &s.CacheWrite, &s.Credits,
+		&s.InputTokens, &s.OutputTokens, &s.CacheRead, &s.CacheWrite, &s.Credits, &s.CostUSD,
 		&s.AvgLatencyMs, &s.P50LatencyMs, &s.P95LatencyMs, &s.P99LatencyMs, &s.P50TTFBMs, &s.P95TTFBMs,
 		&s.AvgAttempts, &s.Retried, &s.Streamed, &s.RequestBytes, &s.ResponseBytes,
 		&s.Accounts, &s.APIKeys, &s.Models, &s.OutputTokensPS)
@@ -185,7 +186,7 @@ func (r *Recorder) analyticsSeries(ctx context.Context, w analyticsWhere, bucket
 	for rows.Next() {
 		var p telemetry.AnalyticsPoint
 		if err := rows.Scan(&p.Time, &p.Requests, &p.Errors, &p.Cancelled, &p.Throttled,
-			&p.InputTokens, &p.OutputTokens, &p.CacheRead, &p.CacheWrite, &p.Credits,
+			&p.InputTokens, &p.OutputTokens, &p.CacheRead, &p.CacheWrite, &p.Credits, &p.CostUSD,
 			&p.P50LatencyMs, &p.P95LatencyMs, &p.P50TTFBMs); err != nil {
 			return nil, err
 		}
@@ -214,7 +215,7 @@ func (r *Recorder) analyticsGroup(ctx context.Context, w analyticsWhere, dimensi
 	for rows.Next() {
 		var g telemetry.AnalyticsGroup
 		if err := rows.Scan(&g.Key, &g.Label, &g.Requests, &g.Errors, &g.Throttled,
-			&g.InputTokens, &g.OutputTokens, &g.CacheRead, &g.CacheWrite, &g.Credits,
+			&g.InputTokens, &g.OutputTokens, &g.CacheRead, &g.CacheWrite, &g.Credits, &g.CostUSD,
 			&g.P50LatencyMs, &g.P95LatencyMs, &g.P50TTFBMs, &g.AvgAttempts, &g.LastSeen); err != nil {
 			return nil, err
 		}

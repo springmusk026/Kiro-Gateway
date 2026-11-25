@@ -33,6 +33,9 @@ type CostSettings struct {
 	BudgetTimeZone string `json:"budgetTimeZone,omitempty"`
 	// AlertWebhookURL receives budget and pool-usage alerts (optional).
 	AlertWebhookURL string `json:"alertWebhookURL,omitempty"`
+	// CreditPriceUSD is what one Kiro credit costs, used to show spend in
+	// dollars (0 = DefaultCreditPriceUSD).
+	CreditPriceUSD float64 `json:"creditPriceUsd,omitempty"`
 
 	// BudgetState holds today's credit counters and sent alerts. It is
 	// runtime state persisted with the debounced save so a restart keeps
@@ -208,6 +211,21 @@ type BudgetSettings struct {
 	DailyCreditLimit float64 `json:"dailyCreditLimit"`
 	BudgetTimeZone   string  `json:"budgetTimeZone"`
 	AlertWebhookURL  string  `json:"alertWebhookURL"`
+	CreditPriceUSD   float64 `json:"creditPriceUsd"`
+}
+
+// DefaultCreditPriceUSD is the price of a credit included in Kiro's plans
+// (Pro: $20 for 1,000 credits; Pro+ and Power are priced the same per credit).
+const DefaultCreditPriceUSD = 0.02
+
+// CreditPriceUSD is the configured price of one Kiro credit in dollars.
+func CreditPriceUSD() float64 {
+	cfgLock.RLock()
+	defer cfgLock.RUnlock()
+	if cfg == nil || cfg.CreditPriceUSD <= 0 {
+		return DefaultCreditPriceUSD
+	}
+	return cfg.CreditPriceUSD
 }
 
 // GetBudgetSettings returns the current budget settings.
@@ -221,7 +239,15 @@ func GetBudgetSettings() BudgetSettings {
 		DailyCreditLimit: cfg.DailyCreditLimit,
 		BudgetTimeZone:   cfg.BudgetTimeZone,
 		AlertWebhookURL:  cfg.AlertWebhookURL,
+		CreditPriceUSD:   creditPriceOrDefault(cfg.CreditPriceUSD),
 	}
+}
+
+func creditPriceOrDefault(v float64) float64 {
+	if v <= 0 {
+		return DefaultCreditPriceUSD
+	}
+	return v
 }
 
 // UpdateBudgetSettings validates and stores budget settings.
@@ -234,6 +260,9 @@ func UpdateBudgetSettings(s BudgetSettings) error {
 		if _, err := time.LoadLocation(s.BudgetTimeZone); err != nil {
 			return fmt.Errorf("unknown time zone %q", s.BudgetTimeZone)
 		}
+	}
+	if s.CreditPriceUSD < 0 || s.CreditPriceUSD > 100 || math.IsNaN(s.CreditPriceUSD) {
+		return errors.New("creditPriceUsd must be between 0 and 100")
 	}
 	s.AlertWebhookURL = strings.TrimSpace(s.AlertWebhookURL)
 	if s.AlertWebhookURL != "" {
@@ -250,6 +279,10 @@ func UpdateBudgetSettings(s BudgetSettings) error {
 	cfg.DailyCreditLimit = s.DailyCreditLimit
 	cfg.BudgetTimeZone = s.BudgetTimeZone
 	cfg.AlertWebhookURL = s.AlertWebhookURL
+	if s.CreditPriceUSD == DefaultCreditPriceUSD {
+		s.CreditPriceUSD = 0 // keep following the default
+	}
+	cfg.CreditPriceUSD = s.CreditPriceUSD
 	return Save()
 }
 
