@@ -15,6 +15,7 @@ work.
 | `GET /v1/responses/{id}` / `DELETE /v1/responses/{id}` | OpenAI Responses | stored responses; `POST …/cancel` answers 400 (no background mode) |
 | `GET /v1/models` / `GET /v1/models/{id}` | both | OpenAI list shape with Anthropic fields added |
 | `GET /v1/stats` | gateway | pool and request counters |
+| `GET /v1/usage` | gateway | usage and limits of the API key that sends it; see [Key usage](#key-usage) |
 | `GET /metrics` | Prometheus | off unless `KIRO_METRICS=1`; see [configuration.md](configuration.md#metrics) |
 | `/admin`, `/admin/api/*` | console | session cookie or admin password header; not a public API |
 
@@ -27,6 +28,33 @@ keys exist and verification is off, the endpoints are open — the console warns
 A key can also be restricted ([configuration.md](configuration.md#api-key-restrictions)): to a list of
 models (then `/v1/models` lists only those when the key is sent), to a number of requests per minute, and
 until an expiry date.
+
+### Key usage
+
+`GET /v1/usage` answers, for the key that sends it (same `Authorization: Bearer` / `x-api-key` header as
+the API), its usage and limits — nothing about other keys, accounts or bodies. A key that is over its token
+or credit limit or expired can still read it; unknown and disabled keys get `401`.
+
+```json
+{
+  "key": {"name": "laptop", "keyMasked": "sk-abc****wxyz", "enabled": true, "createdAt": 1760000000, "expiresAt": 0, "expired": false},
+  "limits": {"tokenLimit": 5000000, "creditLimit": 200, "dailyCreditLimit": 20, "rpmLimit": 60, "allowedModels": ["claude-sonnet-*"]},
+  "period": {"requests": 321, "tokens": 1234567, "credits": 56.5},
+  "today": {"day": "2026-11-25", "resetsAt": "2026-11-26T00:00:00Z", "requests": 6, "inputTokens": 3222,
+            "outputTokens": 390, "tokens": 3612, "credits": 0.34, "dailyCredits": 0.34},
+  "timeZone": "UTC",
+  "history": true,
+  "daily": [{"day": "2026-11-12", "requests": 29, "errors": 3, "inputTokens": 556213, "outputTokens": 74725, "credits": 5.14}],
+  "recent": [{"time": "…", "endpoint": "claude", "model": "claude-sonnet-4.5", "status": "success", "httpStatus": 200,
+              "inputTokens": 1037, "outputTokens": 125, "credits": 0.08, "durationMs": 923}]
+}
+```
+
+`period` is the key's running total since its usage was last reset (what `tokenLimit` / `creditLimit` are
+checked against); `today.dailyCredits` is the counter the daily credit cap uses. Days follow the budget time
+zone. `daily` (14 days) and `recent` (last 20 requests) come from the request history and are empty with
+`history: false` without PostgreSQL. Key holders can open the same information at `/admin/usage` (no admin
+sign-in; the key is kept in the browser tab's session storage only).
 
 ### Headers on every response
 

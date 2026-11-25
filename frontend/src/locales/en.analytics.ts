@@ -140,4 +140,5 @@ export const analyticsEn = {
   'analytics.slowestHint': 'The longest requests in this window',
   'analytics.slowestNone': 'No requests to rank yet',
   'analytics.attemptsN': '{n} attempts',
+  'analytics.csvHint': 'Download this breakdown as CSV',
 } as const

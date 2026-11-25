@@ -95,4 +95,6 @@ export const keysEn = {
   'keys.regenerated': 'Key regenerated',
   'keys.revealDone': 'I’ve saved it',
   'keys.copied': 'Copied',
+  'keys.shareUsage': 'Share with key holders',
+  'keys.shareUsageHint': 'Key holders can check their own usage and limits at this page with just their key.',
 } as const

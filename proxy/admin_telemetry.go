@@ -36,20 +36,9 @@ func (h *Handler) apiQueryRequests(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	limit := queryInt(r, "limit", 100)
-	f := telemetry.LogFilter{
-		Status:    q.Get("status"),
-		Endpoint:  q.Get("endpoint"),
-		Model:     q.Get("model"),
-		AccountID: q.Get("account"),
-		APIKeyID:  q.Get("apiKey"),
-		ErrorType: q.Get("errorType"),
-		Search:    q.Get("q"),
-		BeforeID:  q.Get("before"),
-		Limit:     limit + 1,
-	}
-	if hours := queryInt(r, "hours", 0); hours > 0 {
-		f.Since = time.Now().Add(-time.Duration(hours) * time.Hour)
-	}
+	f := logFilterFromQuery(r)
+	f.BeforeID = q.Get("before")
+	f.Limit = limit + 1
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	recs, err := h.logReader.QueryRequests(ctx, f)
@@ -182,8 +171,14 @@ func (h *Handler) routeTelemetryAdmin(w http.ResponseWriter, r *http.Request, pa
 	switch {
 	case path == "/requests" && r.Method == http.MethodGet:
 		h.apiQueryRequests(w, r)
+	case path == "/requests/export.csv" && r.Method == http.MethodGet:
+		h.apiExportRequests(w, r)
 	case strings.HasPrefix(path, "/requests/") && r.Method == http.MethodGet:
 		h.apiGetRequest(w, r, strings.TrimPrefix(path, "/requests/"))
+	case path == "/conversations" && r.Method == http.MethodGet:
+		h.apiConversations(w, r)
+	case strings.HasPrefix(path, "/conversations/") && r.Method == http.MethodGet:
+		h.apiConversation(w, r, strings.TrimPrefix(path, "/conversations/"))
 	case path == "/usage/series" && r.Method == http.MethodGet:
 		h.apiUsageSeries(w, r)
 	case path == "/usage/by" && r.Method == http.MethodGet:

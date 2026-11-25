@@ -33,4 +33,7 @@ export const playgroundEn = {
   'playground.suggestion2': 'Write a Go function that reverses a string, with a test.',
   'playground.suggestion3': 'List three ways to reduce LLM API costs.',
   'playground.noModels': 'No enabled models — enable some on the Models page.',
+  'playground.prefilled': 'Loaded {n} messages from the request',
+  'playground.prefillStripped': '{n} non-text parts (images, documents, tool calls) were left out.',
+  'playground.prefillMissing': 'Nothing to open: the request was not found. Open it again from Request logs.',
 } as const
