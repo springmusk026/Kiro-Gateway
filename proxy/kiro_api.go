@@ -150,6 +150,10 @@ func kiroProfileRegionCandidates(account *config.Account) []string {
 
 // GetUsageLimits 获取账户使用量和订阅信息
 func GetUsageLimits(account *config.Account) (*UsageLimitsResponse, error) {
+	// API-key accounts present the Kiro CLI and use its control-plane call.
+	if config.IsAPIKeyAccount(account) {
+		return getUsageLimitsCLI(account)
+	}
 	if err := ensureRestProfileArn(account); err != nil {
 		return nil, fmt.Errorf("resolve profileArn: %w", err)
 	}
@@ -216,6 +220,10 @@ func GetUserInfo(account *config.Account) (*UserInfoResponse, error) {
 
 // ListAvailableModels 获取可用模型列表
 func ListAvailableModels(account *config.Account) ([]ModelInfo, error) {
+	// API-key accounts present the Kiro CLI and use its control-plane call.
+	if config.IsAPIKeyAccount(account) {
+		return listAvailableModelsCLI(account)
+	}
 	if err := ensureRestProfileArn(account); err != nil {
 		return nil, fmt.Errorf("resolve profileArn: %w", err)
 	}
@@ -764,6 +772,9 @@ func RefreshAccountInfo(account *config.Account) (*config.AccountInfo, error) {
 		if titleOrName == "" {
 			titleOrName = usage.SubscriptionInfo.SubscriptionType
 		}
+		if titleOrName == "" {
+			titleOrName = usage.SubscriptionInfo.Type
+		}
 		info.SubscriptionType = parseSubscriptionType(titleOrName)
 		info.SubscriptionTitle = usage.SubscriptionInfo.SubscriptionTitle
 		if info.SubscriptionTitle == "" {
@@ -873,6 +884,8 @@ type SubscriptionInfo struct {
 	SubscriptionName  string `json:"subscriptionName"`
 	SubscriptionTitle string `json:"subscriptionTitle"`
 	SubscriptionType  string `json:"subscriptionType"`
+	// Type is the control-plane (KiroControlPlaneBearerService) name of the tier.
+	Type              string `json:"type"`
 	Status            string `json:"status"`
 	UpgradeCapability string `json:"upgradeCapability"`
 }

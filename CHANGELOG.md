@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Upstream
+- Kiro API-key accounts make the Kiro CLI's control-plane calls (from the wire capture): `ListAvailableModels`
+  and `GetUsageLimits` as AWS JSON on `management.{region}.kiro.dev`, and `GetFeatureConfiguration` on the
+  runtime host at most every 15 minutes per account, in the background (result cached, not acted on). OAuth
+  accounts are unchanged.
+
 ### Alerts
 - Account health alerts alongside the budget alerts (console banner, `GET /admin/api/alerts`, webhook, once per
   day and level): token expiring within 24 h without a successful refresh, 3+ failed refreshes in a row,

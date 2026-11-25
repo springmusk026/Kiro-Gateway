@@ -149,12 +149,25 @@ const kasNodeVersion = "22.23.4"
 // kiroCLISmithyUserAgents returns the User-Agent / x-amz-user-agent pair the
 // CLI's agent sends on its AWS SDK calls to the runtime service.
 func kiroCLISmithyUserAgents() (userAgent, amzUserAgent string) {
+	return kiroCLISDKUserAgents("kiroruntime", "m/N", false)
+}
+
+// kiroCLISDKUserAgents builds the AWS SDK user agents of one of the CLI
+// agent's service clients: api is the client (kiroruntime,
+// kirocontrolplanebearer), mode the SDK feature flags. dashTail selects the
+// "control" form the capture shows on GetFeatureConfiguration, where the
+// KiroCLI part of the tail is joined with dashes instead of spaces.
+func kiroCLISDKUserAgents(api, mode string, dashTail bool) (userAgent, amzUserAgent string) {
 	tail := kiroCLICustomUA()
+	if dashTail {
+		base, client, _ := strings.Cut(tail, " acp-client/")
+		tail = strings.ReplaceAll(base, " ", "-") + " acp-client/" + client
+	}
 	osTok := "linux"
 	if v := strings.TrimSpace(config.GetKiroClientConfig().SystemVersion); strings.HasPrefix(v, "linux#") {
 		osTok = v
 	}
-	return fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/kiroruntime#1.0.0 m/N %s", osTok, kasNodeVersion, tail),
+	return fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/%s#1.0.0 %s %s", osTok, kasNodeVersion, api, mode, tail),
 		"aws-sdk-js/1.0.0 " + tail
 }
 

@@ -264,7 +264,15 @@ CPS errors:
 
 ListAvailableModels caching ([JS] `won`=`ACPModelConfigProvider`): TTL 5 min (`_nd=300e3`); empty-result TTL 30 s; fetch timeout 30 s; pagination cap 10 pages (`QAo`); a periodic refresh is skipped when signed out. Each model is post-processed into `effortLevels/effortSchemaPath/defaultEffortLevel` (`yPu`) and `thinkingToggleable/defaultThinkingEnabled` (`bPu`).
 
-**[KG] status: divergent (old IDE REST surface).**
+**[KG] status: divergent (old IDE REST surface) for OAuth accounts; API-key accounts use the CLI calls.**
+
+API-key accounts (the Kiro CLI identity) make the calls the capture shows (`proxy/kiro_cli_control.go`):
+`POST https://management.{region}.kiro.dev/` with `x-amz-target: KiroControlPlaneBearerService.ListAvailableModels`
+(`{"origin":"KIRO_CLI"}`, `amz-sdk-request: attempt=1; max=3`) and `.GetUsageLimits` (`{"origin":"KIRO_CLI"}`,
+`attempt=1; max=1`), and `KiroRuntimeService.GetFeatureConfiguration` on `runtime.{region}.kiro.dev`
+(`{"origin":"KIRO_CLI","version":"3.5.0"}`, dash-joined control UA, `attempt=1; max=1`) at most every 15 minutes
+per account, in the background when chat starts; its result is cached and not acted on. The rows below describe
+OAuth accounts.
 
 | Op | Kiro Gateway | Status |
 |---|---|---|
@@ -329,10 +337,10 @@ Token file / refresh correctness notes from KAS ([JS] `FileAuthProvider`, `s4e`)
 | Which API per account | decided by `GetFeatureConfiguration.create_response_api` | always `/v1/responses` (auto, with legacy fallback) | divergent |
 | Body shapes (`/v1/responses`) | §1.1 | mostly match | partial |
 | GAR event-stream parse | full union incl. inline error events, reasoning signature, refusal | ignores inline error events, signature, refusal | partial |
-| ListAvailableModels | CPS `management` host, paginated, rich Model | old `codewhisperer` REST, no pagination | divergent |
-| GetUsageLimits/overage | CPS `management` host | old `q`/`codewhisperer` host | divergent |
+| ListAvailableModels | CPS `management` host, paginated, rich Model | API keys: CPS awsJson (no pagination); OAuth: old `codewhisperer` REST | API keys match; OAuth divergent |
+| GetUsageLimits/overage | CPS `management` host | API keys: CPS awsJson GetUsageLimits; overage and OAuth: old `q`/`codewhisperer` host | partial |
 | MCP (web search) | `runtime…/mcp` + `tools/list` first | `q…/mcp`, no `tools/list` | divergent |
-| GetFeatureConfiguration | always, before first turn | never | missing |
+| GetFeatureConfiguration | always, before first turn | API keys: in the background as chat starts, 15 min per account, result unused; OAuth: never | partial |
 | Token refresh | per §1.8, single-flight, symlink-safe | matches intent; UA + IdC token-type gaps | partial |
 | Native effort / thinking | `reasoning.effort` + `thinking.type` from model schema | `reasoning.effort` only (`thinking_request.go`), `thinking.type` parsed but never emitted | partial |
 | Prompt caching | model-declared `promptCaching`, `cachePoint` blocks | experimental cache points on GAR behind `KIRO_CACHE_POINTS=1` (`proxy/cache_points.go`), unverified | partial |
