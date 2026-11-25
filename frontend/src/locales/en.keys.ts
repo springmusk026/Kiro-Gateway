@@ -90,4 +90,6 @@ export const keysEn = {
   'keys.revealWarning': 'Copy it now — you won’t be able to see this key again. If you lose it, create a new one.',
   'keys.revealDone': 'I’ve saved it',
   'keys.copied': 'Copied',
+  'keys.shareUsage': 'Share with key holders',
+  'keys.shareUsageHint': 'Key holders can check their own usage and limits at this page with just their key.',
 } as const
