@@ -10,8 +10,9 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { downloadCsv } from '@/lib/csv'
-import { compact, timeAgo } from '@/lib/format'
+import { compact, timeAgo, usd } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { pricesLoaded } from '@/lib/pricing'
 import type { AnalyticsDimension, AnalyticsGroup, AnalyticsReport } from '@/lib/types'
 import type { MessageKey } from '@/locales/en'
 import { cn } from '@/lib/utils'
@@ -36,6 +37,7 @@ type SortKey =
   | 'outputTokens'
   | 'cacheReadTokens'
   | 'credits'
+  | 'costUsd'
   | 'p50LatencyMs'
   | 'p95LatencyMs'
   | 'p50TtfbMs'
@@ -51,12 +53,15 @@ const COLS: { id: SortKey; label: MessageKey; cls?: string }[] = [
   { id: 'outputTokens', label: 'analytics.col.tokensOut', cls: 'hidden sm:table-cell' },
   { id: 'cacheReadTokens', label: 'analytics.col.cacheRead', cls: 'hidden xl:table-cell' },
   { id: 'credits', label: 'analytics.col.credits' },
+  { id: 'costUsd', label: 'pricing.col', cls: 'hidden sm:table-cell' },
   { id: 'p50LatencyMs', label: 'analytics.col.p50', cls: 'hidden md:table-cell' },
   { id: 'p95LatencyMs', label: 'analytics.col.p95', cls: 'hidden lg:table-cell' },
   { id: 'p50TtfbMs', label: 'analytics.col.ttfb', cls: 'hidden lg:table-cell' },
   { id: 'avgAttempts', label: 'analytics.col.attempts', cls: 'hidden 2xl:table-cell' },
   { id: 'lastSeen', label: 'analytics.col.lastSeen', cls: 'hidden md:table-cell' },
 ]
+
+const colCls = (id: SortKey) => COLS.find((c) => c.id === id)?.cls
 
 function value(g: AnalyticsGroup, k: SortKey): number {
   switch (k) {
@@ -101,6 +106,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
   const total = groups.reduce((s, g) => s + g.requests, 0)
   const max = groups.reduce((m, g) => Math.max(m, g.requests), 0)
   const filterable = (FILTER_DIMS as readonly string[]).includes(dim)
+  const priced = pricesLoaded(report.pricing)
 
   const rows = useMemo(() => {
     const out = [...groups]
@@ -121,7 +127,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
     downloadCsv(
       `kiro-${dim}-${day(report.from)}_${day(report.to)}.csv`,
       ['name', 'key', 'requests', 'errors', 'error_rate', 'throttled', 'input_tokens', 'output_tokens', 'cache_read_tokens',
-        'cache_write_tokens', 'credits', 'p50_latency_ms', 'p95_latency_ms', 'p50_ttfb_ms', 'avg_attempts', 'last_seen'],
+        'cache_write_tokens', 'credits', 'cost_usd', 'p50_latency_ms', 'p95_latency_ms', 'p50_ttfb_ms', 'avg_attempts', 'last_seen'],
       rows.map((g) => [
         label(dim, g.key, g.label).text,
         g.key,
@@ -134,6 +140,7 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
         g.cacheReadTokens,
         g.cacheWriteTokens,
         +g.credits.toFixed(4),
+        +(g.costUsd ?? 0).toFixed(6),
         Math.round(g.p50LatencyMs),
         Math.round(g.p95LatencyMs),
         Math.round(g.p50TtfbMs),
@@ -254,16 +261,19 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
                       <TableCell className={cn('text-right', errRate >= 0.1 ? 'text-destructive' : errRate > 0 ? '' : 'text-muted-foreground')}>
                         {g.requests ? (errRate * 100).toFixed(1) + '%' : '–'}
                       </TableCell>
-                      <TableCell className={cn('text-right', COLS[2].cls, !g.throttled && 'text-muted-foreground')}>{g.throttled.toLocaleString()}</TableCell>
-                      <TableCell className={cn('text-right', COLS[3].cls)}>{compact(g.inputTokens)}</TableCell>
-                      <TableCell className={cn('text-right', COLS[4].cls)}>{compact(g.outputTokens)}</TableCell>
-                      <TableCell className={cn('text-right', COLS[5].cls)}>{compact(g.cacheReadTokens)}</TableCell>
+                      <TableCell className={cn('text-right', colCls('throttled'), !g.throttled && 'text-muted-foreground')}>{g.throttled.toLocaleString()}</TableCell>
+                      <TableCell className={cn('text-right', colCls('inputTokens'))}>{compact(g.inputTokens)}</TableCell>
+                      <TableCell className={cn('text-right', colCls('outputTokens'))}>{compact(g.outputTokens)}</TableCell>
+                      <TableCell className={cn('text-right', colCls('cacheReadTokens'))}>{compact(g.cacheReadTokens)}</TableCell>
                       <TableCell className="text-right">{g.credits.toFixed(g.credits >= 1000 ? 0 : 2)}</TableCell>
-                      <TableCell className={cn('text-right', COLS[7].cls)}>{g.p50LatencyMs ? fmtMs(g.p50LatencyMs) : '–'}</TableCell>
-                      <TableCell className={cn('text-right', COLS[8].cls)}>{g.p95LatencyMs ? fmtMs(g.p95LatencyMs) : '–'}</TableCell>
-                      <TableCell className={cn('text-right', COLS[9].cls)}>{g.p50TtfbMs ? fmtMs(g.p50TtfbMs) : '–'}</TableCell>
-                      <TableCell className={cn('text-right', COLS[10].cls)}>{g.avgAttempts ? g.avgAttempts.toFixed(2) : '–'}</TableCell>
-                      <TableCell className={cn('pr-6 text-right text-muted-foreground', COLS[11].cls)} title={g.lastSeen ? new Date(g.lastSeen).toLocaleString(lang) : undefined}>
+                      <TableCell className={cn('text-right', colCls('costUsd'), !(priced && g.costUsd) && 'text-muted-foreground')}>
+                        {priced ? usd(g.costUsd ?? 0) : '—'}
+                      </TableCell>
+                      <TableCell className={cn('text-right', colCls('p50LatencyMs'))}>{g.p50LatencyMs ? fmtMs(g.p50LatencyMs) : '–'}</TableCell>
+                      <TableCell className={cn('text-right', colCls('p95LatencyMs'))}>{g.p95LatencyMs ? fmtMs(g.p95LatencyMs) : '–'}</TableCell>
+                      <TableCell className={cn('text-right', colCls('p50TtfbMs'))}>{g.p50TtfbMs ? fmtMs(g.p50TtfbMs) : '–'}</TableCell>
+                      <TableCell className={cn('text-right', colCls('avgAttempts'))}>{g.avgAttempts ? g.avgAttempts.toFixed(2) : '–'}</TableCell>
+                      <TableCell className={cn('pr-6 text-right text-muted-foreground', colCls('lastSeen'))} title={g.lastSeen ? new Date(g.lastSeen).toLocaleString(lang) : undefined}>
                         {timeAgo(unix(g.lastSeen), lang)}
                       </TableCell>
                     </TableRow>

@@ -75,8 +75,6 @@ export const analyticsEn = {
   'analytics.chart.tokensHint': 'Input, output and cache-read tokens {per}',
   'analytics.chart.latency': 'Latency',
   'analytics.chart.latencyHint': 'Duration of successful requests and time to first token',
-  'analytics.chart.credits': 'Credits',
-  'analytics.chart.creditsHint': 'Credits consumed {per}',
   'analytics.s.success': 'Success',
   'analytics.s.errors': 'Errors',
   'analytics.s.throttled': 'Throttled',

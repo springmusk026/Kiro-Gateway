@@ -12,7 +12,8 @@ import {
 } from 'recharts'
 import { fmtMs } from '@/components/logs/history-bits'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { compact } from '@/lib/format'
+import { compact, usd } from '@/lib/format'
+import { kiroCost } from '@/lib/pricing'
 import { useI18n } from '@/lib/i18n'
 import type { AnalyticsReport } from '@/lib/types'
 import { bucketLabel, perBucket } from './lib'
@@ -29,6 +30,9 @@ export type SeriesRow = {
   cacheRead: number
   cacheWrite: number
   credits: number
+  /** API list price and Kiro cost (credits × credit price), USD */
+  cost: number
+  kiro: number
   p50: number | null
   p95: number | null
   ttfb: number | null
@@ -54,6 +58,8 @@ export function useSeriesRows(report: AnalyticsReport | undefined, lang: string)
         cacheRead: p.cacheReadTokens,
         cacheWrite: p.cacheWriteTokens,
         credits: p.credits,
+        cost: p.costUsd ?? 0,
+        kiro: kiroCost(p.credits, report.creditPriceUsd),
         // A bucket with no successful request has no latency: leave a gap, not a zero.
         p50: p.p50LatencyMs || null,
         p95: p.p95LatencyMs || null,
@@ -66,7 +72,7 @@ export function useSeriesRows(report: AnalyticsReport | undefined, lang: string)
     const rows: SeriesRow[] = []
     for (let ts = start; ts < to; ts += bucket) {
       const r = byTime.get(ts) ?? {
-        t: ts, label: '', long: '', ok: 0, err: 0, throttled: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, p50: null, p95: null, ttfb: null,
+        t: ts, label: '', long: '', ok: 0, err: 0, throttled: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, credits: 0, cost: 0, kiro: 0, p50: null, p95: null, ttfb: null,
       }
       r.label = bucketLabel(ts, bucket, lang)
       r.long = bucketLabel(ts, bucket, lang, true)
@@ -163,19 +169,12 @@ function StackShape(part: 'bottom' | 'top', other: (r: SeriesRow) => number) {
   }
 }
 
-function TopRounded(fill: string) {
-  return function Shape(props: unknown) {
-    const { x, y, width, height } = props as { x: number; y: number; width: number; height: number }
-    if (!height || height <= 0) return <g />
-    const r = Math.min(4, width / 2, height)
-    const d = `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`
-    return <path d={d} fill={fill} />
-  }
-}
-
 const yCompact = (v: number) => compact(v)
 
-export function AnalyticsCharts({ rows, bucketSec }: { rows: SeriesRow[]; bucketSec: number }) {
+const yUsd = (v: number) => (v === 0 ? '$0' : usd(v, { compact: true }))
+
+/** `priced`: list prices are loaded, so the list-price line means something. */
+export function AnalyticsCharts({ rows, bucketSec, priced }: { rows: SeriesRow[]; bucketSec: number; priced: boolean }) {
   const { t } = useI18n()
   const per = perBucket(t, bucketSec)
   const S = {
@@ -188,13 +187,14 @@ export function AnalyticsCharts({ rows, bucketSec }: { rows: SeriesRow[]; bucket
     p95: t('analytics.s.p95'),
     ttfb: t('analytics.s.ttfb'),
     credits: t('analytics.s.credits'),
+    list: t('pricing.listPrice'),
+    kiro: t('pricing.kiroCost'),
   }
 
   const shapes = useMemo(
     () => ({
       ok: StackShape('bottom', (r) => r.err),
       err: StackShape('top', (r) => r.ok),
-      credits: TopRounded('var(--chart-1)'),
     }),
     [],
   )
@@ -218,10 +218,15 @@ export function AnalyticsCharts({ rows, bucketSec }: { rows: SeriesRow[]; bucket
         { color: 'var(--chart-2)', label: S.p95, value: r.p95 ? fmtMs(r.p95) : '–' },
         { color: 'var(--chart-3)', label: S.ttfb, value: r.ttfb ? fmtMs(r.ttfb) : '–' },
       ]),
-      credits: makeTip((r) => [{ color: 'var(--chart-1)', label: S.credits, value: r.credits.toFixed(2) }]),
+      cost: makeTip((r) => [
+        ...(priced ? [{ color: 'var(--chart-1)', label: S.list, value: usd(r.cost) }] : []),
+        { color: 'var(--chart-2)', label: S.kiro, value: usd(r.kiro) },
+        ...(priced && r.cost > 0 ? [{ color: 'transparent', label: t('pricing.saved'), value: usd(r.cost - r.kiro), muted: true }] : []),
+        { color: 'transparent', label: S.credits, value: r.credits.toFixed(2), muted: true },
+      ]),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t],
+    [t, priced],
   )
 
   const xAxis = <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} tick={AXIS_TICK} />
@@ -298,14 +303,22 @@ export function AnalyticsCharts({ rows, bucketSec }: { rows: SeriesRow[]; bucket
         </LineChart>
       </ChartCard>
 
-      <ChartCard title={t('analytics.chart.credits')} hint={t('analytics.chart.creditsHint', { per })}>
-        <BarChart data={rows} margin={margin} barCategoryGap="20%">
+      <ChartCard
+        title={t('pricing.chart')}
+        hint={t('pricing.chartHint', { per })}
+        legend={[
+          ...(priced ? [{ color: 'var(--chart-1)', label: S.list, kind: 'line' as const }] : []),
+          { color: 'var(--chart-2)', label: S.kiro, kind: 'line' },
+        ]}
+      >
+        <LineChart data={rows} margin={margin}>
           {GRID}
           {xAxis}
-          <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} width={40} tickFormatter={yCompact} />
-          <Tooltip cursor={{ fill: 'var(--muted)', opacity: 0.6 }} content={tips.credits} />
-          <Bar dataKey="credits" name={S.credits} fill="var(--chart-1)" maxBarSize={24} shape={shapes.credits} animationDuration={600} />
-        </BarChart>
+          <YAxis tickLine={false} axisLine={false} tick={AXIS_TICK} width={48} tickFormatter={yUsd} />
+          <Tooltip cursor={cursorLine} content={tips.cost} />
+          {priced && <Line {...lineProps} dataKey="cost" name={S.list} stroke="var(--chart-1)" activeDot={activeDot('var(--chart-1)')} />}
+          <Line {...lineProps} dataKey="kiro" name={S.kiro} stroke="var(--chart-2)" activeDot={activeDot('var(--chart-2)')} />
+        </LineChart>
       </ChartCard>
     </div>
   )

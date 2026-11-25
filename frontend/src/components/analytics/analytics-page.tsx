@@ -10,12 +10,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApiError } from '@/lib/api'
 import { timeAgo } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
+import { pricesLoaded } from '@/lib/pricing'
 import { useAnalytics } from '@/lib/queries.analytics'
 import { useStorageInfo } from '@/lib/queries.history'
 import type { AnalyticsFilters } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { BreakdownCard } from './breakdown'
 import { AnalyticsCharts, useSeriesRows } from './charts'
+import { CostStrip } from './cost'
 import { ErrorsCard } from './errors-card'
 import { AnalyticsFilterBar } from './filters'
 import { Heatmap } from './heatmap'
@@ -180,8 +182,9 @@ export function AnalyticsPage() {
     body = (
       <div className={cn('space-y-4 transition-opacity duration-300', report.isPlaceholderData && 'opacity-60')} aria-busy={report.isFetching}>
         <KpiGrid s={data.summary} p={data.previous} hours={hours} range={range} />
+        <CostStrip report={data} />
         <SecondaryStats s={data.summary} p={data.previous} />
-        <AnalyticsCharts rows={rows} bucketSec={data.bucketSec} />
+        <AnalyticsCharts rows={rows} bucketSec={data.bucketSec} priced={pricesLoaded(data.pricing)} />
         <BreakdownCard report={data} onFilter={(d, k) => onFilter(d, k)} />
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <ErrorsCard errors={data.errors ?? []} total={data.summary.requests} />
