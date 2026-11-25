@@ -140,6 +140,18 @@ each account's credits left and the pool's credits remaining this period.
   (`GET /admin/api/alerts`). With `alertWebhookURL` set, each alert level is posted once per budget day as
   JSON `{"text", "kind", "level", "value", "limit"}` (`text` works for Slack; `content` repeats it for
   Discord), from a background loop with a 10 s timeout.
+- **Account health alerts** use the same banner, endpoint, webhook and once-per-day-and-level rule (`subject`
+  is the account id). They are evaluated every 30 s from in-memory state, with no upstream calls:
+
+  | `kind` | Level | When |
+  |---|---|---|
+  | `account_token_expiring` | warning; critical once expired | an OAuth token expires within 24 h and the last refresh attempt failed (or the account has no refresh token) |
+  | `account_refresh_failing` | critical | 3 or more token refreshes in a row failed |
+  | `account_banned` | critical | the account's ban status is `BANNED` / `SUSPENDED` |
+  | `account_cooling` | warning | the account is cooling down or parked for more than another hour |
+  | `accounts_unavailable` | critical | no account can take a request (all disabled, banned, out of quota or cooling down) |
+
+  Refresh outcomes are counted since start-up, so a restart clears the failure streak.
 
 ### Prompt-cache points (experimental)
 

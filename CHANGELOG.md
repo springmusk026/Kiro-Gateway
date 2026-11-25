@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Alerts
+- Account health alerts alongside the budget alerts (console banner, `GET /admin/api/alerts`, webhook, once per
+  day and level): token expiring within 24 h without a successful refresh, 3+ failed refreshes in a row,
+  banned or suspended account, account cooling down or parked for more than an hour, and no account available.
+
 ### Security
 - API keys are stored as SHA-256 hashes with a display hint (`sk-ab12…9f3c`) and shown only once, when created
   or regenerated (new *Regenerate key* action). Existing plaintext or encrypted keys are hashed on the first
