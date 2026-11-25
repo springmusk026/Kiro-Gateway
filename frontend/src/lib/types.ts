@@ -172,7 +172,41 @@ export interface CatalogModel {
   effortLevels?: string[]
   defaultEffort?: string
   thinkingToggle?: boolean
+  /** The vendor's API list price (models.dev); absent when unknown. */
+  listPrice?: ListPrice
+  /** models.dev provider/id the price came from, e.g. "anthropic/claude-haiku-5-5". */
+  priceSource?: string
 }
+
+/** A context-size tier: prices for prompts larger than `above` tokens. */
+export interface ListPriceTier {
+  above: number
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+}
+
+/** API list price in USD per million tokens. */
+export interface ListPrice {
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+  tiers?: ListPriceTier[]
+}
+
+/** Where list prices come from (GET /models and GET /analytics). */
+export interface PricingStatus {
+  enabled: boolean
+  source?: string
+  /** RFC3339; the zero time ("0001-…") when nothing is loaded. */
+  fetchedAt?: string
+  /** Number of priced models; 0 = no prices loaded. */
+  models: number
+  creditPriceUsd: number
+}
+
 export interface ModelsCatalog {
   models: CatalogModel[]
   cachedAt: number
@@ -180,6 +214,7 @@ export interface ModelsCatalog {
   thinkingSuffix: string
   mappings: ModelMapping[]
   disabledModels: string[]
+  pricing?: PricingStatus
 }
 
 export interface OverageResponse {
@@ -303,6 +338,8 @@ export interface RequestRecord {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   credits: number
+  /** API list-price equivalent in USD; 0 = unknown. */
+  costUsd?: number
   durationMs: number
   ttfbMs: number
   attempts: number
@@ -338,6 +375,8 @@ export interface ConversationSummary {
   outputTokens: number
   cacheReadTokens: number
   credits: number
+  /** API list-price equivalent in USD; 0 = unknown. */
+  costUsd?: number
   errors: number
   cancelled: number
 }
@@ -448,6 +487,8 @@ export interface AnalyticsSummary {
   cacheReadTokens: number
   cacheWriteTokens: number
   credits: number
+  /** API list-price equivalent in USD */
+  costUsd: number
   avgLatencyMs: number
   p50LatencyMs: number
   p95LatencyMs: number
@@ -479,6 +520,7 @@ export interface AnalyticsPoint {
   cacheReadTokens: number
   cacheWriteTokens: number
   credits: number
+  costUsd: number
   p50LatencyMs: number
   p95LatencyMs: number
   p50TtfbMs: number
@@ -496,6 +538,7 @@ export interface AnalyticsGroup {
   cacheReadTokens: number
   cacheWriteTokens: number
   credits: number
+  costUsd: number
   p50LatencyMs: number
   p95LatencyMs: number
   p50TtfbMs: number
@@ -548,6 +591,9 @@ export interface AnalyticsReport {
   errors: AnalyticsError[] | null
   heatmap: AnalyticsHeatCell[] | null
   slowest: AnalyticsSlow[] | null
+  /** USD per Kiro credit (Settings → Budgets & alerts) */
+  creditPriceUsd?: number
+  pricing?: PricingStatus
 }
 
 export interface AnalyticsFilters {

@@ -42,6 +42,8 @@ export interface BudgetSettings {
   dailyCreditLimit: number
   budgetTimeZone: string
   alertWebhookURL: string
+  /** USD per Kiro credit (default 0.02). */
+  creditPriceUsd: number
 }
 
 export interface Budgets extends BudgetSettings {
@@ -86,6 +88,8 @@ export function useSaveBudgets() {
     onSuccess: (data) => {
       qc.setQueryData(ck.budgets, data)
       qc.invalidateQueries({ queryKey: ck.alerts })
+      // Kiro cost in the analytics is credits × the credit price.
+      qc.invalidateQueries({ queryKey: ['analytics'] })
     },
   })
 }
