@@ -54,6 +54,30 @@ KIRO_TEST_DATABASE_URL="postgres://kiro@localhost:55432/kirogo_test?sslmode=disa
 `KIRO_LIVE=1 KIRO_LIVE_CONFIG=path/to/config.json go test -run TestLiveResponsesTransport ./proxy/` exercises
 the real `/v1/responses` upstream with an account from that config (uses credits).
 
+### Live check (opt-in, uses Kiro credits)
+
+`proxy/live_check_test.go` builds the gateway, starts it with a temporary config, adds a Kiro API-key account
+through the admin API (`POST /admin/api/auth/credentials`) and sends one minimal request each to
+`/v1/messages` (non-streaming and streaming), `/v1/chat/completions` and `/v1/responses` with the newest
+haiku-class model from `/v1/models`. It checks the response shapes: HTTP 200, text content, usage counts, and
+the Anthropic SSE event order (`message_start`, content blocks, `message_delta`, `message_stop`). It is skipped
+unless `KIRO_LIVE_API_KEY` is set:
+
+```bash
+KIRO_LIVE_API_KEY=ksk_... KIRO_LIVE_REGION=us-east-1 go test ./proxy -run '^TestLiveGateway$' -count=1 -v
+```
+
+`KIRO_LIVE_MODEL` forces a model, `KIRO_LIVE_PROXY_URL` sets the gateway's outbound proxy and
+`KIRO_LIVE_GATEWAY_BIN` uses a binary you already built. The key is never printed; on failure the gateway log
+is shown with the key masked.
+
+`.github/workflows/live-check.yml` runs it daily (and on demand from the Actions tab). To enable it, add the
+repository secret `KIRO_LIVE_API_KEY` (Settings → Secrets and variables → Actions) and, if the key's account
+is not in `us-east-1`, `KIRO_LIVE_REGION`. Without the secret the workflow ends with a notice and does nothing.
+Each run costs four tiny requests a day (a one-line prompt, at most 16 output tokens each) on the cheapest
+model, plus the model-list call the gateway makes when an account is added.
+Use a dedicated key so it can be revoked on its own.
+
 ### Console tests
 
 Unit tests (Vitest, jsdom) sit next to the code they cover as `*.test.ts(x)`: pagination, the API client,

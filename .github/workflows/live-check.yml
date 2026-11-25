@@ -1,0 +1,52 @@
+name: Live check
+
+# Opt-in daily check against the real Kiro service: builds the gateway, adds a
+# Kiro API-key account through the admin API and sends one tiny request to each
+# client API (proxy/live_check_test.go). It only runs when the repository secret
+# KIRO_LIVE_API_KEY is set (optionally KIRO_LIVE_REGION); see docs/development.md.
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-check
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live requests through the gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KIRO_LIVE_API_KEY: ${{ secrets.KIRO_LIVE_API_KEY }}
+      KIRO_LIVE_REGION: ${{ secrets.KIRO_LIVE_REGION }}
+    steps:
+      - name: Check that the live check is enabled
+        id: enabled
+        run: |
+          if [ -z "$KIRO_LIVE_API_KEY" ]; then
+            echo "::notice title=Live check skipped::Add the KIRO_LIVE_API_KEY repository secret (a Kiro API key, ksk_...) to enable the daily live check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::add-mask::$KIRO_LIVE_API_KEY"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.enabled.outputs.run == 'true'
+      - uses: actions/setup-go@v5
+        if: steps.enabled.outputs.run == 'true'
+        with:
+          go-version-file: go.mod
+      - name: Build the gateway
+        if: steps.enabled.outputs.run == 'true'
+        run: |
+          go build -o "$RUNNER_TEMP/kiro-gateway" .
+          echo "KIRO_LIVE_GATEWAY_BIN=$RUNNER_TEMP/kiro-gateway" >> "$GITHUB_ENV"
+      - name: Live requests (/v1/messages, stream and non-stream; /v1/chat/completions; /v1/responses)
+        if: steps.enabled.outputs.run == 'true'
+        run: go test ./proxy -run '^TestLiveGateway$' -count=1 -v -timeout 10m
