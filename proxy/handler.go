@@ -554,6 +554,9 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, path string) {
 	case path == "/health" || path == "/":
 		h.handleHealth(w, r)
 
+	case path == "/v1/usage":
+		h.handleKeyUsage(w, r) // proxy/key_usage.go
+
 	// 统计端点（需要 API Key 鉴权）
 	case path == "/v1/stats":
 		if !h.validateApiKey(r) {
