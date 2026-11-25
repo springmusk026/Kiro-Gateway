@@ -5,6 +5,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,6 +90,18 @@ var kiroRestHttpStore atomic.Pointer[http.Client]
 // proxyClientCache caches http.Client instances keyed by proxy URL for per-account proxy support.
 var proxyClientCache sync.Map
 
+// proxyTransportCache holds one transport per proxy URL, shared by the
+// streaming and REST clients so both reuse the same connections.
+var proxyTransportCache sync.Map
+
+func transportForProxy(proxyURL string) *http.Transport {
+	if cached, ok := proxyTransportCache.Load(proxyURL); ok {
+		return cached.(*http.Transport)
+	}
+	t, _ := proxyTransportCache.LoadOrStore(proxyURL, buildKiroTransport(proxyURL))
+	return t.(*http.Transport)
+}
+
 func init() {
 	InitKiroHttpClient("")
 }
@@ -105,7 +118,7 @@ func GetClientForProxy(proxyURL string) *http.Client {
 	client := &http.Client{
 		// No whole-response timeout: streams are bounded by the request
 		// context, ResponseHeaderTimeout and the idle-read guard instead.
-		Transport: buildKiroTransport(proxyURL),
+		Transport: transportForProxy(proxyURL),
 	}
 	proxyClientCache.Store(proxyURL, client)
 	return client
@@ -123,7 +136,7 @@ func GetRestClientForProxy(proxyURL string) *http.Client {
 	}
 	client := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: buildKiroTransport(proxyURL),
+		Transport: transportForProxy(proxyURL),
 	}
 	proxyClientCache.Store(cacheKey, client)
 	return client
@@ -139,17 +152,35 @@ func ResolveAccountProxyURL(account *config.Account) string {
 }
 
 // buildKiroTransport constructs an HTTP Transport with optional outbound proxy support.
+//
+// Connections to Kiro are long-lived and reused: HTTP/2 multiplexes the
+// requests to one host over a connection, idle connections are kept for
+// 90 s (up to 20 per host over HTTP/1.1), and TLS sessions are cached so a
+// new connection resumes instead of doing a full handshake. Dial and TLS
+// handshake are bounded like http.DefaultTransport, and an HTTP/2
+// connection that goes silent is health-checked with a ping and dropped
+// when it does not answer, instead of holding requests until
+// ResponseHeaderTimeout.
 func buildKiroTransport(proxyURL string) *http.Transport {
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	t := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 20,
-		IdleConnTimeout:     90 * time.Second,
+		DialContext:           dialer.DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig:       &tls.Config{ClientSessionCache: tls.NewLRUClientSessionCache(256)},
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
 		// Bound the wait for upstream to start answering.
 		// Matches the official client's 300 s converse timeout: a slow first
 		// token is still a valid answer, and aborting wastes the generation.
 		ResponseHeaderTimeout: 300 * time.Second,
 		DisableCompression:    false,
 		ForceAttemptHTTP2:     true,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: 30 * time.Second,
+			PingTimeout:     15 * time.Second,
+		},
 	}
 	if proxyURL != "" {
 		if u, err := url.Parse(proxyURL); err == nil {
@@ -165,17 +196,28 @@ func buildKiroTransport(proxyURL string) *http.Transport {
 
 // InitKiroHttpClient initializes (or reinitializes) the HTTP clients used for Kiro API requests.
 func InitKiroHttpClient(proxyURL string) {
+	// One transport for both clients, so REST calls and streams to the same
+	// host share connections.
+	transport := buildKiroTransport(proxyURL)
 	client := &http.Client{
 		// See GetClientForProxy: streams must not be cut at a fixed length.
-		Transport: buildKiroTransport(proxyURL),
+		Transport: transport,
 	}
-	kiroHttpStore.Store(client)
+	old := kiroHttpStore.Swap(client)
 
 	restClient := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: buildKiroTransport(proxyURL),
+		Transport: transport,
 	}
-	kiroRestHttpStore.Store(restClient)
+	oldRest := kiroRestHttpStore.Swap(restClient)
+
+	// Release the previous configuration's idle connections; requests in
+	// flight keep theirs.
+	for _, c := range []*http.Client{old, oldRest} {
+		if c != nil {
+			c.CloseIdleConnections()
+		}
+	}
 }
 
 // ensureAgentContinuationID gives each request the fresh agent continuation
