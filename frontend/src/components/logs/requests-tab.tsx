@@ -1,4 +1,4 @@
-import { Filter, ScrollText, Search, X } from 'lucide-react'
+import { Download, Filter, ScrollText, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState } from '@/components/app/empty-state'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { compact, maskEmail, timeAgo } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
-import { useRequestPage, useUsageBy } from '@/lib/queries.history'
+import { requestsExportUrl, useRequestPage, useUsageBy } from '@/lib/queries.history'
 import { TablePagination } from '@/components/app/table-pagination'
 import { useAccountLookup, useApiKeys } from '@/lib/queries.settings'
 import type { RequestFilters, RequestRecord, StorageInfo } from '@/lib/types'
@@ -282,6 +282,17 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
                 {t('logs.resetFilters')}
               </Button>
             )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button asChild variant="outline" size="sm" className="ml-auto">
+                  <a href={requestsExportUrl(filters)} download>
+                    <Download />
+                    {t('logs.csv.export')}
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('logs.csv.hint')}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 

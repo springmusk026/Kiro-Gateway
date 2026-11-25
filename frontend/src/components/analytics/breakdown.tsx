@@ -1,13 +1,15 @@
-import { ArrowDown, ArrowUp, Boxes, CircleAlert, CircleCheck, Filter, TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowUp, Boxes, CircleAlert, CircleCheck, Download, Filter, TriangleAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { TablePagination } from '@/components/app/table-pagination'
 import { usePagination } from '@/hooks/use-pagination'
 import { EmptyState } from '@/components/app/empty-state'
 import { fmtMs, unix } from '@/components/logs/history-bits'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { downloadCsv } from '@/lib/csv'
 import { compact, timeAgo } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { AnalyticsDimension, AnalyticsGroup, AnalyticsReport } from '@/lib/types'
@@ -113,6 +115,34 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
   }, [groups, sort, dim, label])
   const pg = usePagination(rows, { storageKey: 'analytics-breakdown', pageSize: 10, resetKey: `${dim}|${sort.key}|${sort.desc}` })
 
+  // CSV of the current dimension, as sorted, for the loaded range and filters (all rows, not just this page).
+  const exportCsv = () => {
+    const day = (iso: string) => iso.slice(0, 16).replace(/[-:]/g, '').replace('T', '-')
+    downloadCsv(
+      `kiro-${dim}-${day(report.from)}_${day(report.to)}.csv`,
+      ['name', 'key', 'requests', 'errors', 'error_rate', 'throttled', 'input_tokens', 'output_tokens', 'cache_read_tokens',
+        'cache_write_tokens', 'credits', 'p50_latency_ms', 'p95_latency_ms', 'p50_ttfb_ms', 'avg_attempts', 'last_seen'],
+      rows.map((g) => [
+        label(dim, g.key, g.label).text,
+        g.key,
+        g.requests,
+        g.errors,
+        g.requests ? +(g.errors / g.requests).toFixed(4) : 0,
+        g.throttled,
+        g.inputTokens,
+        g.outputTokens,
+        g.cacheReadTokens,
+        g.cacheWriteTokens,
+        +g.credits.toFixed(4),
+        Math.round(g.p50LatencyMs),
+        Math.round(g.p95LatencyMs),
+        Math.round(g.p50TtfbMs),
+        +g.avgAttempts.toFixed(2),
+        g.lastSeen,
+      ]),
+    )
+  }
+
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, desc: !s.desc } : { key, desc: key !== 'name' }))
 
@@ -142,6 +172,12 @@ export function BreakdownCard({ report, onFilter }: { report: AnalyticsReport; o
       <CardHeader>
         <CardTitle>{t('analytics.breakdown')}</CardTitle>
         <CardDescription>{t('analytics.breakdownHint')}</CardDescription>
+        <CardAction>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length} aria-label={t('analytics.csvHint')} title={t('analytics.csvHint')}>
+            <Download />
+            CSV
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="-mx-1 overflow-x-auto px-1 pb-1">
