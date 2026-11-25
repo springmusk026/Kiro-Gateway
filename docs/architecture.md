@@ -30,7 +30,9 @@ client ──► auth & limits ──► translate (Anthropic / OpenAI / Respons
 | `rtk/` | compression of large tool results |
 | `frontend/` | the admin console (TanStack Start SPA + shadcn/ui), built into `web/` |
 
-Key files in `proxy/`: `handler.go` (routing and the three APIs), `translator.go` (request/response
+Key files in `proxy/`: `routes.go` (routing), `handler_anthropic.go`, `handler_openai.go` and
+`responses_handler.go` (the three APIs), `upstream_executor.go` (the shared account loop: selection, upstream
+call, failover, fallback, accounting), `admin_*.go` (admin API), `translator.go` (request/response
 translation), `kiro.go` (legacy transport and endpoints), `kiro_responses.go` (`/v1/responses` transport),
 `upstream_protocol.go` and `upstream_budget.go` (protocol selection, retries), `account_failover.go`
 (error classification and account health), `session_affinity.go`, `thinking_request.go`, `api_errors.go`,
