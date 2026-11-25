@@ -54,7 +54,7 @@ export function useDimLabels(t: TFn) {
   const keys = useApiKeys()
   const keyNames = useMemo(() => {
     const m: Record<string, string> = {}
-    for (const k of keys.data ?? []) m[k.id] = k.name || k.keyMasked
+    for (const k of keys.data ?? []) m[k.id] = k.name || k.keyHint
     return m
   }, [keys.data])
   return useMemo(

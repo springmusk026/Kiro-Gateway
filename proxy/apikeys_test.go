@@ -181,9 +181,9 @@ func TestAuthenticateLegacyFallback(t *testing.T) {
 	if err := config.UpdateSettings("legacy-key", true, ""); err != nil {
 		t.Fatalf("seed legacy: %v", err)
 	}
-	// Sanity check: HasApiKeys returns false because UpdateSettings does not migrate.
-	if config.HasApiKeys() {
-		t.Fatalf("did not expect ApiKeys to be auto-populated by UpdateSettings")
+	// The deprecated single-key setting is stored as a hashed key entry.
+	if !config.HasApiKeys() || config.GetApiKey() != "" {
+		t.Fatalf("expected the legacy key to become a hashed entry")
 	}
 
 	h := &Handler{}

@@ -60,7 +60,7 @@ func TestConfigStoreEncryption(t *testing.T) {
 	s := NewConfigStore(db)
 	s.Codec = key
 	c, err := s.Load()
-	if err != nil || c.Accounts[0].RefreshToken != "r1" || c.ApiKeys[0].Key != "sk-1" {
+	if err != nil || c.Accounts[0].RefreshToken != "r1" || c.ApiKeys[0].KeyHash != config.HashApiKey("sk-1") {
 		t.Fatalf("load plaintext: %v %+v", err, c)
 	}
 	if err := s.Save(c); err != nil {

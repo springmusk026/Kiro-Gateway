@@ -51,6 +51,24 @@ Things that work differently from the original project:
   `reasoning_effort`, …). The `-thinking` model suffix still works.
 - **Admin sign-in** uses a session cookie; scripts can still send the `X-Admin-Password` header.
 
+## API keys are hashed
+
+From this version the gateway stores only a SHA-256 hash of each API key (plus a display hint such as
+`sk-ab12…9f3c`). On the first start after upgrading, every stored key — plaintext, or encrypted with
+`KIRO_ENCRYPTION_KEY` — is hashed and the configuration is saved again, in `config.json` or in PostgreSQL,
+so no key value remains at rest. The deprecated single `apiKey` setting is converted into a key entry the
+same way. Clients keep working with the keys they already have.
+
+What changes for you:
+
+- The console can no longer show or copy an existing key. Copy a new key when it is created (it is shown
+  once), or use *Regenerate key* in the key's menu to replace a lost one.
+- `kiro-gateway export` writes key hashes (`keyHash`, `keyHint`), not keys. Keep your own record of keys you
+  hand out.
+- The admin API's key views have `keyHint` instead of `keyMasked`; scripts that read `keyMasked` need updating.
+- Downgrading to an older version after the migration loses the keys (older versions cannot read hashes):
+  back up `config.json` or the database first if you might roll back.
+
 ## Encryption key
 
 Setting `KIRO_ENCRYPTION_KEY` for the first time encrypts stored credentials on the next start. From then on

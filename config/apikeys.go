@@ -2,12 +2,123 @@ package config
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
 )
+
+// API keys are stored hashed: an entry keeps the hex SHA-256 of its key
+// (KeyHash) and a short display hint (KeyHint), never the key itself. The
+// full key is shown once, when it is created or regenerated. Requests are
+// authenticated by hashing the presented key and looking the hash up in
+// apiKeyIndex.
+
+// apiKeyIndex maps KeyHash to the position in cfg.ApiKeys. Guarded by cfgLock
+// and rebuilt by reindexApiKeysLocked whenever the list changes.
+var apiKeyIndex map[string]int
+
+// HashApiKey returns the hex SHA-256 of a key value.
+func HashApiKey(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
+// ApiKeyHint returns a display hint for a key: its first 7 and last 4
+// characters ("sk-ab12…9f3c"). Shorter custom keys reveal less: a few
+// trailing characters, or nothing.
+func ApiKeyHint(key string) string {
+	n := len(key)
+	switch {
+	case n == 0:
+		return ""
+	case n >= 20:
+		return key[:7] + "…" + key[n-4:]
+	case n >= 12:
+		return "…" + key[n-4:]
+	case n >= 8:
+		return "…" + key[n-2:]
+	}
+	return "…"
+}
+
+// hashApiKeyEntry moves a plaintext Key into KeyHash/KeyHint and clears it.
+// It reports whether the entry changed. Encrypted values are left alone (the
+// stores decrypt before this runs).
+func hashApiKeyEntry(k *ApiKeyEntry) bool {
+	key := strings.TrimSpace(k.Key)
+	if k.Key == "" || IsEncryptedValue(key) {
+		return false
+	}
+	k.Key = ""
+	if key != "" {
+		k.KeyHash = HashApiKey(key)
+		k.KeyHint = ApiKeyHint(key)
+	}
+	return true
+}
+
+// ApiKeyDigest returns the hash identifying an entry's key: KeyHash, or the
+// hash of a not yet migrated plaintext Key ("" when neither is known).
+func ApiKeyDigest(k ApiKeyEntry) string {
+	if k.KeyHash != "" {
+		return k.KeyHash
+	}
+	if key := strings.TrimSpace(k.Key); key != "" && !IsEncryptedValue(key) {
+		return HashApiKey(key)
+	}
+	return ""
+}
+
+// migrateApiKeysLocked hashes every plaintext key and drops the legacy
+// single-key field. Reports whether anything changed. Caller holds cfgLock.
+func migrateApiKeysLocked() bool {
+	changed := false
+	if cfg.ApiKey != "" {
+		cfg.ApiKey = ""
+		changed = true
+	}
+	for i := range cfg.ApiKeys {
+		if hashApiKeyEntry(&cfg.ApiKeys[i]) {
+			changed = true
+		}
+	}
+	reindexApiKeysLocked()
+	return changed
+}
+
+func reindexApiKeysLocked() {
+	idx := make(map[string]int, len(cfg.ApiKeys))
+	for i := range cfg.ApiKeys {
+		if h := cfg.ApiKeys[i].KeyHash; h != "" {
+			if _, dup := idx[h]; !dup {
+				idx[h] = i
+			}
+		}
+	}
+	apiKeyIndex = idx
+}
+
+// setLegacyApiKeyLocked handles the deprecated single "apiKey" setting: a
+// non-empty value becomes a hashed key entry instead of being stored in
+// plaintext. Caller holds cfgLock.
+func setLegacyApiKeyLocked(key string) {
+	cfg.ApiKey = ""
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return
+	}
+	h := HashApiKey(key)
+	if _, exists := apiKeyIndex[h]; exists {
+		return
+	}
+	cfg.ApiKeys = append(cfg.ApiKeys, ApiKeyEntry{
+		ID: newUUID(), Name: "legacy", KeyHash: h, KeyHint: ApiKeyHint(key),
+		Enabled: true, Migrated: true, CreatedAt: time.Now().Unix(),
+	})
+	reindexApiKeysLocked()
+}
 
 // ListApiKeys returns a snapshot of all configured API key entries.
 func ListApiKeys() []ApiKeyEntry {
@@ -38,7 +149,8 @@ func GetApiKeyEntry(id string) *ApiKeyEntry {
 }
 
 // AddApiKey appends a new API key entry. Generates ID and CreatedAt if missing,
-// rejects empty Key values, and refuses duplicates of an existing Key.
+// rejects empty Key values, and refuses duplicates of an existing key. The key
+// is stored hashed: the returned entry has KeyHash/KeyHint and no Key.
 func AddApiKey(entry ApiKeyEntry) (ApiKeyEntry, error) {
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
@@ -49,10 +161,9 @@ func AddApiKey(entry ApiKeyEntry) (ApiKeyEntry, error) {
 	if entry.Key == "" {
 		return ApiKeyEntry{}, errors.New("api key value must not be empty")
 	}
-	for _, existing := range cfg.ApiKeys {
-		if existing.Key == entry.Key {
-			return ApiKeyEntry{}, errors.New("api key already exists")
-		}
+	hashApiKeyEntry(&entry)
+	if _, exists := apiKeyIndex[entry.KeyHash]; exists {
+		return ApiKeyEntry{}, errors.New("api key already exists")
 	}
 	applyApiKeyRestrictions(&entry, entry)
 	if entry.ID == "" {
@@ -67,11 +178,12 @@ func AddApiKey(entry ApiKeyEntry) (ApiKeyEntry, error) {
 		cfg.ApiKeys = cfg.ApiKeys[:len(cfg.ApiKeys)-1]
 		return ApiKeyEntry{}, err
 	}
+	reindexApiKeysLocked()
 	return entry, nil
 }
 
 // UpdateApiKey applies a patch to an existing API key. Patch semantics:
-//   - Name, Key are overwritten when non-empty in patch.
+//   - Name, Key are overwritten when non-empty in patch (a new Key is hashed).
 //   - Enabled, TokenLimit, CreditLimit are always overwritten (zero values are valid).
 //   - Counters (TokensUsed/CreditsUsed/RequestsCount) are not touched here; use
 //     RecordApiKeyUsage or ResetApiKeyUsage instead.
@@ -95,15 +207,16 @@ func UpdateApiKey(id string, patch ApiKeyEntry) error {
 	if patch.Name != "" {
 		cfg.ApiKeys[idx].Name = patch.Name
 	}
-	if patch.Key != "" {
-		newKey := strings.TrimSpace(patch.Key)
+	if newKey := strings.TrimSpace(patch.Key); newKey != "" {
+		h := HashApiKey(newKey)
 		// Reject duplicates against any other entry.
-		for j := range cfg.ApiKeys {
-			if j != idx && cfg.ApiKeys[j].Key == newKey {
-				return errors.New("api key value collides with existing entry")
-			}
+		if j, exists := apiKeyIndex[h]; exists && j != idx {
+			return errors.New("api key value collides with existing entry")
 		}
-		cfg.ApiKeys[idx].Key = newKey
+		cfg.ApiKeys[idx].Key = ""
+		cfg.ApiKeys[idx].KeyHash = h
+		cfg.ApiKeys[idx].KeyHint = ApiKeyHint(newKey)
+		reindexApiKeysLocked()
 	}
 	cfg.ApiKeys[idx].Enabled = patch.Enabled
 	cfg.ApiKeys[idx].TokenLimit = patch.TokenLimit
@@ -127,30 +240,30 @@ func DeleteApiKey(id string) error {
 	for i, e := range cfg.ApiKeys {
 		if e.ID == id {
 			cfg.ApiKeys = append(cfg.ApiKeys[:i], cfg.ApiKeys[i+1:]...)
+			reindexApiKeysLocked()
 			return saveLocked()
 		}
 	}
 	return nil
 }
 
-// FindApiKeyByValue returns a copy of the entry whose Key matches the given value,
-// or nil if no match. O(n) linear scan.
+// FindApiKeyByValue returns a copy of the entry whose key matches the given
+// value, or nil if no match. The value is hashed and looked up by hash, so
+// the work done does not depend on which entry (if any) matches or on how
+// much of a key was right.
 func FindApiKeyByValue(key string) *ApiKeyEntry {
 	cfgLock.RLock()
 	defer cfgLock.RUnlock()
 	if cfg == nil || key == "" {
 		return nil
 	}
-	// Constant-time per entry and no early exit, so response timing does not
-	// reveal how much of a key matched or which entry it was.
-	var found *ApiKeyEntry
-	for i := range cfg.ApiKeys {
-		if subtle.ConstantTimeCompare([]byte(cfg.ApiKeys[i].Key), []byte(key)) == 1 && found == nil {
-			cp := cfg.ApiKeys[i]
-			found = &cp
-		}
+	h := HashApiKey(key)
+	i, ok := apiKeyIndex[h]
+	if !ok || i >= len(cfg.ApiKeys) || cfg.ApiKeys[i].KeyHash != h {
+		return nil
 	}
-	return found
+	cp := cfg.ApiKeys[i]
+	return &cp
 }
 
 // HasApiKeys returns true when at least one API key entry is configured.
@@ -212,19 +325,6 @@ func GenerateApiKeyValue() string {
 	buf := make([]byte, 32)
 	_, _ = rand.Read(buf)
 	return "sk-" + hex.EncodeToString(buf)
-}
-
-// MaskApiKey produces a display-friendly masked version: keeps first 6 and last 4
-// characters, replaces the middle with "****". Returns "" for empty input and
-// the original string if it's too short to mask meaningfully.
-func MaskApiKey(key string) string {
-	if key == "" {
-		return ""
-	}
-	if len(key) <= 10 {
-		return key
-	}
-	return key[:6] + "****" + key[len(key)-4:]
 }
 
 // ApiKeyOverLimit returns (overToken, overCredit) for the entry. Limits with value 0

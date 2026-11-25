@@ -48,7 +48,7 @@ export function useRecordLabels(privacy: boolean) {
   const keys = useApiKeys()
   const keyNames = useMemo(() => {
     const m: Record<string, string> = {}
-    for (const k of keys.data ?? []) m[k.id] = k.name || k.keyMasked
+    for (const k of keys.data ?? []) m[k.id] = k.name || k.keyHint
     return m
   }, [keys.data])
   return {
@@ -257,7 +257,7 @@ export function RequestsTab({ live, privacy, storage }: { live: boolean; privacy
                 <SelectItem value="all">{t('logs.h.allKeys')}</SelectItem>
                 {labels.keys.map((k) => (
                   <SelectItem key={k.id} value={k.id}>
-                    {k.name || k.keyMasked}
+                    {k.name || k.keyHint}
                   </SelectItem>
                 ))}
               </SelectContent>

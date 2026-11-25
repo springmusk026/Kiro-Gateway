@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Security
+- API keys are stored as SHA-256 hashes with a display hint (`sk-ab12…9f3c`) and shown only once, when created
+  or regenerated (new *Regenerate key* action). Existing plaintext or encrypted keys are hashed on the first
+  start and saved, in `config.json` and PostgreSQL alike; `kiro-gateway export` writes hashes. The admin API
+  returns `keyHint` instead of `keyMasked`. See [docs/upgrading.md](docs/upgrading.md#api-keys-are-hashed).
+
 ## 2.1.0 — Kiro Gateway
 
 The project is now **Kiro Gateway** ([springmusk026/Kiro-Gateway](https://github.com/springmusk026/Kiro-Gateway)).

@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"crypto/subtle"
 	"github.com/springmusk026/Kiro-Gateway/config"
 	"net/http"
 	"strings"
@@ -52,14 +51,13 @@ func extractProvidedKey(r *http.Request) string {
 //
 // When RequireApiKey is true:
 //  1. If ApiKeys is non-empty, the provided key MUST match an enabled, in-quota
-//     entry. Returns the matched entry (a copy) so callers can attribute usage.
-//  2. Else if the legacy single ApiKey field is set, the provided key MUST match it.
-//  3. Else (switch on but nothing configured) → fail-closed: every request is rejected.
+//     entry (looked up by its SHA-256 hash). Returns the matched entry (a copy)
+//     so callers can attribute usage.
+//  2. Else (switch on but nothing configured) → fail-closed: every request is rejected.
 //     This prevents the prior bug where toggling auth on without keys silently
 //     left the service open.
 //
-// Returns (entry, nil) on success. entry is nil when the legacy single-key path
-// is used or when the master switch is off.
+// Returns (entry, nil) on success. entry is nil when the master switch is off.
 func (h *Handler) authenticate(r *http.Request) (*config.ApiKeyEntry, error) {
 	if !config.IsApiKeyRequired() {
 		return nil, nil
@@ -90,16 +88,9 @@ func (h *Handler) authenticate(r *http.Request) (*config.ApiKeyEntry, error) {
 		return entry, nil
 	}
 
-	// Legacy single-key path.
-	expected := config.GetApiKey()
-	if expected == "" {
-		// Auth required but nothing configured → fail closed.
-		return nil, newAuthError(http.StatusUnauthorized, "authentication_error", "API key authentication is required but no keys are configured")
-	}
-	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
-		return nil, newAuthError(http.StatusUnauthorized, "authentication_error", "Invalid or missing API key")
-	}
-	return nil, nil
+	// Auth required but nothing configured: fail closed. (The deprecated
+	// single-key setting is stored as a hashed entry, so it is covered above.)
+	return nil, newAuthError(http.StatusUnauthorized, "authentication_error", "API key authentication is required but no keys are configured")
 }
 
 // withApiKeyContext attaches the matched entry to the request context so downstream

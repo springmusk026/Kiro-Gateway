@@ -69,10 +69,14 @@ func TestSecretCodecRoundTrip(t *testing.T) {
 		t.Fatal("EncryptConfig modified its input")
 	}
 	for _, v := range []string{enc.Password, enc.ProxyURL, enc.Accounts[0].AccessToken, enc.Accounts[0].RefreshToken,
-		enc.Accounts[0].ClientSecret, enc.Accounts[0].KiroApiKey, enc.ApiKeys[0].Key} {
+		enc.Accounts[0].ClientSecret, enc.Accounts[0].KiroApiKey} {
 		if !IsEncryptedValue(v) {
 			t.Fatalf("value not encrypted: %q", v)
 		}
+	}
+	// API keys are stored as hashes, never as (encrypted) values.
+	if enc.ApiKeys[0].Key != "" || enc.ApiKeys[0].KeyHash != HashApiKey("sk-secret") {
+		t.Fatalf("api key stored as %+v", enc.ApiKeys[0])
 	}
 	if enc.Accounts[0].Email != "a@x.io" || enc.ApiKeys[0].ID != "k1" {
 		t.Fatal("non-secret fields changed")
@@ -86,7 +90,7 @@ func TestSecretCodecRoundTrip(t *testing.T) {
 	if err != nil || plain {
 		t.Fatalf("decrypt: plain=%v err=%v", plain, err)
 	}
-	if enc.Accounts[0].RefreshToken != "rt-1" || enc.ApiKeys[0].Key != "sk-secret" || enc.Password != "admin-pass-123" {
+	if enc.Accounts[0].RefreshToken != "rt-1" || enc.Password != "admin-pass-123" {
 		t.Fatalf("round trip mismatch: %+v", enc)
 	}
 }

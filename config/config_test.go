@@ -79,8 +79,8 @@ func TestUpdateSettingsPatchPreservesOmittedAPIKeyFields(t *testing.T) {
 		t.Fatalf("patch settings: %v", err)
 	}
 
-	if got := GetApiKey(); got != "proxy-api-key" {
-		t.Fatalf("expected API key to be preserved, got %q", got)
+	if FindApiKeyByValue("proxy-api-key") == nil {
+		t.Fatal("expected API key to be preserved")
 	}
 	if !IsApiKeyRequired() {
 		t.Fatalf("expected requireApiKey to stay enabled")

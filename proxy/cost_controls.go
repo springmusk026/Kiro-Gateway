@@ -177,7 +177,7 @@ func (h *Handler) computeAlerts(now time.Time) []costAlert {
 	for _, k := range config.ListApiKeys() {
 		name := k.Name
 		if name == "" {
-			name = config.MaskApiKey(k.Key)
+			name = k.KeyHint
 		}
 		add("key_daily", k.ID, name, daily.KeyCredits[k.ID], k.DailyCreditLimit, alertWarnRatio, fmt.Sprintf("API key %q daily credit budget", name))
 		add("key_credits", k.ID, name, k.CreditsUsed, k.CreditLimit, alertWarnRatio, fmt.Sprintf("API key %q credit limit", name))
