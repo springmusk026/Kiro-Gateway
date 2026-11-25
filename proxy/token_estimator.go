@@ -3,34 +3,61 @@ package proxy
 import (
 	"encoding/json"
 	"math"
+	"unicode/utf8"
 )
 
 func estimateApproxTokens(text string) int {
 	if text == "" {
 		return 0
 	}
+	var regularAscii, digits, symbols, nonASCII int
+	for i := 0; i < len(text); i++ {
+		countTokenClass(text[i], &regularAscii, &digits, &symbols)
+	}
+	// Every rune that is not a single ASCII byte counts once as non-ASCII
+	// (invalid bytes decode to U+FFFD, one rune each, as []rune would).
+	if regularAscii+digits+symbols < len(text) {
+		nonASCII = utf8.RuneCountInString(text) - (regularAscii + digits + symbols)
+	}
+	return tokensFromClasses(regularAscii, digits, symbols, nonASCII)
+}
 
-	runes := []rune(text)
-	length := len(runes)
+// estimateApproxTokensBytes is estimateApproxTokens for encoded bytes.
+func estimateApproxTokensBytes(text []byte) int {
+	if len(text) == 0 {
+		return 0
+	}
+	var regularAscii, digits, symbols, nonASCII int
+	for _, b := range text {
+		countTokenClass(b, &regularAscii, &digits, &symbols)
+	}
+	if regularAscii+digits+symbols < len(text) {
+		nonASCII = utf8.RuneCount(text) - (regularAscii + digits + symbols)
+	}
+	return tokensFromClasses(regularAscii, digits, symbols, nonASCII)
+}
+
+// countTokenClass classifies one ASCII byte; bytes >= 0x80 belong to
+// multi-byte runes and are counted by the caller.
+func countTokenClass(b byte, regularAscii, digits, symbols *int) {
+	switch {
+	case b >= 0x80:
+	case b >= '0' && b <= '9':
+		*digits++
+	case (b >= '!' && b <= '/') || (b >= ':' && b <= '@') || (b >= '[' && b <= '`') || (b >= '{' && b <= '~'):
+		*symbols++
+	default:
+		*regularAscii++
+	}
+}
+
+func tokensFromClasses(regularAscii, digits, symbols, nonASCII int) int {
+	length := regularAscii + digits + symbols + nonASCII
 	if length == 0 {
 		return 0
 	}
 	if length < 5 {
 		return max(1, int(math.Ceil(float64(length)/3.0)))
-	}
-
-	var regularAscii, digits, symbols, nonASCII int
-	for _, r := range runes {
-		switch {
-		case r >= 0x80:
-			nonASCII++
-		case r >= '0' && r <= '9':
-			digits++
-		case (r >= '!' && r <= '/') || (r >= ':' && r <= '@') || (r >= '[' && r <= '`') || (r >= '{' && r <= '~'):
-			symbols++
-		default:
-			regularAscii++
-		}
 	}
 
 	estimated := int(math.Ceil(
@@ -149,12 +176,15 @@ func estimateJSONTokens(v interface{}) int {
 		return 0
 	}
 
-	b, err := json.Marshal(v)
-	if err != nil {
+	// Same bytes as json.Marshal (the encoder only adds a trailing newline),
+	// encoded into a reused buffer.
+	buf := getJSONBuf()
+	defer putJSONBuf(buf)
+	if err := json.NewEncoder(buf).Encode(v); err != nil {
 		return 0
 	}
-
-	return estimateApproxTokens(string(b))
+	b := buf.Bytes()
+	return estimateApproxTokensBytes(b[:len(b)-1])
 }
 
 func estimateOpenAIRequestInputTokens(req *OpenAIRequest) int {
