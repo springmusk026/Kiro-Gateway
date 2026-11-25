@@ -1,0 +1,1 @@
+var e=e=>!!e&&e.models>0;function t(e){let t=e?.fetchedAt?Date.parse(e.fetchedAt):NaN;return Number.isFinite(t)&&t>Date.UTC(2e3,0,1)?t/1e3:0}var n=(e,t)=>e*(t&&t>0?t:.02);export{t as n,e as r,n as t};

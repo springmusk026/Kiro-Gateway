@@ -1,0 +1,1 @@
+import{t as e}from"./useRouter-ByKg8se0.js";import{O as t,T as n}from"./createLucideIcon-XwvCQLCP.js";var r=t(n(),1);function i(t){let n=e();return r.useCallback(e=>n.navigate({...e,from:e.from??t?.from}),[t?.from,n])}export{i as t};
